@@ -154,7 +154,7 @@ class DataPack(object):
             if self.current_solset is None:
                 raise ValueError("Current solset is None.")
             solset_group = self._H.root._v_groups[self.current_solset]
-            self._H.create_group(solset_group,soltab, "Soltab: {}".format(soltab))
+            self._H.create_group(solset_group, soltab, "Soltab: {}".format(soltab))
             soltab_group = solset_group._v_groups[soltab]
             soltab_group._v_attrs['parmdb_type'] = ""
             shape = []
@@ -183,7 +183,7 @@ class DataPack(object):
                 self._H.create_array(soltab_group, 'weight', obj=weights.astype(np.float64), title='Weights',atom=tb.Float64Atom())
             weight_leaf = soltab_group._v_leaves['weight']
             weight_leaf.attrs['AXES'] = ','.join(ordered_axes)
-            logging.info("Created soltab {}".format(soltab))
+            logging.info("Created soltab {}/{}".format(self.current_solset, soltab))
 
     def delete_soltab(self, soltab):
         if soltab not in self.soltabs:
@@ -362,7 +362,7 @@ class DataPack(object):
                 try:
                     axes = val_leaf.attrs['AXES'].split(',')
                 except TypeError:
-                    axes = [s.decode() for s in val_leaf.attrs['AXES'].split(b',')]
+                    axes = [s.decode().lower() for s in val_leaf.attrs['AXES'].split(b',')]
                 shape = []
                 type = []
                 vals = []
@@ -420,6 +420,33 @@ class DataPack(object):
             raise IndexError("Due to a limitation, only one fancy indexing can be applied per pytables getattr.")
         return tuple(corrected_selection)
 
+    def get_axes_perm(self, actual_axes):
+        """
+        Get the permutation that changes the actual stored axes to prefered axes order stored
+        in self.axes_order.
+        :param actual_axes: list of str
+            The order of axes in an array
+        :return: tuple of int
+        """
+        if not isinstance(actual_axes, (list, tuple)):
+            raise TypeError("actual axes must be a list or tuple of str")
+        actual_axes = list(actual_axes)
+        return tuple([actual_axes.index(a) for a in self.axes_order if a in actual_axes])
+
+    def get_axes_perm_inv(self, actual_axes):
+        """
+        Get the permutation that changes the prefered axes order to the stored axes order
+        stored in a soltab.
+        :param actual_axes: list of str
+            The order of axes in an array
+        :return: tuple of int
+        """
+        if not isinstance(actual_axes, (list, tuple)):
+            raise TypeError("actual axes must be a list or tuple of str")
+        actual_axes = list(actual_axes)
+        return tuple([self.axes_order.index(a) for a in actual_axes if a in self.axes_order])
+
+
     def __getattr__(self, tab):
         """
         Links any attribute with an "axis name" to getValuesAxis("axis name")
@@ -445,18 +472,20 @@ class DataPack(object):
             with self:
                 soltab = "{}000".format(tab)
                 selection = self.get_selection(soltab)
+                _, soltab_axes = self.soltab_axes(soltab)
                 if not axes:
+                    perm = self.get_axes_perm(soltab_axes)
                     solset_group = self._H.root._v_groups[self.current_solset]
                     soltab_group = solset_group._v_groups[soltab]
                     if weight:
                         leaf = soltab_group._v_leaves['weight']
                     else:
                         leaf = soltab_group._v_leaves['val']
-                    out_axes = {name:np.array(vals)[selection[i]] for i,(vals,name) in enumerate(zip(*self.soltab_axes(soltab)))}
-                    out_vals = leaf.__getitem__(selection)
+                    out_axes = {name:np.array(vals)[selection[i]] for i,(vals,name) in enumerate(zip(*soltab_axes))}
+                    out_vals = leaf.__getitem__(selection).transpose(perm)
                     return out_vals, out_axes
                 else:
-                    out_axes = {name:np.array(vals)[selection[i]] for i,(vals,name) in enumerate(zip(*self.soltab_axes(soltab)))}
+                    out_axes = {name:np.array(vals)[selection[i]] for i,(vals,name) in enumerate(zip(*soltab_axes))}
                     return out_axes
         else:
             return object.__getattribute__(self, tab)
@@ -491,14 +520,16 @@ class DataPack(object):
                 selection = self.get_selection(soltab)
                 solset_group = self._H.root._v_groups[self.current_solset]
                 soltab_group = solset_group._v_groups[soltab]
+                _, soltab_axes = self.soltab_axes(soltab)
                 if not axes:
+                    perm = self.get_axes_perm_inv(soltab_axes)
                     if weight:
                         leaf = soltab_group._v_leaves['weight']
                     else:
                         leaf = soltab_group._v_leaves['val']
                     # print(tab, selection, value.shape, self._selection)
 
-                    leaf.__setitem__(selection, value)
+                    leaf.__setitem__(selection, value.transpose(perm))
                 else:
                     if not isinstance(value, dict):
                         raise("Axes must come in dict of 'name':vals")
