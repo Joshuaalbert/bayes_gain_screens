@@ -11,7 +11,7 @@ import os, glob
 class Deployment(object):
     def __init__(self, datapack: Union[DataPack, str], ref_dir_idx = 14, solset='sol000',
                  flux_limit=0.05, max_N=250, min_spacing_arcmin=1.,
-                 srl_file:str='/home/albert/ftp/image.pybdsm.srl.fits',
+                 srl_file:str=None,
                  ant=None, dir=None, time=None, freq=None, pol=slice(0,1,1),
                  directional_deploy=True, block_size=1, working_dir = './deployment'):
         cwd = os.path.abspath(working_dir)

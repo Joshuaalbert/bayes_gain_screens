@@ -319,7 +319,7 @@ def log_normal_cdf_solve(x1, x2, P1=0.05, P2=0.95, as_tensor=False):
 #         return dict(datapack=datapack, directions=directions, antennas=antennas, freqs=freqs, times=times, pols=pols, dtec=dtecs, phase=phase)
 
 
-def get_screen_directions(srl_fits='/home/albert/git/bayes_tec/scripts/data/image.pybdsm.srl.fits', flux_limit = 0.1, max_N = None, min_spacing_arcmin = 1., plot=False):
+def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_arcmin = 1., plot=False):
     """Given a srl file containing the sources extracted from the apparent flux image of the field,
     decide the screen directions
 
