@@ -71,13 +71,16 @@ def laplace_gaussian_marginalisation(L, y, order = 10):
     poly_coeffs_2 = np.array([ -c if i%2 == 1 else c for i,c in enumerate(poly_coeffs_1)], float_type)
     #TODO: finish the function
 
-def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000'):
+def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None):
     if not isinstance(to_soltab, (list, tuple)):
         to_soltab = [to_soltab]
 
+    if select is None:
+        select = dict(ant = None, time = None, dir = None, freq = None, pol = slice(0,1,1))
+
     with datapack:
         datapack.current_solset = from_solset
-        datapack.select(ant=None, time=None, dir=None, freq=None, pol=None)
+        datapack.select(**select)
         axes = getattr(datapack, "axes_{}".format(from_soltab.replace('000', '')))
         antenna_labels, antennas = datapack.get_antennas(axes['ant'])
         patch_names, directions = datapack.get_directions(axes['dir'])
