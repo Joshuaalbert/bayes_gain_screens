@@ -74,7 +74,6 @@ def laplace_gaussian_marginalisation(L, y, order = 10):
 def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None):
     if not isinstance(to_soltab, (list, tuple)):
         to_soltab = [to_soltab]
-
     if select is None:
         select = dict(ant = None, time = None, dir = None, freq = None, pol = slice(0,1,1))
 
