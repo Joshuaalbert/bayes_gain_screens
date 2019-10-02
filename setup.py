@@ -9,7 +9,7 @@ __minimum_tensorflow_version__ = '1.14.0'
 setup_requires = ['numpy>=' + __minimum_numpy_version__, 
 'tensorflow>='+__minimum_tensorflow_version__]
 
-setup(name='bayes_filter',
+setup(name='bayes_gain_screens',
       version='0.0.1',
       description='Bayesian directional TEC model',
       author=['Josh Albert'],
