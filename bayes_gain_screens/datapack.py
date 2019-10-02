@@ -80,11 +80,11 @@ def update_h5parm(old_h5parm, new_h5parm):
             antenna_labels, antennas = old.get_antennas(axes['ant'])
             patch_names, directions = old.get_directions(axes['dir'])
             timestamps, times = old.get_times(axes['time'])
-            freq_labels, freqs = old.get_freqs(axes['freq'])
             pol_labels, pols = old.get_pols(axes['pol'])
             vals, _ = old.get_soltab(soltab, weight=False)
             weight_vals, _ = old.get_soltab(soltab, weight=True)
             if 'freq' in axes.keys():
+                freq_labels, freqs = old.get_freqs(axes['freq'])
                 new.add_soltab(soltab, values=vals, weights=weight_vals, weightDtype='f16', time=times.mjd * 86400., pol=pol_labels,
                                ant=antenna_labels,
                                dir=patch_names, freq=freqs)
