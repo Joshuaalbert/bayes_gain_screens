@@ -455,10 +455,10 @@ class DatapackPlotter(object):
                     p.set_clim(vmin, vmax)
                     axes_patches.append(p)
                     c += 1
-
-            fig.subplots_adjust(right=0.85)
-            cbar_ax = fig.add_axes([0.875, 0.15, 0.025, 0.7])
-            fig.colorbar(p, cax=cbar_ax, orientation='vertical')
+            if not per_plot_scale:
+                fig.subplots_adjust(right=0.85)
+                cbar_ax = fig.add_axes([0.875, 0.15, 0.025, 0.7])
+                fig.colorbar(p, cax=cbar_ax, orientation='vertical')
             if show:
                 plt.ion()
                 plt.show()
