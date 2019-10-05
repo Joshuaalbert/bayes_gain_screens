@@ -259,7 +259,7 @@ class DatapackPlotter(object):
     def plot(self, ant_sel=None, time_sel=None, freq_sel=None, dir_sel=None, pol_sel=None, fignames=None, vmin=None,
              vmax=None, mode='perantenna', observable='phase', phase_wrap=True, log_scale=False, plot_crosses=True,
              plot_facet_idx=False, plot_patchnames=False, labels_in_radec=False, show=False, plot_arrays=False,
-             solset=None, plot_screen=False, tec_eval_freq=None, mean_residual=False, **kwargs):
+             solset=None, plot_screen=False, tec_eval_freq=None, per_plot_scale=False, mean_residual=False, **kwargs):
         """
 
         :param ant_sel:
@@ -469,6 +469,8 @@ class DatapackPlotter(object):
                         axes_patches[i].set_array(obs[:, i, fixfreq, j])
                     else:
                         axes_patches[i].set_array(obs[:, :, i, fixfreq, j])
+                    if per_plot_scale:
+                        axes_patches[i].set_clim(obs[:, :, i, fixfreq, j].min(), obs[:, :, i, fixfreq, j].max())
                 axs[0, 0].set_title("{} {} : {}".format(observable, freq_labels[fixfreq], timestamps[j]))
                 fig.canvas.draw()
                 if save_fig:
