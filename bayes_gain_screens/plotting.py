@@ -28,10 +28,13 @@ try:
 except ImportError:
     phase_cmap = plt.cm.hsv
 
-def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, cmap=plt.cm.jet, relim=False):
+def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.jet, relim=False):
 
     if cmap is 'phase':
         cmap = phase_cmap
+
+    if norm is None:
+        norm = plt.Normalize(colors.min() if vmin is not None else vmin, colors.max() if vmax is not None else vmax)
 
     def voronoi_finite_polygons_2d(vor, radius=radius):
         """
@@ -55,8 +58,6 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, c
             end.
 
         """
-
-
 
         if vor.points.shape[1] != 2:
             raise ValueError("Requires 2D input")
@@ -321,7 +322,7 @@ class DatapackPlotter(object):
             obs, axes = self.datapack.__getattr__(observable)
             if observable.startswith('weights_'):
                 # obs = np.sqrt(np.abs(1. / obs))  # uncert from weights = 1/var
-                obs = np.sqrt(obs)  # uncert from weights = 1/var
+                # obs = np.sqrt(obs)  # uncert from weights = 1/var
                 phase_wrap = False
             if 'pol' in axes.keys():
                 # plot only first pol selected
@@ -467,10 +468,13 @@ class DatapackPlotter(object):
                 for i in range(Na):
                     if not plot_screen:
                         axes_patches[i].set_array(obs[:, i, fixfreq, j])
+                        if per_plot_scale:
+                            axes_patches[i].set_clim(obs[:, i, fixfreq, j].min(), obs[:, i, fixfreq, j].max())
                     else:
                         axes_patches[i].set_array(obs[:, :, i, fixfreq, j])
-                    if per_plot_scale:
-                        axes_patches[i].set_clim(obs[:, :, i, fixfreq, j].min(), obs[:, :, i, fixfreq, j].max())
+                        if per_plot_scale:
+                            axes_patches[i].set_clim(obs[:, :, i, fixfreq, j].min(), obs[:, :, i, fixfreq, j].max())
+
                 axs[0, 0].set_title("{} {} : {}".format(observable, freq_labels[fixfreq], timestamps[j]))
                 fig.canvas.draw()
                 if save_fig:
