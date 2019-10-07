@@ -4,6 +4,7 @@ from typing import List, Union
 from .coord_transforms import ITRSToENUWithReferences_v2
 from . import logging, angle_type, dist_type, float_type
 from .misc import get_screen_directions, maybe_create_posterior_solsets, great_circle_sep
+from .outlier_detection import filter_tec_dir
 from timeit import default_timer
 import numpy as np
 import tensorflow as tf
@@ -15,7 +16,7 @@ class Deployment(object):
                  tec_solset='sol000', phase_solset='sol000',
                  flux_limit=0.05, max_N=250, min_spacing_arcmin=1.,
                  srl_file:str=None, ant=None, dir=None, time=None, freq=None, pol=slice(0,1,1),
-                 directional_deploy=True, block_size=1, debug = False, working_dir = './deployment'):
+                 directional_deploy=True, block_size=1, debug = False, working_dir = './deployment', flag_directions = None):
         self.debug = debug
         if self.debug:
             logging.info("In debug mode")
@@ -50,8 +51,15 @@ class Deployment(object):
         tec = tec.astype(np.float64)
         tec_uncert, _ = datapack.weights_tec
         tec_uncert = tec_uncert.astype(np.float64)
-
-
+        data_directions = datapack.get_directions(axes['dir'])
+        data_directions = np.stack([data_directions.ra.rad*np.cos(data_directions.dec.rad), data_directions.dec.rad], axis=1)
+        logging.info("Flagging outliers in TEC")
+        tec_uncert, _ = filter_tec_dir(tec[0, ...], data_directions, tec_uncert[0, ...], function='multiquadric')
+        if flag_directions is not None:
+            tec_uncert[flag_directions, ...] = np.inf
+        tec_uncert = tec_uncert[None, ...]
+        logging.info("Number flagged: {} from {}".format(np.sum(np.isinf(tec_uncert)), tec_uncert.size))
+        logging.info("Transposing data")
         if directional_deploy:
             # Nd, Na, Nt -> Nt, Na, Nd
             tec = tec[0, ...].transpose((2, 1, 0))
