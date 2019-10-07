@@ -41,10 +41,16 @@ def add_args(parser):
             raise ValueError("{} not a valid obstype.".format(s))
         return s
 
+    def list_parse(s: str):
+        s = s.replace('[','')
+        s = s.replace(']','')
+        return [int(d.strip()) for d in s.split(',')]
+
     parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.register("type", "axes_selection", dim_selection)
     parser.register("type", "model_selection", model_parse)
     parser.register("type", "obstype_type", obstype_parse)
+    parser.register("type", "list", list_parse)
 
     optional = parser._action_groups.pop()  # Edited this line
     parser._action_groups.append(optional)  # added this line
@@ -57,14 +63,23 @@ def add_args(parser):
     required.add_argument("--ref_dir", type=int,
                           default=None,
                           help="""Reference direction, should be a bright direction.""", required=True)
-    optional.add_argument("--solset", type=str,
+    optional.add_argument("--tec_solset", type=str,
                           default='sol000',
                           help="""solset to get tec000 from for solve.""")
+    optional.add_argument("--phase_solset", type=str,
+                          default='sol000',
+                          help="""solset to get phase000 from for phase referencing.""")
 
     # optional arguments
     optional.add_argument("--deployment_type", type=str,
                           default='directional',
                           help="""Type of solve: ['directional','non_integral', 'tomographic'].""", required=False)
+    optional.add_argument("--use_vec_kernels", type="bool",
+                          default=False,
+                          help="""Whether to include directional kernels with vectorised amps.""", required=False)
+    optional.add_argument("--flag_directions", type="list",
+                          default=None,
+                          help="""Flag specific directions for sure. In addition to regular filtering.""", required=False)
     optional.add_argument("--ant", type="axes_selection", default=None,
                           help="""The antennas selection: None, regex RS*, or slice format <start>/<stop>/<step>.\n""")
     optional.add_argument("--time", type="axes_selection", default=None,
@@ -103,7 +118,7 @@ def run_paper3():
          flux_limit=0.05, block_size=10, srl_file='/home/albert/ftp/image.pybdsm.srl.fits', ant=None, time=None,
          dir=None, pol=slice(0, 1, 1), freq=None)
 
-def main(deployment_type, datapack, solset, ref_dir, output_folder, min_spacing_arcmin, max_N, flux_limit, block_size, srl_file, ant, time, dir, pol, freq):
+def main(deployment_type, datapack, tec_solset, phase_solset, ref_dir, output_folder, min_spacing_arcmin, max_N, flux_limit, block_size, srl_file, use_vec_kernels, ant, time, dir, pol, freq):
     if deployment_type not in ['directional','non_integral', 'tomographic']:
         raise ValueError("Invalid deployment_type".format(deployment_type))
     if deployment_type == 'directional':
@@ -118,7 +133,8 @@ def main(deployment_type, datapack, solset, ref_dir, output_folder, min_spacing_
 
     deployment = Deployment(datapack,
                             ref_dir_idx=ref_dir,
-                            solset=solset,
+                            tec_solset=tec_solset,
+                            phase_solset=phase_solset,
                             flux_limit=flux_limit,
                             max_N=max_N,
                             min_spacing_arcmin=min_spacing_arcmin,
@@ -131,7 +147,7 @@ def main(deployment_type, datapack, solset, ref_dir, output_folder, min_spacing_
                             directional_deploy=directional_deploy,
                             block_size=block_size,
                             working_dir=os.path.abspath(output_folder))
-    deployment.run(generate_models)
+    deployment.run(generate_models, use_vec_kernels=use_vec_kernels)
 
 if __name__ == '__main__':
 
