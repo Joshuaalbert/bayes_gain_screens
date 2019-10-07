@@ -33,9 +33,9 @@ class HGPR(GPModel):
     def _build_common(self):
         # (T), M, M
         Kmm = self.kern.K(self.X)
-        with tf.control_dependencies([tf.print(Kmm)]):
-            # B, (T), M
-            Y_std = tf.math.sqrt(self.Y_var)
+        # with tf.control_dependencies([tf.print(Kmm)]):
+        # B, (T), M
+        Y_std = tf.math.sqrt(self.Y_var)
 
         M = tf.shape(Kmm)[-1]
         # M, M
@@ -84,8 +84,8 @@ class HGPR(GPModel):
         L, Ly, Y_std = self._build_common()
         #B, (T)
         log_marginal_likelihood = self._build_batched_likelihood(L, Ly, Y_std)
-        with tf.control_dependencies([tf.print(log_marginal_likelihood)]):
-            return tf.reduce_sum(log_marginal_likelihood)
+        # with tf.control_dependencies([tf.print(log_marginal_likelihood)]):
+        return tf.reduce_sum(log_marginal_likelihood)
 
     @name_scope('predict')
     @params_as_tensors
@@ -209,8 +209,9 @@ class HGPR(GPModel):
         return log_marginal_likelihood, post_mean
 
 class AverageModel(object):
-    def __init__(self, models: List[HGPR]):
+    def __init__(self, models: List[HGPR], debug=False):
         self.models = models
+        self.debug = debug
 
     @property
     def models(self):
@@ -230,7 +231,13 @@ class AverageModel(object):
         opt = ScipyOptimizer()
         for model in self.models:
             logging.info("Optimising model: {}".format(model.name))
-            opt.minimize(model)
+            try:
+                opt.minimize(model)
+            except:
+                print(model)
+                print(model.X.value)
+                print(model.Y.value)
+                raise ValueError("Failure")
             logging.info(model.kern)
 
     def predict_f(self, X, only_mean=True):
@@ -252,6 +259,7 @@ class AverageModel(object):
                 post_vars.append(post_var)
             post_means.append(post_mean)
             log_marginal_likelihoods.append(log_marginal_likelihood)
+
         # num_models, batch_size, (T)
         log_marginal_likelihoods = np.stack(log_marginal_likelihoods, axis=0)
         # batch_size
