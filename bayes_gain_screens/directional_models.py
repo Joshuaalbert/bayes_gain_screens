@@ -8,6 +8,7 @@ from gpflow import defer_build
 import numpy as np
 from .model import HGPR
 from gpflow.kernels import Matern52, Matern32, Matern12, RBF, ArcCosine, Kernel
+from . import logging
 
 float_type = settings.float_type
 
@@ -265,7 +266,8 @@ class DirectionalKernel(Kernel):
 
 
 
-def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iterations=10, anisotropic=False):
+def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iterations=10, anisotropic=False, include_vec_kernels = False):
+    logging.info("Generating directional GP models.")
     amplitude = None
     if len(Y.shape) == 3:
         amplitude = np.ones(Y.shape[1])
@@ -287,21 +289,23 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
                                          inner_kernel=d,
                                          amplitude=amplitude,
                                          obs_type='DDTEC'))
-    dir_kernels = [  # gpflow_kernel('Piecewise', q_order=0, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('Piecewise', q_order=1, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('Piecewise', q_order=2, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('Piecewise', q_order=3, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('ArcCosineEQ', dims=3, amplitude=10., length_scale=0.01),
-        gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)]
 
-    for d in dir_kernels:
-        kernels.append(VectorAmplitudeWrapper(
-                                         inner_kernel=d,
-                                         amplitude=amplitude))
+    if include_vec_kernels:
+        dir_kernels = [  # gpflow_kernel('Piecewise', q_order=0, dims=3, amplitude=10., length_scale=0.01),
+            # gpflow_kernel('Piecewise', q_order=1, dims=3, amplitude=10., length_scale=0.01),
+            # gpflow_kernel('Piecewise', q_order=2, dims=3, amplitude=10., length_scale=0.01),
+            # gpflow_kernel('Piecewise', q_order=3, dims=3, amplitude=10., length_scale=0.01),
+            # gpflow_kernel('ArcCosineEQ', dims=3, amplitude=10., length_scale=0.01),
+            gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.01),
+            gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.01),
+            gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.01),
+            gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.01),
+            gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)]
+
+        for d in dir_kernels:
+            kernels.append(VectorAmplitudeWrapper(
+                                             inner_kernel=d,
+                                             amplitude=amplitude))
 
     models = [HGPR(X, Y, Y_var, kern, regularisation_param=reg_param, parallel_iterations=parallel_iterations,
                    name="HGPR_{}".format(kern.name))
