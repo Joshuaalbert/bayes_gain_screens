@@ -15,21 +15,29 @@ from . import deprecated
 
 def _load_array_file(array_file):
     '''Loads a csv where each row is x,y,z in geocentric ITRS coords of the antennas'''
-
     try:
-        types = np.dtype({'names': ['X', 'Y', 'Z', 'diameter', 'station_label'],
-                          'formats': [np.double, np.double, np.double, np.double, 'S16']})
+        types = np.dtype({'names': ['station','X_ITRS', 'Y_ITRS', 'Z_ITRS'],
+                          'formats': ['S16', np.double, np.double, np.double, np.double]})
         d = np.genfromtxt(array_file, comments='#', dtype=types)
-        diameters = d['diameter']
-        labels = np.array(d['station_label'].astype(str))
-        locs = ac.SkyCoord(x=d['X'] * au.m, y=d['Y'] * au.m, z=d['Z'] * au.m, frame='itrs')
-        Nantenna = int(np.size(d['X']))
-    except:
-        d = np.genfromtxt(array_file, comments='#', usecols=(0, 1, 2))
-        locs = ac.SkyCoord(x=d[:, 0] * au.m, y=d[:, 1] * au.m, z=d[:, 2] * au.m, frame='itrs')
-        Nantenna = d.shape[0]
-        labels = np.array([b"ant{:02d}".format(i) for i in range(Nantenna)])
+        labels = np.array(d['station'].astype(str))
+        locs = ac.SkyCoord(x=d['X_ITRS'] * au.m, y=d['Y_ITRS'] * au.m, z=d['Z_ITRS'] * au.m, frame='itrs')
+        Nantenna = int(np.size(d['X_ITRS']))
         diameters = None
+    except:
+        try:
+            types = np.dtype({'names': ['X', 'Y', 'Z', 'diameter', 'station_label'],
+                              'formats': [np.double, np.double, np.double, np.double, 'S16']})
+            d = np.genfromtxt(array_file, comments='#', dtype=types)
+            diameters = d['diameter']
+            labels = np.array(d['station_label'].astype(str))
+            locs = ac.SkyCoord(x=d['X'] * au.m, y=d['Y'] * au.m, z=d['Z'] * au.m, frame='itrs')
+            Nantenna = int(np.size(d['X']))
+        except:
+            d = np.genfromtxt(array_file, comments='#', usecols=(0, 1, 2))
+            locs = ac.SkyCoord(x=d[:, 0] * au.m, y=d[:, 1] * au.m, z=d[:, 2] * au.m, frame='itrs')
+            Nantenna = d.shape[0]
+            labels = np.array(["ant{:02d}".format(i) for i in range(Nantenna)])
+            diameters = None
     return np.array(labels).astype(np.str_), locs.cartesian.xyz.to(au.m).value.transpose()
 
 
@@ -97,7 +105,8 @@ def update_h5parm(old_h5parm, new_h5parm):
 class DataPack(object):
     # _H: tb.File
     _arrays = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
-    lofar_array = os.path.join(_arrays, 'arrays/lofar.hba.antenna.cfg')
+    lofar_array = os.path.join(_arrays, 'arrays/lofar.antenna.cfg')
+    lofar_array_hba = os.path.join(_arrays, 'arrays/lofar.hba.antenna.cfg')
     lofar_cycle0_array = os.path.join(_arrays, 'arrays/lofar.cycle0.hba.antenna.cfg')
     gmrt_array = os.path.join(_arrays, 'arrays/gmrtPos.csv')
 
