@@ -344,7 +344,7 @@ class TomographicKernel(Kernel):
 ###
 # %
 
-def generate_models(X, Y, Y_var, ref_direction, ref_location, reg_param=1., parallel_iterations=10):
+def generate_models(X, Y, Y_var, ref_direction, ref_location, reg_param=1., parallel_iterations=10, **kwargs):
     fed_settings = [('RBF', dict(variance=1., lengthscales=10.)),
                     ('M52', dict(variance=1., lengthscales=10.)),
                     ('M32', dict(variance=1., lengthscales=10.)),

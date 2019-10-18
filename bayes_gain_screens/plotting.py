@@ -1,5 +1,5 @@
 import matplotlib
-
+from matplotlib.colorbar import ColorbarBase
 # matplotlib.use('Agg')
 import numpy as np
 import os
@@ -34,7 +34,7 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
         cmap = phase_cmap
 
     if norm is None:
-        norm = plt.Normalize(colors.min() if vmin is not None else vmin, colors.max() if vmax is not None else vmax)
+        norm = plt.Normalize(np.nanmin(colors) if vmin is not None else vmin, np.nanmax(colors) if vmax is not None else vmax)
 
     def voronoi_finite_polygons_2d(vor, radius=radius):
         """
@@ -184,8 +184,8 @@ class DatapackPlotter(object):
             logging.info("Making new plot")
         if values is None:
             values = np.zeros(len(patches))  # random.uniform(size=len(patches))
-        p = PatchCollection(patches, cmap=cmap)
-        p.set_array(values)
+        p = PatchCollection(patches)
+        # p.set_array(values)
         ax.add_collection(p)
         # plt.colorbar(p)
         if overlay_points is not None:
@@ -259,8 +259,9 @@ class DatapackPlotter(object):
 
     def plot(self, ant_sel=None, time_sel=None, freq_sel=None, dir_sel=None, pol_sel=None, fignames=None, vmin=None,
              vmax=None, mode='perantenna', observable='phase', phase_wrap=True, log_scale=False, plot_crosses=True,
-             plot_facet_idx=False, plot_patchnames=False, labels_in_radec=False, show=False, plot_arrays=False,
-             solset=None, plot_screen=False, tec_eval_freq=None, per_plot_scale=False, mean_residual=False, **kwargs):
+             plot_facet_idx=False, plot_patchnames=False, labels_in_radec=False, plot_arrays=False,
+             solset=None, plot_screen=False, tec_eval_freq=None, per_plot_scale=False, mean_residual=False, cmap=None,
+             flag_outliers=False, **kwargs):
         """
 
         :param ant_sel:
@@ -294,16 +295,13 @@ class DatapackPlotter(object):
             show = True
         else:
             save_fig = True
-            show = show and True  # False
 
         if plot_patchnames:
             plot_facet_idx = False
         if plot_patchnames or plot_facet_idx:
             plot_crosses = False
 
-        if not show:
-            logging.debug('turning off display')
-            matplotlib.use('Agg')
+        matplotlib.use('Agg')
 
         ###
         # Set up plotting
@@ -320,13 +318,21 @@ class DatapackPlotter(object):
 
             self.datapack.select(ant=ant_sel, time=time_sel, freq=freq_sel, dir=dir_sel, pol=pol_sel)
             obs, axes = self.datapack.__getattr__(observable)
+            flags = np.zeros_like(obs, dtype=np.bool)
             if observable.startswith('weights_'):
                 # obs = np.sqrt(np.abs(1. / obs))  # uncert from weights = 1/var
                 # obs = np.sqrt(obs)  # uncert from weights = 1/var
                 phase_wrap = False
+            if flag_outliers:
+                weights, _ = self.datapack.__getattr__("weights_"+observable)
+                logging.info("Flagging observables based on inf uncertanties:")
+                flags = weights==np.inf
+                obs[flags] = np.nan
+
             if 'pol' in axes.keys():
                 # plot only first pol selected
                 obs = obs[0, ...]
+                flags = flags[0, ...]
 
             # obs is dir, ant, freq, time
             antenna_labels, antennas = self.datapack.get_antennas(axes['ant'])
@@ -339,6 +345,7 @@ class DatapackPlotter(object):
             except:
                 freq_dep = False
                 obs = obs[:, :, None, :]
+                flags = flags[:, :, None, :]
                 freq_labels, freqs = [""], [None]
 
             if tec_eval_freq is not None:
@@ -347,17 +354,20 @@ class DatapackPlotter(object):
                 if observable.startswith('weights_'):
                     obs = np.abs(obs)
 
-            if phase_wrap:
-                obs = np.angle(np.exp(1j * obs))
-                vmin = -np.pi
-                vmax = np.pi
-                cmap = phase_cmap
-            else:
-                vmin = vmin or np.percentile(obs.flatten(), 1)
-                vmax = vmax or np.percentile(obs.flatten(), 99)
-                cmap = plt.cm.bone
             if log_scale:
                 obs = np.log10(obs)
+
+            if phase_wrap:
+                obs = np.arctan2(np.sin(obs), np.cos(obs))
+                vmin = -np.pi
+                vmax = np.pi
+                cmap = phase_cmap if cmap is None else cmap
+            else:
+                vmin = vmin or np.nanmin(obs)
+                vmax = vmax or np.nanmax(obs)
+                cmap = plt.cm.bone if cmap is None else cmap
+
+            norm = plt.Normalize(vmin, vmax)
 
             Na = len(antennas)
             Nt = len(times)
@@ -369,7 +379,6 @@ class DatapackPlotter(object):
             logging.info("Plotting {} timestamps".format(Nt))
 
             _, antennas_ = self.datapack.get_antennas([self.datapack.ref_ant])
-            # ants_uvw = antennas.transform_to(uvw)
 
             ref_dist = np.sqrt(
                 (antennas.x - antennas_.x) ** 2 + (antennas.y - antennas_.y) ** 2 + (antennas.z - antennas_.z) ** 2).to(
@@ -453,37 +462,44 @@ class DatapackPlotter(object):
                                                          annotations=annotations,
                                                          title="{} {:.1f}km".format(title, ref_dist[c]),
                                                          reverse_x=labels_in_radec)
-                    p.set_clim(vmin, vmax)
                     axes_patches.append(p)
                     c += 1
+
             if not per_plot_scale:
                 fig.subplots_adjust(right=0.85)
                 cbar_ax = fig.add_axes([0.875, 0.15, 0.025, 0.7])
-                fig.colorbar(p, cax=cbar_ax, orientation='vertical')
-            if show:
-                plt.ion()
-                plt.show()
+                cb = ColorbarBase(cbar_ax, cmap=cmap,
+                                  norm=norm, orientation='vertical')
+
             for j in range(Nt):
                 logging.info("Plotting {}".format(timestamps[j]))
                 for i in range(Na):
                     if not plot_screen:
-                        axes_patches[i].set_array(obs[:, i, fixfreq, j])
-                        if per_plot_scale:
-                            axes_patches[i].set_clim(obs[:, i, fixfreq, j].min(), obs[:, i, fixfreq, j].max())
+                        datum = obs[:, i, fixfreq, j]
+                        flagum = flags[:, i, fixfreq, j]
                     else:
-                        axes_patches[i].set_array(obs[:, :, i, fixfreq, j])
-                        if per_plot_scale:
-                            axes_patches[i].set_clim(obs[:, :, i, fixfreq, j].min(), obs[:, :, i, fixfreq, j].max())
+                        datum = obs[:, :, i, fixfreq, j]
+                        flagum = flags[:, :, i, fixfreq, j]
+                    if per_plot_scale:
+                        vmin = np.nanmin(datum)
+                        vmax = np.nanmax(datum)
+                        norm = plt.Normalize(vmin, vmax)
+                    colors = cmap(norm(datum))
+                    if flag_outliers:
+                        # print(flagum, (colors.shape))
+                        colors[...,0][flagum] = 1.#[1., 0., 0., 1.]
+                        colors[...,1][flagum] = 0.#[1., 0., 0., 1.]
+                        colors[...,2][flagum] = 0.#[1., 0., 0., 1.]
+                        colors[...,3][flagum] = 1.#[1., 0., 0., 1.]
+                    if plot_screen:
+                        axes_patches[i].set_array(colors)
+                    else:
+                        axes_patches[i].set_color(colors)
 
                 axs[0, 0].set_title("{} {} : {}".format(observable, freq_labels[fixfreq], timestamps[j]))
                 fig.canvas.draw()
                 if save_fig:
                     plt.savefig(fignames[j])
-
-            if show:
-                #                plt.close(fig)
-                plt.ioff()
-
 
 def _parallel_plot(arg):
     datapack, time_slice, kwargs, output_folder = arg
@@ -492,7 +508,8 @@ def _parallel_plot(arg):
         dp.datapack.current_solset = kwargs.get('solset','sol000')
         # Get the time selection desired
         dp.datapack.select(time=kwargs.get('time_sel', None))
-        axes = dp.datapack.axes_phase
+        soltabs = dp.datapack.soltabs
+        axes = {k: v for (v, k) in zip(*dp.datapack.soltab_axes(soltabs[0]))}
     # timeslice the selection
     times = axes['time']  # mjs
     sel_list = list(np.arange(len(times))[time_slice])#times[time_slice]

@@ -18,7 +18,7 @@ def _load_array_file(array_file):
     try:
         types = np.dtype({'names': ['station','X_ITRS', 'Y_ITRS', 'Z_ITRS'],
                           'formats': ['S16', np.double, np.double, np.double, np.double]})
-        d = np.genfromtxt(array_file, comments='#', dtype=types)
+        d = np.genfromtxt(array_file, comments='#', delimiter=',', dtype=types)
         labels = np.array(d['station'].astype(str))
         locs = ac.SkyCoord(x=d['X_ITRS'] * au.m, y=d['Y_ITRS'] * au.m, z=d['Z_ITRS'] * au.m, frame='itrs')
         Nantenna = int(np.size(d['X_ITRS']))
@@ -125,6 +125,8 @@ class DataPack(object):
                            'ant':(np.str_,tb.StringAtom(16)),
                            'freq':(np.float64,tb.Float64Atom()),
                            'time':(np.float64,tb.Float64Atom())}
+        if len(self.solsets) > 0:
+            self.current_solset = self.solsets[0]
 
     @property
     def axes_order(self):
@@ -176,6 +178,7 @@ class DataPack(object):
         if solset not in self.solsets:
             raise ValueError("Solset {} does not exist.".format(solset))
         self._current_solset = solset
+        logging.info("Set current solset to: {}".format(self._current_solset))
 
     @property
     def solsets(self):
@@ -191,7 +194,7 @@ class DataPack(object):
             return [k for k, v in solset_group._v_groups.items()]
 
 
-    @deprecated("Use add_solset")
+    @deprecated("Use current_solset and add_solset")
     def switch_solset(self,solset, antenna_labels=None, antennas=None, array_file=None, directions=None,
                       patch_names=None):
         self.add_solset(solset, antenna_labels, antennas, array_file, directions,

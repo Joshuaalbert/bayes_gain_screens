@@ -1,3 +1,5 @@
+import os
+os.environ['OMP_NUM_THREADS'] = "1"
 import numpy as np
 from scipy.interpolate import Rbf
 from scipy.ndimage import median_filter
@@ -72,7 +74,7 @@ def filter_log_amplitude_dir_freq(y, directions, freqs, **kwargs):
     return final_flags
 
 
-def filter_tec_dir(y,  directions, init_y_uncert=None, **kwargs):
+def filter_tec_dir(y,  directions, init_y_uncert=None, maxiter=46,  **kwargs):
     """
     Uses temporal and spatial smoothing.
 
@@ -90,30 +92,25 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, **kwargs):
         init_y_uncert = 1.*np.ones_like(y)
     # Nd, 2
     X = directions
+    X -= np.mean(X, axis=0)
+    X /= np.std(X, axis=0)
     final_flags = np.zeros_like(y)
     x_list0 = list(X.T)
     Nd, Na, Nt = y.shape
+    smooths = np.linspace(0.2, 0.3, maxiter)[::-1]
     for t in range(Nt):
         for a in range(Na):
-            svm = Rbf(*x_list0, y[:, a, t], smooth=0.2, **kwargs)
-            y_star = svm(*x_list0)
-            dy = np.abs(y_star - y[:, a, t])
-            # print(np.median(dy), np.percentile(dy, 99))
-            keep = dy < 55.
-            # print(np.interp(55., np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
-            svm = Rbf(*list(X[keep, :].T), y[keep, a, t], smooth=0.1, **kwargs)
-            y_star = svm(*x_list0)
-            dy = np.abs(y_star - y[:, a, t])
-            # print(np.median(dy), np.percentile(dy, 95))
-            keep = dy < 15.
-            # print(np.interp(20., np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
-
-            svm = Rbf(*list(X[keep, :].T), y[keep, a, t], smooth=0.05, **kwargs)
-            y_star = svm(*x_list0)
-            dy = np.abs(y_star - y[:, a, t])
-            # print(np.median(dy), np.percentile(dy, 94))
-            keep = dy < 10.
-            # print(np.interp(15., np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
+            keep = np.ones(Nd, dtype=np.bool)
+            for i in range(maxiter):
+                svm = Rbf(*list(X[keep, :].T), y[keep, a, t], smooth=smooths[i], **kwargs)
+                y_star = svm(*x_list0)
+                dy = np.abs(y_star - y[:, a, t])
+                # print(np.median(dy), np.percentile(dy, 95))
+                max_dy = np.max(dy[keep])
+                if max_dy < 8.:
+                    break
+                print(max_dy)
+                keep = dy < max_dy
 
             final_flags[:, a, t] = ~keep
             # print('CONF', np.interp(dy[~keep], np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
@@ -121,6 +118,60 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, **kwargs):
             if keep.sum() < Nd:
                 #9, 39, 29, 37, 11, 13
                 print(t, a, np.where(final_flags[:, a, t]), 'from', Nd)
+
+    init_y_uncert[np.where(final_flags)] = np.inf
+    return init_y_uncert, final_flags
+
+def filter_tec_dir_time(y,  directions, init_y_uncert=None, maxiter=46, block_size=2,  **kwargs):
+    """
+    Uses temporal and spatial smoothing.
+
+    :param y: np.array
+        [Nd, Na, Nt]
+    :param y_uncert_prior: np.array
+        [Nd, Na, Nt]
+    :param directions: np.array
+        [Nd, 2]
+    :return: np.array
+        flags (1 if outlier else 0)
+        [Nd, Na, Nt]
+    """
+    if init_y_uncert is None:
+        init_y_uncert = 1.*np.ones_like(y)
+    if y.shape[-1] % block_size != 0:
+        raise ValueError("block_size doesn't divide timesteps evenly.")
+    # Nd*block_size, 3
+    X = make_coord_array(directions, np.arange(block_size)[:, None], flat=True)
+    X -= np.mean(X, axis=0)
+    X /= np.std(X, axis=0)
+    final_flags = np.zeros_like(y)
+    x_list0 = list(X.T)
+    Nd, Na, Nt = y.shape
+
+    maxiter=Nd*block_size
+    smooths = np.linspace(0.2, 0.3, maxiter)[::-1]
+    for t in range(0, Nt, block_size):
+        for a in range(Na):
+            keep = np.ones(Nd*block_size, dtype=np.bool)
+            for i in range(maxiter):
+                y_block = y[:, a, t:t+block_size].reshape((-1,))
+                # print(t, y_block.shape, X.shape)
+                svm = Rbf(*list(X[keep, :].T), y_block[keep], smooth=smooths[i], **kwargs)
+                y_star = svm(*x_list0)
+                dy = np.abs(y_star - y_block)
+                # print(np.median(dy), np.percentile(dy, 95))
+                max_dy = np.max(dy[keep])
+                if max_dy < 10.:
+                    break
+                # print(i, max_dy)
+                keep = dy < max_dy
+
+            final_flags[:, a, t:t+block_size] = ~keep.reshape((Nd, block_size))
+            # print('CONF', np.interp(dy[~keep], np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
+
+            if keep.sum() < Nd*block_size:
+                #9, 39, 29, 37, 11, 13
+                print(t, a, np.where(final_flags[:, a, t:t+block_size]), 'from', Nd*block_size)
 
     init_y_uncert[np.where(final_flags)] = np.inf
     return init_y_uncert, final_flags
@@ -135,12 +186,13 @@ if __name__ == '__main__':
     tec_uncert, _ = dp.weights_tec
     _, directions = dp.get_directions(axes['dir'])
     # _, freqs = dp.get_freqs(axes['freq'])
-    directions = np.stack([directions.ra.deg, directions.dec.deg],axis=1)
-    tec_uncert, flags = filter_tec_dir(tec[0,...], directions, init_y_uncert=tec_uncert[0,...], function='multiquadric')
-    flags[45,...] = 1.
-    tec_uncert[45, ...] = np.inf
+    directions = np.stack([directions.ra.rad*np.cos(directions.dec.rad), directions.dec.rad],axis=1)
+    tec_uncert, flags = filter_tec_dir_time(tec[0,...], directions, init_y_uncert=tec_uncert[0,...], block_size=8, function='multiquadric')
+    # flags[45,...] = 1.
+    # tec_uncert[45, ...] = np.inf
     dp.current_solset = 'smoothed000'
     dp.select(**select)
+    dp.tec = tec
     dp.weights_tec = tec_uncert[None,...]
 
     # dp.current_solset = 'sol000'

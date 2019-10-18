@@ -403,8 +403,8 @@ def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_
             continue
 
     f = data[flux_key][idx]
-    ra = data['RA'][idx]
-    dec = data['DEC'][idx]
+    ra = data['RA'][idx]*np.pi/180.
+    dec = data['DEC'][idx]*np.pi/180.
     c = data['S_code'][idx]
 
     if seed_directions is not None:

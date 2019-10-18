@@ -234,11 +234,14 @@ class AverageModel(object):
             try:
                 opt.minimize(model)
             except:
-                print(model)
+                print((model.read_trainables()))
                 print(model.X.value)
                 print(model.Y.value)
                 raise ValueError("Failure")
-            logging.info(model.kern)
+            with np.printoptions(precision=2):
+                logging.info("Learned model:\n{}".format(
+                    "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
+
 
     def predict_f(self, X, only_mean=True):
         """
@@ -262,11 +265,20 @@ class AverageModel(object):
 
         # num_models, batch_size, (T)
         log_marginal_likelihoods = np.stack(log_marginal_likelihoods, axis=0)
+        with np.printoptions(precision=2):
+            logging.info("Model log marginal likelihoods:")
+            if len(log_marginal_likelihoods.shape) == 3:
+                for m, l in zip(self.models, log_marginal_likelihoods.sum(-1).sum(-1)):
+                    logging.info("\t{} -> {:.2f}".format(m.name, l))
+            else:
+                for m, l in zip(self.models, log_marginal_likelihoods.sum(-1)):
+                    logging.info("\t{} -> {:.2f}".format(m.name, l))
         # batch_size
         # num_models, batch_size, N
         post_means = np.stack(post_means, axis = 0)
         # num_models, batch_size, (T)
         weights = np.exp(log_marginal_likelihoods - logsumexp(log_marginal_likelihoods, axis=0))
+
         # batch_size, (T),  N
         post_mean = np.sum(weights[..., None]*post_means, axis=0)
         if not only_mean:

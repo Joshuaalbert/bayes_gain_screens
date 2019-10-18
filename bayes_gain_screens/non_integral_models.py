@@ -119,7 +119,7 @@ class NonIntegralKernel(Kernel):
             return (Ka00 + Ka01 + Ka10 + Ka11)*(Kd00 + Kd01 + Kd10 + Kd11)
 
 
-def generate_models(X, Y, Y_var, ref_direction, ref_location, reg_param = 1., parallel_iterations=10):
+def generate_models(X, Y, Y_var, ref_direction, ref_location, reg_param = 1., parallel_iterations=10, **kwargs):
     dir_settings = [('RBF', dict(variance=10**2, lengthscales=0.01)),
                     ('M52', dict(variance=10**2, lengthscales=0.01)),
                     ('M32', dict(variance=10**2, lengthscales=0.01)),
