@@ -8,6 +8,7 @@ from gpflow import defer_build
 import numpy as np
 from .model import HGPR
 from gpflow.kernels import Matern52, Matern32, Matern12, RBF, ArcCosine, Kernel
+from . import logging
 
 float_type = settings.float_type
 
@@ -26,6 +27,112 @@ def safe_acos_squared(x):
             return g * dy
 
     return result, grad
+
+
+class GreatCircleRBF(Kernel):
+    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+        super().__init__(input_dim, active_dims, name=name)
+        self.variance = Parameter(variance,
+                                   transform=transforms.positiveRescale(variance),
+                                   dtype=settings.float_type)
+
+        self.lengthscales = Parameter(lengthscales,
+                                      transform=transforms.positiveRescale(lengthscales),
+                                      dtype=settings.float_type)
+        levi_civita = np.zeros((3,3,3))
+        for a1 in range(3):
+            for a2 in range(3):
+                for a3 in range(3):
+                    levi_civita[a1,a2,a3] = np.sign(a2 - a1) * np.sign(a3-a1) * np.sign(a3 - a2)
+
+        self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @params_as_tensors
+    def greater_circle(self, a, b):
+        """
+        Greater circle with broadcast
+        :param a: [N,3]
+        :param b: [M, 3]
+        :return: [N, M]
+        """
+        #aj,ijk -> aik
+        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1],[1]])
+        #aik, bk -> aib
+        cross = tf.linalg.tensordot(A, b, axes=[[2],[1]])
+        #aib -> ab
+        cross_mag = tf.linalg.norm(cross,axis=1)
+        #ab
+        dot_prod = tf.linalg.tensordot(a,b, axes=[[1], [1]])
+        return tf.math.atan2(cross_mag, dot_prod)
+
+    @params_as_tensors
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.shape(X)[:-1], self.variance)
+
+    @params_as_tensors
+    def K(self, X1, X2=None, presliced=False):
+        if not presliced:
+            X1, X2 = self._slice(X1, X2)
+        if X2 is None:
+            X2 = X1
+        dist = self.greater_circle(X1, X2)/self.lengthscales
+        log_res = tf.math.log(self.variance) - 0.5*tf.math.square(dist)
+        return tf.math.exp(log_res)
+
+class GreatCircleRQ(Kernel):
+    def __init__(self, input_dim, variance, lengthscales, alpha=10., active_dims=None, name=None):
+        super().__init__(input_dim, active_dims, name=name)
+        self.variance = Parameter(variance,
+                                   transform=transforms.positiveRescale(variance),
+                                   dtype=settings.float_type)
+
+        self.lengthscales = Parameter(lengthscales,
+                                      transform=transforms.positiveRescale(lengthscales),
+                                      dtype=settings.float_type)
+        self.alpha = Parameter(alpha,
+                                      transform=transforms.positiveRescale(alpha),
+                                      dtype=settings.float_type)
+
+        levi_civita = np.zeros((3,3,3))
+        for a1 in range(3):
+            for a2 in range(3):
+                for a3 in range(3):
+                    levi_civita[a1,a2,a3] = np.sign(a2 - a1) * np.sign(a3-a1) * np.sign(a3 - a2)
+
+        self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @params_as_tensors
+    def greater_circle(self, a, b):
+        """
+        Greater circle with broadcast
+        :param a: [N,3]
+        :param b: [M, 3]
+        :return: [N, M]
+        """
+        #aj,ijk -> aik
+        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1],[1]])
+        #aik, bk -> aib
+        cross = tf.linalg.tensordot(A, b, axes=[[2],[1]])
+        #aib -> ab
+        cross_mag = tf.linalg.norm(cross,axis=1)
+        #ab
+        dot_prod = tf.linalg.tensordot(a,b, axes=[[1], [1]])
+        return tf.math.atan2(cross_mag, dot_prod)
+
+    @params_as_tensors
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.shape(X)[:-1], self.variance)
+
+    @params_as_tensors
+    def K(self, X1, X2=None, presliced=False):
+        if not presliced:
+            X1, X2 = self._slice(X1, X2)
+        if X2 is None:
+            X2 = X1
+        dist = tf.math.square(self.greater_circle(X1, X2)/self.lengthscales)
+        log_res = tf.math.log(self.variance) - self.alpha*tf.math.log(1. + dist/(2.*self.alpha))
+        return tf.math.exp(log_res)
+
 
 
 class ArcCosineEQ(Kernel):
@@ -157,7 +264,7 @@ class Piecewise(Kernel):
 def gpflow_kernel(kernel, dims=3, **kwargs):
     kern_map = dict(RBF=RBF, M32=Matern32, M52=Matern52, M12=Matern12,
                     ArcCosine=ArcCosine, ArcCosineEQ=ArcCosineEQ,
-                    Piecewise=Piecewise)
+                    Piecewise=Piecewise, GreatCircleRBF=GreatCircleRBF, GreatCircleRQ=GreatCircleRQ)
     kern = kern_map.get(kernel, None)
     if kern is None:
         raise ValueError("{} not valid kernel".format(kernel))
@@ -265,20 +372,20 @@ class DirectionalKernel(Kernel):
 
 
 
-def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iterations=10, anisotropic=False):
+def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iterations=10, anisotropic=False, use_vec_kernels = False, **kwargs):
+    logging.info("Generating directional GP models.")
     amplitude = None
     if len(Y.shape) == 3:
         amplitude = np.ones(Y.shape[1])
-    dir_kernels = [  #gpflow_kernel('Piecewise', q_order=0, dims=3, amplitude=10., length_scale=0.01),
-                     # gpflow_kernel('Piecewise', q_order=1, dims=3, amplitude=10., length_scale=0.01),
-                     # gpflow_kernel('Piecewise', q_order=2, dims=3, amplitude=10., length_scale=0.01),
-                     # gpflow_kernel('Piecewise', q_order=3, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('ArcCosineEQ', dims=3, amplitude=10., length_scale=0.01),
-        gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)]
+    dir_kernels = [
+            gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.02),
+            gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.05),
+            gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.1),
+            gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.2),
+            gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2),
+            gpflow_kernel('GreatCircleRBF', dims=3, variance=10.**2, lengthscales=0.02),
+            gpflow_kernel('GreatCircleRQ', dims=3, variance=10.**2, lengthscales=0.02, alpha=10.)]
+
 
     kernels = []
     for d in dir_kernels:
@@ -287,25 +394,28 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
                                          inner_kernel=d,
                                          amplitude=amplitude,
                                          obs_type='DDTEC'))
-    dir_kernels = [  # gpflow_kernel('Piecewise', q_order=0, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('Piecewise', q_order=1, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('Piecewise', q_order=2, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('Piecewise', q_order=3, dims=3, amplitude=10., length_scale=0.01),
-        # gpflow_kernel('ArcCosineEQ', dims=3, amplitude=10., length_scale=0.01),
-        gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.01),
-        gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)]
 
-    for d in dir_kernels:
-        kernels.append(VectorAmplitudeWrapper(
-                                         inner_kernel=d,
-                                         amplitude=amplitude))
+    if use_vec_kernels:
+        dir_kernels = [
+            gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.02),
+            gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.05),
+            gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.1),
+            gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.2),
+            gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2),
+            gpflow_kernel('GreatCircleRBF', dims=3, variance=10.**2, lengthscales=0.02),
+            gpflow_kernel('GreatCircleRQ', dims=3, variance=10.**2, lengthscales=0.02, alpha=10.)]
+
+
+        for d in dir_kernels:
+            kernels.append(VectorAmplitudeWrapper(
+                                             inner_kernel=d,
+                                             amplitude=amplitude))
+
 
     models = [HGPR(X, Y, Y_var, kern, regularisation_param=reg_param, parallel_iterations=parallel_iterations,
                    name="HGPR_{}".format(kern.name))
               for kern in kernels]
+
 
     return models
 

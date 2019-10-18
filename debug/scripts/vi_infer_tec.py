@@ -1,28 +1,67 @@
+import os
+
+os.environ['OMP_NUM_THREADS'] = "1"
 import numpy as np
 import pylab as plt
 from matplotlib.mlab import griddata
-import os
 from scipy.optimize import brute, fmin
 from scipy.ndimage import median_filter
-from scipy.stats import circstd
+from scipy.special import k0, k0e
+from scipy.interpolate import Rbf
 from scipy.linalg import solve_triangular
 from bayes_gain_screens import logging
 from bayes_gain_screens.datapack import DataPack, update_h5parm
-from bayes_gain_screens.misc import make_soltab
+from bayes_gain_screens.misc import make_soltab, make_coord_array
 from dask.multiprocessing import get
 from collections import deque
 from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
-
 
 """
 This script is still being debugged/tested. 
 Get's TEC from gains.
 """
 
+MIN_UNCERT = 1e-3
 
 def wrap(p):
     return np.arctan2(np.sin(p), np.cos(p))
+
+
+def log_k0(x):
+    """
+    ke0(x) = exp(x) k0(x)
+    log(k0(x)) = log(k0e(x)) - x
+    :param x:
+    :return:
+    """
+    # if np.any(np.where(k0e(x) < 1e-10)):
+    #     print(np.where(k0e(x) < 1e-10))
+    return np.log(k0e(x)) - x
+
+
+def log_laplace_pdf(x, y, b1, b2, rho):
+    # S, Nf
+    x = x / b1
+    y = y / b2
+
+    log_prob = log_k0(np.sqrt(2. * (x ** 2 - 2. * rho * x * y + y ** 2) / (1. - rho ** 2)))
+    # if ~np.all(np.isfinite(log_prob)):
+    #     raise ValueError("Invalid log_prob {} x {} y {} laplace {} {} {}".format(log_prob, x, y, b1, b2, rho))
+    log_prob += -np.log(np.pi * b1 * b2 * np.sqrt(1. - rho ** 2))
+    # if ~np.all(np.isfinite(log_prob)):
+    #     raise ValueError("Invalid log_prob {} laplace {} {} {}".format(log_prob, b1, b2, rho))
+
+    return log_prob
+
+
+def log_laplace_uncorr_pdf(x, y, b):
+    x = x / b
+    y = y / b
+    log_prob = np.log(k0(np.sqrt(2. * (x ** 2 + y ** 2))))
+    log_prob += -np.log(np.pi * b ** 2)
+    return log_prob
+
 
 class SolveLoss(object):
     """
@@ -55,10 +94,15 @@ class SolveLoss(object):
         The return of the func is a scalar loss to be minimised.
     """
 
-    def __init__(self, Yreal, Yimag, freqs, scale_real=None, scale_imag=None, tec_mean_prior=0., tec_uncert_prior=100.,
-                 S=20, L=None):
+    def __init__(self, Yreal, Yimag, freqs, tec_mean_prior=0., tec_uncert_prior=100.,
+                 const_mean_prior=0., const_uncert_prior=100.,
+                 S=40, laplace_b=None):
         self.x, self.w = np.polynomial.hermite.hermgauss(S)
+        self.x_tec = self.x
+        self.x_const = self.x
         self.w /= np.pi
+        self.w_tec = self.w
+        self.w_const = self.w
 
         self.tec_conv = -8.4479745e6 / freqs
         # Nf
@@ -66,32 +110,24 @@ class SolveLoss(object):
         self.Yreal = Yreal
         self.Yimag = Yimag
 
-
         self.phase = wrap(np.arctan2(Yimag, Yreal))
-
-        self.scale_real = scale_real
-        self.scale_imag = scale_imag
 
         self.tec_mean_prior = tec_mean_prior
         self.tec_uncert_prior = tec_uncert_prior
+        self.const_mean_prior = const_mean_prior
+        self.const_uncert_prior = const_uncert_prior
 
-        self.phase_model = lambda params: self.tec_conv * params[0]
-        self.loss_func = self._tec_only_loss_func
-        self.L = L
+        self.phase_model = lambda params: self.tec_conv * params[0] + params[2]
+        self.loss_func = self._tec_only_loss_func_corr
+        self.laplace_b = laplace_b
 
     def calculate_residuals(self, params):
         phase = self.phase_model(params)
         Yreal_m = self.amp * np.cos(phase)
         Yimag_m = self.amp * np.sin(phase)
-        res_real = np.abs(self.Yreal - Yreal_m)
-        res_imag = np.abs(self.Yimag - Yimag_m)
+        res_real = (self.Yreal - Yreal_m)
+        res_imag = (self.Yimag - Yimag_m)
         return res_real, res_imag
-
-    def calculate_dist_params(self, params):
-        res_real, res_imag = self.calculate_residuals(params)
-        scale_real = np.median(res_real)
-        scale_imag = np.median(res_imag)
-        return scale_real, scale_imag
 
     def _scalar_KL(self, mean, uncert, mean_prior, uncert_prior):
         # Get KL
@@ -105,29 +141,7 @@ class SolveLoss(object):
         prior_KL = 0.5 * twoKL
         return prior_KL
 
-    def _scalar_KL_singular(self, mean, mean_prior, uncert_prior):
-        # Get KL
-        log_norm = -0.5*np.log(2*np.pi) - np.log(uncert_prior) - 0.5*(mean-mean_prior)**2/uncert_prior**2
-        return -log_norm
-
-    def _least_sqaures_loss_func_phase(self, params, weights=None):
-        """
-        least squares loss
-
-        :param params: [3]
-        :param weights: [Nf]
-        :return: [Nf]
-        """
-        #  Nf
-        phase = self.phase_model(params)
-        res = wrap(wrap(phase) - self.phase)
-
-        if weights is not None:
-            return res*weights
-        else:
-            return res
-
-    def _tec_only_loss_func(self, params, weights):
+    def _tec_only_loss_func_corr(self, params):
         """
         VI loss
         :param params: tf.Tensor
@@ -135,48 +149,48 @@ class SolveLoss(object):
         :return: tf.Tensor
             scalar The loss
         """
-        tec_mean, log_tec_uncert = params[0], params[1]
+        tec_mean, log_tec_uncert, const_mean, log_const_uncert = params[0], params[1], params[2]
 
-        tec_uncert = np.exp(log_tec_uncert)
+        tec_uncert = MIN_UNCERT + np.exp(log_tec_uncert)
+        const_uncert = MIN_UNCERT + np.exp(log_const_uncert)
 
-        weights = weights * weights.size / np.sum(weights)
-
-        # S
-        tec = tec_mean + np.sqrt(2.) * tec_uncert * self.x
-        # S, Nf
-        phase = tec[:, None] * self.tec_conv
+        # S_tec
+        tec = tec_mean + np.sqrt(2.) * tec_uncert * self.x_tec
+        # S_const
+        const = const_mean + np.sqrt(2.) * const_uncert * self.x_const
+        # S_tec, S_const, Nf
+        phase = tec[:, None, None] * self.tec_conv + const[:, None]
         Yreal_m = self.amp * np.cos(phase)
         Yimag_m = self.amp * np.sin(phase)
 
-        # 2, S*Nf
-        res = np.reshape(np.stack([Yreal_m - self.Yreal, Yimag_m - self.Yimag], axis=0), (2, self.tec_conv.size*self.w.size))
-        # 2, S, Nf
-        A = np.reshape(solve_triangular(self.L, res), (2, self.w.size, self.tec_conv.size))
-        # S
-        maha = 0.5*np.mean(np.sum(np.square(A), axis=0)*weights,axis=1)
-        # 2
-        log_prob = -np.log(2.*np.pi) - np.log(self.L[0,0]) - np.log(self.L[1,1]) - maha
-        var_exp = np.sum(log_prob * self.w)
+        # S_tec, S_const, Nf
+        log_prob = log_laplace_pdf((Yreal_m - self.Yreal),
+                                   (Yimag_m - self.Yimag),
+                                   self.laplace_b[0, :],
+                                   self.laplace_b[1, :],
+                                   self.laplace_b[2, :])
+        inf_mask = np.isinf(log_prob)
+        #Nf
+        # scale = inf_mask.size/(inf_mask.size - inf_mask.sum(0).sum(0))
+        log_prob = np.where(inf_mask, 0., log_prob)
+
+        # S_tec, S_const
+        log_prob = np.sum(log_prob, axis=-1)
+        # scalar
+        var_exp = np.sum(np.sum(log_prob * self.w_tec[:, None], axis=0) * self.w_const, axis=0)
 
         # Get KL
         tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
-        loss = np.negative(var_exp - tec_prior_KL)
+        const_prior_KL = self._scalar_KL(const_mean, const_uncert, self.const_mean_prior, self.const_uncert_prior)
+        loss = np.negative(var_exp - tec_prior_KL - const_prior_KL)
+        if ~np.isfinite(loss):
+            raise ValueError("Invalid loss {} var exp {} tec KL {} const KL {} params {} laplace {}".format(loss, var_exp, tec_prior_KL, const_prior_KL, params, self.laplace_b))
+        if ~np.all(np.isfinite(params)):
+            raise ValueError("Invalid params: {}".format(params))
         # B
         return loss
 
-
-def post_mean(X, Y, sigma_y, amp, l, X2):
-    def _kern(x1, x2):
-        dx = -0.5 * np.square((x1[:, None] - x2[None, :]) / l)
-        return np.exp(2*np.log(amp) + dx)
-
-    K = _kern(X, X)
-    Ks = _kern(X, X2)
-    L = np.linalg.cholesky(K + sigma_y ** 2 * np.eye(X.shape[0]))
-    A = solve_triangular(L, Ks, lower=True)
-    return A.T.dot(solve_triangular(L, Y[:, None], lower=True))[:, 0]
-
-def sequential_solve(Yreal, Yimag, freqs, tec_init, debug_indicator=None,output_dir=None):
+def sequential_solve(Yreal, Yimag, freqs, debug_indicator=None, output_dir=None, unravel_index=None):
     """
     Run on blocks of time.
 
@@ -192,7 +206,7 @@ def sequential_solve(Yreal, Yimag, freqs, tec_init, debug_indicator=None,output_
         raise ValueError("output dir not specified")
 
     if debug_indicator is not None:
-        #debug stuff
+        # debug stuff
         np.random.seed(0)
         debug_tec_range = np.random.uniform(-200, 200, size=15000)
         debug_log_uncert_range = np.random.uniform(np.log(0.1), np.log(50.), size=15000)
@@ -203,154 +217,172 @@ def sequential_solve(Yreal, Yimag, freqs, tec_init, debug_indicator=None,output_
     if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
 
-
-    priors = dict(tec_mean_prior=0., tec_uncert_prior=100., L=np.eye(2)*0.1)
+    priors = dict(tec_mean_prior=0., tec_uncert_prior=100.)
 
     D, Nf, N = Yreal.shape
-    
+
     Yreal_res = np.zeros_like(Yreal)
     Yimag_res = np.zeros_like(Yimag)
     phase_res = np.zeros_like(Yimag)
 
-
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
-    flag_array = np.zeros((D, N))
-    weights = np.ones((Nf,))
+    const_array = np.zeros((D, N))
 
     for d in range(D):
+        dir_idx, ant_idx = unravel_index[0][d], unravel_index[1][d]
+        # 3, Nf
+        laplace_b = get_residual_laplace_statistics(Yimag,
+                                                    Yreal,
+                                                    ant_idx, d, dir_idx, output_dir)
+        laplace_b[0,:] = np.maximum(laplace_b[0,:], 0.001)
+        laplace_b[1,:] = np.maximum(laplace_b[1,:], 0.001)
+        tec_diff_prior = 50.
 
-        tec_diff_prior = 40.
+        Yreal_smooth, Yimag_smooth = smooth_gains(Yreal[d, :, :], Yimag[d, :, :], time_kernel_size=5)
+
+        Yreal_res = Yreal[d, :, :] - Yreal_smooth
+        Yimag_res = Yimag[d, :, :] - Yimag_smooth
+        total_res = np.sqrt(Yreal_res**2 + Yimag_res**2)
+        weights = total_res > np.percentile(total_res, 95)
 
         for n in range(N):
 
+            keep = np.where(weights[:, n])[0]
+
             # least square two pass
-            ls_obj = SolveLoss(Yreal[d, :, n], Yimag[d, :, n], freqs, **priors)
-            result = brute(ls_obj.loss_func, (slice(-150., 150., 5.), slice(np.log(0.5), np.log(10.), 1.)),
-                           args=(weights,))
+            ls_obj = SolveLoss(Yreal[d, keep, n], Yimag[d, keep, n], freqs[keep], laplace_b=laplace_b[:, keep],
+                               **priors)
+            result = brute(ls_obj.loss_func,
+                           (slice(-200., 200., 5.),
+                            slice(np.log(0.01), np.log(10.), 1.),
+                            slice(-np.pi, np.pi, 0.05)),
+                           finish=least_squares)
 
-            #Nf
-            res_real0, res_imag0 = ls_obj.calculate_residuals(result)
-
-            curr_phase_res = wrap(wrap(ls_obj.phase_model(result)) - ls_obj.phase)
-
-            if n > 10:
-                # print(curr_phase_res, np.nanmedian(np.abs(phase_res[d, :, :n])))
-                # print(res_real0,  np.nanmedian(np.abs(Yreal_res[d, :, :n])))
-                # print(res_imag0,  np.nanmedian(np.abs(Yimag_res[d, :, :n])))
-                phase_flag = np.abs(curr_phase_res) > 4.*np.nanmedian(np.abs(phase_res[d, :, :n]))
-                real_flag = np.abs(res_real0) > 4.*np.nanmedian(np.abs(Yreal_res[d, :, :n]))
-                imag_flag = np.abs(res_imag0) > 4.*np.nanmedian(np.abs(Yimag_res[d, :, :n]))
-
-                flag = np.logical_or(phase_flag, real_flag, imag_flag)
-                weights = np.logical_not(flag)
-
-                if weights.sum() < freqs.size//2:
-                    weights = np.abs(res_real0) + np.abs(res_imag0) < np.median(np.abs(res_real0) + np.abs(res_imag0))
-                if weights.sum() < freqs.size // 2:
-                    weights = np.ones(Nf)
-            else:
-                weights = np.ones(Nf)
-            not_weights = np.logical_not(weights)
-            keep = np.where(weights)[0]
-            res_real0 = res_real0[keep]
-            res_imag0 = res_imag0[keep]
-            res_real0, res_imag0 = res_real0 - np.mean(res_real0), res_imag0 - np.mean(res_imag0)
-            rr = np.mean(res_real0 ** 2)
-            ii = np.mean(res_imag0 ** 2)
-            ri = np.mean(res_real0 * res_imag0)
-            cov = np.array([[rr, ri] , [ri, ii]])
-            try:
-                priors['L'] = np.linalg.cholesky(cov)
-            except:
-                pass
-
-            # round two
-            ls_obj = SolveLoss(Yreal[d, keep, n], Yimag[d, keep, n], freqs[keep], **priors)
-
-            result = brute(ls_obj.loss_func, (slice(-150., 150., 5.), slice(np.log(0.5), np.log(10.), 1.)),
-                           args=(weights[keep],))
-
-            ls_obj = SolveLoss(Yreal[d, :, n], Yimag[d, :, n], freqs, **priors)
-            # Nf
-            res_real1, res_imag1 = ls_obj.calculate_residuals(result)
-            res_real1[not_weights] = np.nan
-            res_imag1[not_weights] = np.nan
-
-            curr_phase_res = wrap(wrap(ls_obj.phase_model(result)) - ls_obj.phase)
-            curr_phase_res[not_weights] = np.nan
-
-            Yreal_res[d, :, n] = res_real1
-            Yimag_res[d, :, n] = res_imag1
-            phase_res[d, :, n] = curr_phase_res
-
-            tec_mean, log_tec_uncert = result
-            tec_uncert = np.exp(log_tec_uncert)
+            tec_mean, log_tec_uncert, const = result
+            tec_uncert = 0.1 + np.exp(log_tec_uncert)
             tec_mean_array[d, n] = tec_mean
             tec_uncert_array[d, n] = tec_uncert
+            const_array[d, n] = const
 
-            if n > 10:
-                tec_diff_prior = np.maximum(np.sqrt(np.mean(np.square(np.diff(tec_mean_array[d, :n+1])))), 5.)
+            # if n > 20:
+            #     tec_diff_prior = np.maximum(np.sqrt(np.mean(np.square(np.diff(tec_mean_array[d, :n+1])))), 10.)
             priors['tec_mean_prior'] = tec_mean
-            priors['tec_uncert_prior'] = np.sqrt(tec_diff_prior**2 + tec_uncert**2)
+            priors['tec_uncert_prior'] = np.sqrt(tec_diff_prior ** 2 + tec_uncert ** 2)
 
-            logging.info("{} {} tec {} +- {} from {}".format(d, n, tec_mean, tec_uncert, tec_init[d, n]))
+            logging.info(
+                "dir {:02d} ant {:02d} time {:03d} tec {} +- {} const {}".format(dir_idx, ant_idx, n, tec_mean, tec_uncert, const))
 
             if debug_indicator is not None:
                 if debug_indicator(d, n):
                     logging.info("Plotting {} {}".format(d, n))
-                    debug_elbo = np.array([ls_obj.loss_func([t, ltu], weights) for t, ltu in zip(debug_tec_range, debug_log_uncert_range)])
-                    debug_grid_elbo = griddata(debug_tec_range, debug_log_uncert_range, debug_elbo, *debug_grid_points, interp='linear')
-                    plt.imshow(debug_grid_elbo, origin='lower', aspect='auto',
-                               extent=(debug_grid_points[0].min(), debug_grid_points[0].max(),debug_grid_points[1].min(), debug_grid_points[1].max()))
-                    plt.colorbar()
-                    plt.ylabel('log (tec uncertainty[mTECU])')
-                    plt.xlabel('tec [mTECU]')
-                    xlim = plt.xlim()
-                    ylim = plt.ylim()
-                    plt.scatter(np.clip(result[0], *xlim), np.clip(result[1], *ylim), c='red')
-                    plt.xlim(*xlim)
-                    plt.ylim(*ylim)
-                    plt.title("Solved {:.1f} +- {:.1f} mTECU".format(result[0], np.exp(result[1])))
-                    plt.savefig(os.path.join(output_dir, 'elbo_{:02d}_{:03d}.png'.format(d, n)))
+                    debug_elbo = np.array([ls_obj.loss_func([t, ltu, const]) for t, ltu in
+                                           zip(debug_tec_range, debug_log_uncert_range)])
+                    debug_grid_elbo = griddata(debug_tec_range, debug_log_uncert_range, debug_elbo, *debug_grid_points,
+                                               interp='linear')
+
+                    fig, axs = plt.subplots(2, 1, figsize=(6, 6))
+                    img = axs[0].imshow(debug_grid_elbo, origin='lower', aspect='auto',
+                                        extent=(debug_grid_points[0].min(), debug_grid_points[0].max(),
+                                                debug_grid_points[1].min(), debug_grid_points[1].max()))
+                    # plt.colorbar(img)
+                    axs[0].set_ylabel('log (tec uncertainty[mTECU])')
+                    axs[0].set_xlabel('tec [mTECU]')
+                    xlim = axs[0].get_xlim()
+                    ylim = axs[0].get_ylim()
+                    axs[0].scatter(np.clip(result[0], *xlim), np.clip(result[1], *ylim), c='red')
+                    axs[0].set_xlim(*xlim)
+                    axs[0].set_ylim(*ylim)
+                    axs[0].set_title("Solved {:.1f} +- {:.1f} mTECU const {:.2f} rad".format(result[0], np.exp(result[1]), const))
+                    axs[1].plot(freqs, wrap(ls_obj.phase_model(result)), c='red', label='mean phase')
+                    axs[1].plot(freqs, wrap(ls_obj.phase_model([result[0] + result[1], None, const])), c='black', ls='dotted',
+                                label=r'$+\sigma$ phase')
+                    axs[1].plot(freqs, wrap(ls_obj.phase_model([result[0] - result[1], None, const])), c='black', ls='dashed',
+                                label=r'$-\sigma$ phase')
+                    axs[1].scatter(freqs, ls_obj.phase, label='data')
+                    axs[1].set_xlabel('freq (Hz)')
+                    axs[1].set_ylabel('phase (rad)')
+                    os.makedirs(os.path.join(output_dir, 'elbo'), exist_ok=True)
+                    plt.savefig(os.path.join(output_dir, 'elbo',
+                                             'elbo_dir{:02d}_ant{:02d}_time{:03d}.png'.format(dir_idx, ant_idx, n)))
                     plt.close('all')
 
-        ###
-        # filter outliers
-        # N
-        abs_res_real = np.nanmedian(np.abs(Yreal_res[d,:,:]), axis=0)
-        # scalar
-        mean_abs_res_real = np.nanmedian(abs_res_real, axis=-1)
-        std_abs_res_real = np.nanmedian(np.abs(abs_res_real - mean_abs_res_real), axis=-1)
-        # N
-        flag_real = abs_res_real - mean_abs_res_real > 4. * std_abs_res_real
+    return tec_mean_array, tec_uncert_array, const_array
 
-        # N
-        abs_res_imag = np.nanmedian(np.abs(Yimag_res[d, :, :]), axis=0)
-        # scalar
-        mean_abs_res_imag = np.nanmedian(abs_res_imag, axis=-1)
-        std_abs_res_imag = np.nanmedian(np.abs(abs_res_imag - mean_abs_res_imag), axis=-1)
-        # N
-        flag_imag = abs_res_imag - mean_abs_res_imag > 4. * std_abs_res_imag
 
-        replace_flag = np.logical_or(flag_real, flag_imag)
+def get_residual_laplace_statistics(Yimag, Yreal, ant_idx, d, dir_idx, output_dir):
+    logging.info("Using Rbf to get noise levels for dir {:02d} ant {:02d}.".format(dir_idx, ant_idx))
 
-        keep_flag = np.logical_not(replace_flag)
+    hist_dir = os.path.join(output_dir, 'histograms')
+    os.makedirs(hist_dir, exist_ok=True)
+    _, Nf, N = Yimag.shape
+    _times = np.linspace(-1., 1., N)
+    _freqs = np.linspace(-1., 1., Nf)
 
-        keep_idx = np.where(keep_flag)[0]
-        replace_idx = np.where(replace_flag)[0]
-        flag_array[d, replace_idx] = 1.
-        #
-        # filtered_mean = median_filter(tec_mean_array[d, :], (5,))
-        # filtered_uncert = median_filter(tec_uncert_array[d, :], (5,))
-        #
-        # tec_mean_array[d, replace_idx] = filtered_mean[replace_idx]
-        # tec_uncert_array[d, replace_idx] = filtered_uncert[replace_idx]
-    
-    return tec_mean_array, tec_uncert_array, flag_array
+    Yreal = Yreal[d, :, :]
+    Yimag = Yimag[d, :, :]
+
+    Yreal_smooth, Yimag_smooth = smooth_gains(Yreal, Yimag, time_kernel_size=5)
+
+    Yreal_res = Yreal - Yreal_smooth
+    Yimag_res = Yimag - Yimag_smooth
+
+    logging.info("Fitting histograms per frequency.")
+    laplace_b_freq = []
+    for nu in range(Nf):
+        H, binsx, binsy = np.histogram2d(Yreal_res[nu, :], Yimag_res[nu, :],
+                                         bins=np.ceil(np.sqrt(N)),
+                                         density=True)
+
+        binsxc = 0.5 * (binsx[1:] + binsx[:-1])
+        binsyc = 0.5 * (binsy[1:] + binsy[:-1])
+
+        def _laplace_logpdf(log_b1, log_b2, arctanh_rho):
+            b1 = np.exp(log_b1)
+            b2 = np.exp(log_b2)
+            rho = 0.99*np.tanh(arctanh_rho)
+            return log_laplace_pdf(binsxc[:, None], binsyc[None, :], b1, b2, rho)
+
+        def _laplace_loss(params):
+            log_b1, log_b2, arctanh_rho = params
+            return np.sum(np.abs(np.exp(_laplace_logpdf(log_b1, log_b2, arctanh_rho)) - H))
+
+        results = brute(_laplace_loss,
+                        (slice(np.log(0.01), np.log(1.), np.log(100.) / 10.),
+                         slice(np.log(0.01), np.log(1.), np.log(100.) / 10.),
+                         slice(np.arctanh(-0.95), np.arctan(0.95),
+                               (np.arctan(0.95) - np.arctan(-0.95)) / 10.)))
+
+        log_b1, log_b2, arctanh_rho = results
+        b1 = np.exp(log_b1)
+        b2 = np.exp(log_b2)
+        rho = 0.99*np.tanh(arctanh_rho)
+        # b1, b2, rho = [0.1, 0.1, 0.]
+
+        logging.info(
+            "freq {:02d} dir {:02d} ant {:02d}: Found laplace scale {:.3f} {:.3f} {:.3f}".format(nu, dir_idx, ant_idx, b1, b2, rho))
+        laplace_b_freq.append([b1, b2, rho])
+
+        f, axs = plt.subplots(2, 1, figsize=(4, 8))
+        axs[0].imshow(H.T, extent=(binsxc.min(), binsxc.max(),
+                                   binsyc.min(), binsyc.max()), vmin=0., vmax=H.max(), origin='lower',
+                      aspect='auto')
+
+        axs[1].imshow(np.exp(_laplace_logpdf(log_b1, log_b2, arctanh_rho).T), extent=(binsxc.min(), binsxc.max(),
+                                                                                      binsyc.min(), binsyc.max()),
+                      vmin=0.,
+                      vmax=H.max(), origin='lower', aspect='auto')
+        axs[0].set_title("b1 {:.2f} b2 {:.2f} rho {:.2f}".format(b1,b2,rho))
+        plt.tight_layout()
+        plt.savefig(os.path.join(hist_dir, 'histogram_dir{:02d}_ant{:02d}_freq{:02d}.png'.format(dir_idx, ant_idx, nu)))
+        plt.close('all')
+    # 3, Nf
+    return np.stack(laplace_b_freq, axis=1)
+
 
 def wrap(p):
     return np.arctan2(np.sin(p), np.cos(p))
+
 
 def smoothamps(amps):
     freqkernel = 3
@@ -360,19 +392,37 @@ def smoothamps(amps):
     median = np.tile(np.nanmedian(amps, axis=-1, keepdims=True), (1, 1, 1, 1, amps.shape[-1]))
     amps[idxh] = median[idxh]
     amps[idxl] = median[idxl]
-    ampssmoothed = np.exp((median_filter(np.log(amps), size=(1, 1, 1, freqkernel,timekernel), mode='reflect')))
+    ampssmoothed = np.exp((median_filter(np.log(amps), size=(1, 1, 1, freqkernel, timekernel), mode='reflect')))
     return ampssmoothed
 
-def distribute_solves(datapack=None, ref_dir_idx=14, num_processes=64, select={'pol':slice(0,1,1)}, plot=False, output_folder='./tec_solve', debug=False):
-    output_folder = os.path.abspath(output_folder)
-    os.makedirs(output_folder,exist_ok=True)
+def smooth_gains(Yreal, Yimag, time_kernel_size=5):
+    """
 
+    :param Yreal: [Nf, N]
+    :param Yimag: [Nf, N]
+    :param size:
+    :return: Yreal, Yimag
+        [Nf, N], [Nf, N]
+    """
+    Nf, N = Yreal.shape
+    _freqs = np.linspace(-1., 1., Nf)
+    real = sum([median_filter(p, time_kernel_size)*_freqs[:,None]**(1-i) for i, p in enumerate(np.polyfit(_freqs,Yreal,deg=1))])
+    imag = sum([median_filter(p, time_kernel_size)*_freqs[:,None]**(1-i) for i, p in enumerate(np.polyfit(_freqs,Yimag,deg=1))])
+    return real, imag
+
+
+def distribute_solves(datapack=None, solset='sol000', ref_dir_idx=0, num_processes=64, select={'pol': slice(0, 1, 1)},
+                      plot=False, output_folder='./tec_solve', debug=False):
+    output_folder = os.path.abspath(output_folder)
+    os.makedirs(output_folder, exist_ok=True)
+    logging.info("Using output directory: {}".format(output_folder))
 
     datapack = DataPack(datapack, readonly=False)
     logging.info("Creating directionally_referenced/tec000")
-    make_soltab(datapack, from_solset='sol000', to_solset='directionally_referenced', from_soltab='phase000', to_soltab=['tec000'])
-
-    datapack.current_solset = 'sol000'
+    make_soltab(datapack, from_solset=solset, to_solset='directionally_referenced', from_soltab='phase000',
+                to_soltab=['tec000', 'const000'])
+    logging.info("Getting phase and amplitude data")
+    datapack.current_solset = solset
     datapack.select(**select)
     axes = datapack.axes_phase
     antenna_labels, antennas = datapack.get_antennas(axes['ant'])
@@ -383,61 +433,64 @@ def distribute_solves(datapack=None, ref_dir_idx=14, num_processes=64, select={'
     Npol, Nd, Na, Nf, Nt = len(pols), len(directions), len(antennas), len(freqs), len(times)
     phase_raw, axes = datapack.phase
     amp_raw, axes = datapack.amplitude
-
-    datapack.current_solset = 'smoothed000'
-    datapack.select(**select)
-    smooth_tec, axes = datapack.tec
-
-    amp_model = smoothamps(amp_raw)
-    amp_raw = amp_model
-
+    logging.info("Smoothing amplitudes in time and frequency.")
+    amp_smooth = smoothamps(amp_raw)
+    logging.info("Directionally referencing phase.")
     if ref_dir_idx is None:
         ref_dir_idx = np.argmin(np.median(
             np.reshape(np.transpose(np.abs(np.diff(phase_raw, axis=-2)), (1, 0, 2, 3, 4)), (Nd, -1)), axis=1))
-        logging.info("Using ref_dir_idx {}".format(ref_dir_idx))
-    tec_init = np.clip(smooth_tec - smooth_tec[:, ref_dir_idx:ref_dir_idx + 1, ...], -199., 199.)
+    logging.info("Using ref_dir_idx {}".format(ref_dir_idx))
     phase_di = phase_raw[:, ref_dir_idx:ref_dir_idx + 1, ...]
     phase_raw = phase_raw - phase_di
 
     # Npol, Nd, Na, Nf, Nt
-    Yimag_full = amp_raw * np.sin(phase_raw)
-    Yreal_full = amp_raw * np.cos(phase_raw)
+    Yimag_full = amp_smooth * np.sin(phase_raw)
+    Yreal_full = amp_smooth * np.cos(phase_raw)
 
     Yimag_full = Yimag_full.reshape((-1, Nf, Nt))
     Yreal_full = Yreal_full.reshape((-1, Nf, Nt))
-    tec_init = tec_init.reshape((-1, Nt))
 
     if debug:
-        debug_indicator = lambda *x: np.random.uniform() < 0.1
+        logging.info("Debugging on.")
+        debug_indicator = lambda d, n: n % 50 == 0
     else:
         debug_indicator = lambda *x: False
+
+    logging.info("Creating dask.")
     D = Yimag_full.shape[0]
+
+    def d_map(start, stop):
+        return np.unravel_index(range(start, stop), (Nd, Na))
+
     num_processes = min(D, num_processes)
     dsk = {}
     for i in range(0, D, D // num_processes):
         start = i
         stop = min(i + (D // num_processes), D)
-        dsk[str(i)] = (sequential_solve, Yreal_full[start:stop, :, :], Yimag_full[start:stop, :, :], freqs, tec_init[start:stop, :], debug_indicator, os.path.join(output_folder, 'debug_proc_{:02d}'.format(i)))
+        dsk[str(i)] = (
+            sequential_solve, Yreal_full[start:stop, :, :], Yimag_full[start:stop, :, :], freqs, debug_indicator,
+            output_folder, d_map(start, stop))
     logging.info("Running dask on {} processes".format(num_processes))
     results = get(dsk, list(dsk.keys()), num_workers=num_processes)
     logging.info("Finished dask")
 
     tec_mean = np.zeros((D, Nt))
     tec_uncert = np.zeros((D, Nt))
+    const = np.zeros((D, Nt))
 
-    filter_flags = np.zeros((D, Nt))
     for c, i in enumerate(range(0, D, D // num_processes)):
         start = i
         stop = min(i + (D // num_processes), D)
 
         tec_mean[start:stop, :] = results[c][0]
         tec_uncert[start:stop, :] = results[c][1]
-        filter_flags[start:stop, :] = results[c][2]
+        const[start:stop, :] = results[c][2]
 
     tec_mean = tec_mean.reshape((Npol, Nd, Na, Nt))
     tec_uncert = tec_uncert.reshape((Npol, Nd, Na, Nt))
-    filter_flags = filter_flags.reshape((Npol, Nd, Na, Nt))
+    const = const.reshape((Npol, Nd, Na, Nt))
 
+    filter_flags = np.zeros((Npol, Nd, Na, Nt))
     filter_flags = np.tile(filter_flags[:, :, :, None, :], (1, 1, 1, Nf, 1))
 
     logging.info("Storing results in a datapack")
@@ -446,19 +499,19 @@ def distribute_solves(datapack=None, ref_dir_idx=14, num_processes=64, select={'
     datapack.select(**select)
     datapack.tec = tec_mean
     datapack.weights_tec = tec_uncert
-    logging.info("Stored tec results. Done")
-
+    datapack.const = const
+    logging.info("Stored tec and const results. Done")
 
     tec_conv = -8.4479745e6 / freqs
-    phase_model = tec_conv[:, None]*tec_mean[..., None,:]
+    phase_model = tec_conv[:, None] * tec_mean[..., None, :] + const[..., None, :]
 
-    Yreal_model = amp_raw*np.cos(phase_model)
-    Yimag_model = amp_raw*np.sin(phase_model)
+    Yreal_model = amp_smooth * np.cos(phase_model)
+    Yimag_model = amp_smooth * np.sin(phase_model)
 
     res_real = Yreal_model - Yreal_full.reshape(Yreal_model.shape)
     res_imag = Yimag_model - Yimag_full.reshape(Yimag_model.shape)
 
-    np.savez(os.path.join(output_folder,'residual_data.npz'),res_real = res_real, res_imag = res_imag)
+    np.savez(os.path.join(output_folder, 'residual_data.npz'), res_real=res_real, res_imag=res_imag)
     print('./residual_data.npz')
 
     if plot:
@@ -474,7 +527,7 @@ def plot_results(Na, Nd, Nt, Yimag_model, Yreal_model, antenna_labels, filter_fl
         for j in range(Nd):
             for b in range(0, Nt, block_size):
 
-                slice_flag = filter_flags[0, j, i, b:b + block_size]
+                slice_flag = filter_flags[0, j, i, :, b:b + block_size]
 
                 slice_phase_data = wrap(phase_raw[0, j, i, :, b:b + block_size])
                 slice_phase_model = wrap(phase_model[0, j, i, :, b:b + block_size])
@@ -509,7 +562,8 @@ def plot_results(Na, Nd, Nt, Yimag_model, Yreal_model, antenna_labels, filter_fl
                 for nu in range(slice_res_real.shape[-2]):
                     f_c = plt.cm.binary((nu + 1) / slice_res_real.shape[-2])
                     colors_ = (f_c + colors) / 2. * np.array([1., 1., 1., 1. - (nu + 1) / slice_res_real.shape[-2]])
-                    colors_[np.where(slice_flag)[0]] = np.array([1., 0., 0., 1.])
+                    colors_[np.where(slice_flag[nu,:])[0],:] = np.array([1., 0., 0., 1.])
+                    # print(np.where(slice_flag)[0])
 
                     axs[0][0].scatter(time_array, np.abs(slice_res_real[nu, :]), c=colors_, marker='.')
                     axs[0][0].scatter(time_array, -np.abs(slice_res_imag[nu, :]), c=colors_, marker='.')
@@ -555,6 +609,7 @@ def test_numpy_data():
 
     return phase_raw, amp_raw, freqs
 
+
 def transform_old_h5parm(filename, output_file):
     import tables as tb
     with tb.open_file(filename, mode='r') as f:
@@ -566,9 +621,10 @@ def transform_old_h5parm(filename, output_file):
 
 
 if __name__ == '__main__':
-    select = dict(ant=None, time=None, dir=None, freq=None, pol=slice(0, 1, 1))
+    select = dict(ant=slice(50, None, 1), time=slice(0, None, 1), dir=None, freq=None, pol=slice(0, 1, 1))
     distribute_solves('/net/lofar1/data1/albert/imaging/data/lockman/L667218_DDS4_full.h5',
-                       ref_dir_idx=0, num_processes=64, select=select, plot=True, debug=False, output_folder='lockman_L667218_tec_vi_run8')
+                      ref_dir_idx=0, num_processes=64, select=select, plot=True, debug=True,
+                      output_folder='lockman_L667218_tec_vi_run39')
     # distribute_solves('/net/lofar1/data1/albert/imaging/data/P126+65_compact_raw/P126+65_full_compact_raw_v11.h5',
     #                   ref_dir_idx=0, num_processes=36, solve_type='least_squares', select=select)
     # update_h5parm('/net/lofar1/data1/albert/imaging/data/lockman/L667218_DDS4_full.h5',

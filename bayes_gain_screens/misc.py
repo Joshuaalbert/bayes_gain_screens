@@ -71,7 +71,7 @@ def laplace_gaussian_marginalisation(L, y, order = 10):
     poly_coeffs_2 = np.array([ -c if i%2 == 1 else c for i,c in enumerate(poly_coeffs_1)], float_type)
     #TODO: finish the function
 
-def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None):
+def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None, directions=None, patch_names=None):
     if not isinstance(to_soltab, (list, tuple)):
         to_soltab = [to_soltab]
     if select is None:
@@ -82,7 +82,8 @@ def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', fro
         datapack.select(**select)
         axes = getattr(datapack, "axes_{}".format(from_soltab.replace('000', '')))
         antenna_labels, antennas = datapack.get_antennas(axes['ant'])
-        patch_names, directions = datapack.get_directions(axes['dir'])
+        if directions is None or patch_names is None:
+            patch_names, directions = datapack.get_directions(axes['dir'])
         timestamps, times = datapack.get_times(axes['time'])
         freq_labels, freqs = datapack.get_freqs(axes['freq'])
         pol_labels, pols = datapack.get_pols(axes['pol'])
@@ -99,6 +100,9 @@ def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', fro
         if 'clock000' in to_soltab:
             datapack.add_soltab('clock000', weightDtype='f16', time=times.mjd * 86400., pol=pol_labels,
                                 ant=antenna_labels, dir=patch_names)
+        if 'const000' in to_soltab:
+            datapack.add_soltab('const000', weightDtype='f16', time=times.mjd * 86400., pol=pol_labels,
+                                ant=antenna_labels, dir=patch_names)
         if 'phase000' in to_soltab:
             datapack.add_soltab('phase000', weightDtype='f16', freq=freqs, time=times.mjd * 86400., pol=pol_labels,
                                 ant=antenna_labels, dir=patch_names)
@@ -108,12 +112,16 @@ def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', fro
 
 
 def maybe_create_posterior_solsets(datapack: DataPack, solset: str, posterior_name: str,
-                                   screen_directions = None,
+                                   screen_directions: ac.ICRS,
                                    make_soltabs = ['phase000', 'amplitude000', 'tec000'],
                                    make_screen_solset = True, make_data_solset = True,
                                         remake_posterior_solsets=False):
+
+    logging.info("Ensuring the solsets exist where the screen will go.")
+    patch_names = ["patch_{:03d}".format(i) for i in range(len(screen_directions))]
     screen_solset = "screen_{}".format(posterior_name)
     data_solset = 'data_{}'.format(posterior_name)
+    returns = []
     with datapack:
         if remake_posterior_solsets:
             if make_data_solset:
@@ -123,10 +131,13 @@ def maybe_create_posterior_solsets(datapack: DataPack, solset: str, posterior_na
                 logging.info("Deleting existing solset: {}".format(screen_solset))
                 datapack.delete_solset(screen_solset)
         if make_data_solset:
-            make_soltab(datapack, 'sol000', data_solset, 'phase000', make_soltabs)
+            make_soltab(datapack, solset, data_solset, 'phase000', make_soltabs)
+            returns.append(data_solset)
         if make_screen_solset:
-            make_soltab(datapack, 'sol000', screen_solset, 'phase000', make_soltabs)
+            make_soltab(datapack, solset, screen_solset, 'phase000', make_soltabs, directions=screen_directions, patch_names=patch_names)
+            returns.append(screen_solset)
         datapack.current_solset = solset
+    return tuple(returns)
 
 def dict2namedtuple(d, name="Result"):
     res = namedtuple(name, list(d.keys()))
@@ -320,8 +331,14 @@ def log_normal_cdf_solve(x1, x2, P1=0.05, P2=0.95, as_tensor=False):
 #             return datapack
 #         return dict(datapack=datapack, directions=directions, antennas=antennas, freqs=freqs, times=times, pols=pols, dtec=dtecs, phase=phase)
 
+def great_circle_sep(ra1, dec1, ra2, dec2):
+    dra = np.abs(ra1-ra2)
+    # ddec = np.abs(dec1-dec2)
+    num2 = (np.cos(dec2) * np.sin(dra))**2 + (np.cos(dec1) * np.sin(dec2) - np.sin(dec1) *np.cos(dec2) * np.cos(dra))**2
+    den = np.sin(dec1) * np.sin(dec2) + np.cos(dec1) * np.cos(dec2) * np.cos(dra)
+    return np.arctan2(np.sqrt(num2),den)
 
-def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_arcmin = 1., plot=False):
+def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_arcmin = 1., plot=False, seed_directions=None, flux_key='Peak_flux'):
     """Given a srl file containing the sources extracted from the apparent flux image of the field,
     decide the screen directions
 
@@ -330,6 +347,7 @@ def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_
     :return: float, array [N, 2]
         The `N` sources' coordinates as an ``astropy.coordinates.ICRS`` object
     """
+    logging.info("Getting screen directions from Gaussian source list.")
     hdu = fits.open(srl_fits)
     data = hdu[1].data
 
@@ -341,12 +359,16 @@ def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_
 
     ra = []
     dec = []
+    if seed_directions is not None:
+        logging.info("Using seed directions.")
+        ra = list(seed_directions[:, 0])
+        dec = list(seed_directions[:, 1])
     idx = []
     for i in arg:
-        if data['Total_Flux'][i] < flux_limit:
+        if data[flux_key][i] < flux_limit:
             continue
-        ra_ = data['RA'][i]
-        dec_ = data['DEC'][i]
+        ra_ = data['RA'][i]*np.pi/180.
+        dec_ = data['DEC'][i]*np.pi/180.
         # radius = np.sqrt((ra_ - 126)**2 + (dec_ - 65)**2)
         # if radius > exclude_radius:
         #     continue
@@ -373,17 +395,20 @@ def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_
             dec.append(dec_)
             idx.append(i)
             continue
-        dist = np.sqrt(np.square(np.subtract(ra_, ra)) + np.square(np.subtract(dec_,dec)))
+        dist = great_circle_sep(np.array(ra), np.array(dec), ra_, dec_)*180./np.pi#np.sqrt(np.square(np.subtract(ra_, ra)) + np.square(np.subtract(dec_,dec)))
         if np.all(dist > min_spacing_arcmin/60.):
             ra.append(ra_)
             dec.append(dec_)
             idx.append(i)
             continue
 
-    f = data['Total_Flux'][idx]
-    ra = data['RA'][idx]
-    dec = data['DEC'][idx]
+    f = data[flux_key][idx]
+    ra = data['RA'][idx]*np.pi/180.
+    dec = data['DEC'][idx]*np.pi/180.
     c = data['S_code'][idx]
+
+    if seed_directions is not None:
+        max_N -= seed_directions.shape[0]
 
     if max_N is not None:
         arg = np.argsort(f)[::-1][:max_N]
@@ -391,26 +416,32 @@ def get_screen_directions(srl_fits, flux_limit = 0.1, max_N = None, min_spacing_
         ra = ra[arg]
         dec = dec[arg]
         c = c[arg]
+
     if plot:
         plt.scatter(ra,dec,c=np.linspace(0.,1.,len(ra)),cmap='jet',s=np.sqrt(10000.*f),alpha=1.)
 
-        target = Circle((126., 65.),radius = 3.56/2.,fc=None, alpha=0.2)
+        target = Circle((np.mean(data['RA']), np.mean(data['DEC'])),radius = 3.56/2.,fc=None, alpha=0.2)
         ax = plt.gca()
         ax.add_patch(target)
-        target = Circle((126., 65.),radius = 4.75/2.,fc=None, alpha=0.2)
+        target = Circle((np.mean(data['RA']), np.mean(data['DEC'])),radius = 4.75/2.,fc=None, alpha=0.2)
         ax = plt.gca()
         ax.add_patch(target)
         plt.title("Brightest {} sources".format(len(f)))
         plt.xlabel('ra (deg)')
         plt.xlabel('dec (deg)')
-        plt.savefig("scren_directions.png")
+        plt.savefig("screen_directions.png")
         interdist = pdist(np.stack([ra,dec],axis=1)*60.)
         plt.hist(interdist,bins=len(f))
         plt.title("inter-facet distance distribution")
         plt.xlabel('inter-facet distance [arcmin]')
         plt.savefig("interfacet_distance_dist.png")
         plt.show()
-    return ac.ICRS(ra=ra*au.deg, dec=dec*au.deg)
+
+    logging.info("Found {} sources.".format(len(ra)))
+    if seed_directions is not None:
+        ra = list(seed_directions[:,0]) + list(ra)
+        dec = list(seed_directions[:,1]) + list(dec)
+    return ac.ICRS(ra=ra*au.rad, dec=dec*au.rad)
 
 
 def random_sample(t, n=None):

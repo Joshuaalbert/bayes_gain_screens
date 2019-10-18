@@ -1,5 +1,7 @@
 from .settings import *
-from tensorflow import logging
+# from tensorflow import logging
+import tensorflow as tf
+logging = tf.compat.v1.logging
 
 logging.set_verbosity(logging.INFO)
 

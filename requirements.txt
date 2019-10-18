@@ -17,3 +17,4 @@ notebook==6.0.1
 dm-sonnet==1.35
 git+https://github.com/deepmind/graph_nets
 pymc3==3.7
+dask

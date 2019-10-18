@@ -33,9 +33,9 @@ class HGPR(GPModel):
     def _build_common(self):
         # (T), M, M
         Kmm = self.kern.K(self.X)
-        with tf.control_dependencies([tf.print(Kmm)]):
-            # B, (T), M
-            Y_std = tf.math.sqrt(self.Y_var)
+        # with tf.control_dependencies([tf.print(Kmm)]):
+        # B, (T), M
+        Y_std = tf.math.sqrt(self.Y_var)
 
         M = tf.shape(Kmm)[-1]
         # M, M
@@ -84,8 +84,8 @@ class HGPR(GPModel):
         L, Ly, Y_std = self._build_common()
         #B, (T)
         log_marginal_likelihood = self._build_batched_likelihood(L, Ly, Y_std)
-        with tf.control_dependencies([tf.print(log_marginal_likelihood)]):
-            return tf.reduce_sum(log_marginal_likelihood)
+        # with tf.control_dependencies([tf.print(log_marginal_likelihood)]):
+        return tf.reduce_sum(log_marginal_likelihood)
 
     @name_scope('predict')
     @params_as_tensors
@@ -209,8 +209,9 @@ class HGPR(GPModel):
         return log_marginal_likelihood, post_mean
 
 class AverageModel(object):
-    def __init__(self, models: List[HGPR]):
+    def __init__(self, models: List[HGPR], debug=False):
         self.models = models
+        self.debug = debug
 
     @property
     def models(self):
@@ -230,8 +231,17 @@ class AverageModel(object):
         opt = ScipyOptimizer()
         for model in self.models:
             logging.info("Optimising model: {}".format(model.name))
-            opt.minimize(model)
-            logging.info(model.kern)
+            try:
+                opt.minimize(model)
+            except:
+                print((model.read_trainables()))
+                print(model.X.value)
+                print(model.Y.value)
+                raise ValueError("Failure")
+            with np.printoptions(precision=2):
+                logging.info("Learned model:\n{}".format(
+                    "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
+
 
     def predict_f(self, X, only_mean=True):
         """
@@ -252,13 +262,23 @@ class AverageModel(object):
                 post_vars.append(post_var)
             post_means.append(post_mean)
             log_marginal_likelihoods.append(log_marginal_likelihood)
+
         # num_models, batch_size, (T)
         log_marginal_likelihoods = np.stack(log_marginal_likelihoods, axis=0)
+        with np.printoptions(precision=2):
+            logging.info("Model log marginal likelihoods:")
+            if len(log_marginal_likelihoods.shape) == 3:
+                for m, l in zip(self.models, log_marginal_likelihoods.sum(-1).sum(-1)):
+                    logging.info("\t{} -> {:.2f}".format(m.name, l))
+            else:
+                for m, l in zip(self.models, log_marginal_likelihoods.sum(-1)):
+                    logging.info("\t{} -> {:.2f}".format(m.name, l))
         # batch_size
         # num_models, batch_size, N
         post_means = np.stack(post_means, axis = 0)
         # num_models, batch_size, (T)
         weights = np.exp(log_marginal_likelihoods - logsumexp(log_marginal_likelihoods, axis=0))
+
         # batch_size, (T),  N
         post_mean = np.sum(weights[..., None]*post_means, axis=0)
         if not only_mean:
