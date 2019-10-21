@@ -3,7 +3,7 @@ from .datapack import DataPack
 from typing import List, Union
 from .coord_transforms import ITRSToENUWithReferences_v2
 from . import logging, angle_type, dist_type, float_type
-from .misc import get_screen_directions, maybe_create_posterior_solsets, great_circle_sep
+from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, great_circle_sep
 from .outlier_detection import filter_tec_dir
 from timeit import default_timer
 import numpy as np
@@ -14,7 +14,7 @@ class Deployment(object):
     def __init__(self, datapack: Union[DataPack, str], ref_dir_idx=0,
                  tec_solset='sol000', phase_solset='sol000',
                  flux_limit=0.05, max_N=250, min_spacing_arcmin=1.,
-                 srl_file: str = None, ant=None, dir=None, time=None, freq=None, pol=slice(0, 1, 1),
+                 ref_image_fits: str = None, ant=None, dir=None, time=None, freq=None, pol=slice(0, 1, 1),
                  directional_deploy=True, block_size=1, debug=False, working_dir='./deployment', flag_directions=None,
                  flag_outliers=False, constant_tec_uncert=None, remake_posterior_solsets=False):
         self.debug = debug
@@ -23,9 +23,10 @@ class Deployment(object):
 
         cwd = os.path.abspath(working_dir)
         os.makedirs(cwd, exist_ok=True)
-        run_idx = len(glob.glob(os.path.join(cwd, 'run_*')))
-        cwd = os.path.join(cwd, 'run_{:03d}'.format(run_idx))
-        os.makedirs(cwd, exist_ok=True)
+        os.chdir(working_dir)
+        # run_idx = len(glob.glob(os.path.join(cwd, 'run_*')))
+        # cwd = os.path.join(cwd, 'run_{:03d}'.format(run_idx))
+        # os.makedirs(cwd, exist_ok=True)
         self.cwd = cwd
 
         if debug:
@@ -96,9 +97,10 @@ class Deployment(object):
         logging.info("Creating posterior solsets.")
         _, seed_directions = datapack.get_directions(axes['dir'])
         seed_directions = np.stack([seed_directions.ra.rad, seed_directions.dec.rad], axis=1)
-        screen_directions = get_screen_directions(srl_file, flux_limit=flux_limit, max_N=max_N,
+        screen_directions = get_screen_directions_from_image(ref_image_fits, flux_limit=flux_limit, max_N=max_N,
                                                   min_spacing_arcmin=min_spacing_arcmin,
-                                                  seed_directions=seed_directions)
+                                                  seed_directions=seed_directions,
+                                                  fill_in_distance=8., fill_in_flux_limit=0.01)
 
         (self.screen_solset,) = maybe_create_posterior_solsets(datapack, phase_solset,
                                                                make_data_solset=False,

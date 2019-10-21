@@ -6,6 +6,8 @@ from scipy.ndimage import median_filter
 from scipy.spatial import cKDTree
 from bayes_gain_screens.misc import make_coord_array
 from bayes_gain_screens import logging
+from dask.multiprocessing import get
+from timeit import default_timer
 
 def get_smooth_param(x_list, y, desired_std, **kwargs):
     smooth_ = [0.]
@@ -122,7 +124,7 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, maxiter=46,  **kwargs):
     init_y_uncert[np.where(final_flags)] = np.inf
     return init_y_uncert, final_flags
 
-def filter_tec_dir_time(y,  directions, init_y_uncert=None, maxiter=46, block_size=2,  **kwargs):
+def filter_tec_dir_time(y,  directions, init_y_uncert=None, maxiter=46, block_size=2,  num_processes=1, **kwargs):
     """
     Uses temporal and spatial smoothing.
 
@@ -150,31 +152,48 @@ def filter_tec_dir_time(y,  directions, init_y_uncert=None, maxiter=46, block_si
 
     maxiter=Nd*block_size
     smooths = np.linspace(0.2, 0.3, maxiter)[::-1]
+    dsk = {}
+    keys = []
+    for a in range(Na):
+        dsk[str(a)] = (sequential_filter_tec_dir_time, Nd, Nt, X, a, block_size, kwargs,
+                       maxiter, smooths, x_list0, y[:,a, :])
+        keys.append(str(a))
+
+    results = get(dsk,keys, num_workers=num_processes)
+    for a in range(Na):
+        final_flags[:,a,:] = results[a]
+    final_uncert = np.where(final_flags, np.inf, init_y_uncert)
+    return final_uncert, final_flags
+
+
+def sequential_filter_tec_dir_time(Nd, Nt, X, a, block_size, kwargs, maxiter, smooths, x_list0, y):
+    final_flags = np.zeros([Nd, Nt],np.bool)
+    t0 = default_timer()
     for t in range(0, Nt, block_size):
-        for a in range(Na):
-            keep = np.ones(Nd*block_size, dtype=np.bool)
-            for i in range(maxiter):
-                y_block = y[:, a, t:t+block_size].reshape((-1,))
-                # print(t, y_block.shape, X.shape)
-                svm = Rbf(*list(X[keep, :].T), y_block[keep], smooth=smooths[i], **kwargs)
-                y_star = svm(*x_list0)
-                dy = np.abs(y_star - y_block)
-                # print(np.median(dy), np.percentile(dy, 95))
-                max_dy = np.max(dy[keep])
-                if max_dy < 10.:
-                    break
-                # print(i, max_dy)
-                keep = dy < max_dy
+        keep = np.ones(Nd * block_size, dtype=np.bool)
+        for i in range(maxiter):
+            y_block = y[:, t:t + block_size].reshape((-1,))
+            # print(t, y_block.shape, X.shape)
+            svm = Rbf(*list(X[keep, :].T), y_block[keep], smooth=smooths[i], **kwargs)
+            y_star = svm(*x_list0)
+            dy = np.abs(y_star - y_block)
+            # print(np.median(dy), np.percentile(dy, 95))
+            max_dy = np.max(dy[keep])
+            if max_dy < 10.:
+                break
+            # print(i, max_dy)
+            keep = dy < max_dy
 
-            final_flags[:, a, t:t+block_size] = ~keep.reshape((Nd, block_size))
-            # print('CONF', np.interp(dy[~keep], np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
+        final_flags[:, t:t + block_size] = ~keep.reshape((Nd, block_size))
 
-            if keep.sum() < Nd*block_size:
-                #9, 39, 29, 37, 11, 13
-                print(t, a, np.where(final_flags[:, a, t:t+block_size]), 'from', Nd*block_size)
+        if keep.sum() < Nd * block_size:
+            # 9, 39, 29, 37, 11, 13
+            print("{:.2f} per second".format(Nd*(t+block_size)/(default_timer()-t0)),
+                  "block",t, "process",a,
+                  "flagged", final_flags[:, t:t + block_size].sum(), 'from', Nd * block_size,
+                  "({})".format(final_flags[:, t:t + block_size].sum()/(Nd*block_size)))
+    return final_flags
 
-    init_y_uncert[np.where(final_flags)] = np.inf
-    return init_y_uncert, final_flags
 
 if __name__ == '__main__':
     from bayes_gain_screens.datapack import DataPack
@@ -187,13 +206,13 @@ if __name__ == '__main__':
     _, directions = dp.get_directions(axes['dir'])
     # _, freqs = dp.get_freqs(axes['freq'])
     directions = np.stack([directions.ra.rad*np.cos(directions.dec.rad), directions.dec.rad],axis=1)
-    tec_uncert, flags = filter_tec_dir_time(tec[0,...], directions, init_y_uncert=tec_uncert[0,...], block_size=8, function='multiquadric')
+    tec_uncert, flags = filter_tec_dir_time(tec[0,...], directions, init_y_uncert=tec_uncert[0,...], block_size=8,num_processes=64, function='multiquadric')
     # flags[45,...] = 1.
     # tec_uncert[45, ...] = np.inf
-    dp.current_solset = 'smoothed000'
-    dp.select(**select)
-    dp.tec = tec
-    dp.weights_tec = tec_uncert[None,...]
+    # dp.current_solset = 'smoothed000'
+    # dp.select(**select)
+    # dp.tec = tec
+    # dp.weights_tec = tec_uncert[None,...]
 
     # dp.current_solset = 'sol000'
     # dp.select(time=slice(0, 40, 1), pol=slice(0, 1, 1), freq=slice(12,13,1))
