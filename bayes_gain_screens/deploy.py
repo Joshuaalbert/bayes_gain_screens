@@ -97,7 +97,7 @@ class Deployment(object):
         logging.info("Creating posterior solsets.")
         _, seed_directions = datapack.get_directions(axes['dir'])
         seed_directions = np.stack([seed_directions.ra.rad, seed_directions.dec.rad], axis=1)
-        screen_directions = get_screen_directions_from_image(ref_image_fits, flux_limit=flux_limit, max_N=max_N,
+        screen_directions, _ = get_screen_directions_from_image(ref_image_fits, flux_limit=flux_limit, max_N=max_N,
                                                   min_spacing_arcmin=min_spacing_arcmin,
                                                   seed_directions=seed_directions,
                                                   fill_in_distance=8., fill_in_flux_limit=0.01)
