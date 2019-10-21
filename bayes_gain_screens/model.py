@@ -228,9 +228,9 @@ class AverageModel(object):
         self._models = value
 
     def optimise(self):
-        opt = ScipyOptimizer()
         for model in self.models:
             logging.info("Optimising model: {}".format(model.name))
+            opt = ScipyOptimizer()
             try:
                 opt.minimize(model)
             except:
