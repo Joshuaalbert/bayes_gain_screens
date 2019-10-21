@@ -127,11 +127,13 @@ def maybe_create_posterior_solsets(datapack: DataPack, solset: str, posterior_na
     with datapack:
         if remake_posterior_solsets:
             if make_data_solset:
-                logging.info("Deleting existing solset: {}".format(data_solset))
-                datapack.delete_solset(data_solset)
+                if data_solset in datapack.solsets:
+                    logging.info("Deleting existing solset: {}".format(data_solset))
+                    datapack.delete_solset(data_solset)
             if make_screen_solset:
-                logging.info("Deleting existing solset: {}".format(screen_solset))
-                datapack.delete_solset(screen_solset)
+                if screen_solset in datapack.solsets:
+                    logging.info("Deleting existing solset: {}".format(screen_solset))
+                    datapack.delete_solset(screen_solset)
         if make_data_solset:
             make_soltab(datapack, solset, data_solset, 'phase000', make_soltabs)
             returns.append(data_solset)
