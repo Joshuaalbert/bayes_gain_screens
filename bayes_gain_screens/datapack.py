@@ -417,7 +417,7 @@ class DataPack(object):
 
     @property
     def allowed_soltabs(self):
-        return ['phase', 'amplitude', 'tec', 'clock']
+        return ['phase', 'amplitude', 'tec', 'clock', 'const']
 
     def soltab_axes(self,soltab):
         with self:
