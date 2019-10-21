@@ -1,5 +1,7 @@
 from .settings import *
 import logging
+from tensorflow import get_logger
+get_logger().propagate = False
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 logging = logging.getLogger()
