@@ -1,9 +1,8 @@
 from .settings import *
-# from tensorflow import logging
-import tensorflow as tf
-logging = tf.compat.v1.logging
+import logging
 
-logging.set_verbosity(logging.INFO)
+logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+logging = logging.getLogger()
 
 
 ###
