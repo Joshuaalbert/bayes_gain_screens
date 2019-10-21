@@ -33,17 +33,17 @@ class GreatCircleRBF(Kernel):
     def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
         super().__init__(input_dim, active_dims, name=name)
         self.variance = Parameter(variance,
-                                   transform=transforms.positiveRescale(variance),
-                                   dtype=settings.float_type)
+                                  transform=transforms.positiveRescale(variance),
+                                  dtype=settings.float_type)
 
         self.lengthscales = Parameter(lengthscales,
                                       transform=transforms.positiveRescale(lengthscales),
                                       dtype=settings.float_type)
-        levi_civita = np.zeros((3,3,3))
+        levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
             for a2 in range(3):
                 for a3 in range(3):
-                    levi_civita[a1,a2,a3] = np.sign(a2 - a1) * np.sign(a3-a1) * np.sign(a3 - a2)
+                    levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
@@ -55,14 +55,14 @@ class GreatCircleRBF(Kernel):
         :param b: [M, 3]
         :return: [N, M]
         """
-        #aj,ijk -> aik
-        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1],[1]])
-        #aik, bk -> aib
-        cross = tf.linalg.tensordot(A, b, axes=[[2],[1]])
-        #aib -> ab
-        cross_mag = tf.linalg.norm(cross,axis=1)
-        #ab
-        dot_prod = tf.linalg.tensordot(a,b, axes=[[1], [1]])
+        # aj,ijk -> aik
+        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1], [1]])
+        # aik, bk -> aib
+        cross = tf.linalg.tensordot(A, b, axes=[[2], [1]])
+        # aib -> ab
+        cross_mag = tf.linalg.norm(cross, axis=1)
+        # ab
+        dot_prod = tf.linalg.tensordot(a, b, axes=[[1], [1]])
         return tf.math.atan2(cross_mag, dot_prod)
 
     @params_as_tensors
@@ -75,29 +75,213 @@ class GreatCircleRBF(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.greater_circle(X1, X2)/self.lengthscales
-        log_res = tf.math.log(self.variance) - 0.5*tf.math.square(dist)
+        dist = self.greater_circle(X1, X2) / self.lengthscales
+        log_res = tf.math.log(self.variance) - 0.5 * tf.math.square(dist)
         return tf.math.exp(log_res)
+
+
+class GreatCircleM32(Kernel):
+
+    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+        super().__init__(input_dim, active_dims, name=name)
+        self.variance = Parameter(variance,
+                                  transform=transforms.positiveRescale(variance),
+                                  dtype=settings.float_type)
+
+        self.lengthscales = Parameter(lengthscales,
+                                      transform=transforms.positiveRescale(lengthscales),
+                                      dtype=settings.float_type)
+        levi_civita = np.zeros((3, 3, 3))
+        for a1 in range(3):
+            for a2 in range(3):
+                for a3 in range(3):
+                    levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
+
+        self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @params_as_tensors
+    def greater_circle(self, a, b):
+        """
+        Greater circle with broadcast
+        :param a: [N,3]
+        :param b: [M, 3]
+        :return: [N, M]
+        """
+        # aj,ijk -> aik
+        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1], [1]])
+        # aik, bk -> aib
+        cross = tf.linalg.tensordot(A, b, axes=[[2], [1]])
+        # aib -> ab
+        cross_mag = tf.linalg.norm(cross, axis=1)
+        # ab
+        dot_prod = tf.linalg.tensordot(a, b, axes=[[1], [1]])
+        return tf.math.atan2(cross_mag, dot_prod)
+
+    @params_as_tensors
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.shape(X)[:-1], self.variance)
+
+    @params_as_tensors
+    def K(self, X1, X2=None, presliced=False):
+        """
+            The Matern 3/2 kernel. Functions drawn from a GP with this kernel are once
+            differentiable. The kernel equation is
+            k(r) =  σ² (1 + √3r) exp{-√3 r}
+            where:
+            r  is the Euclidean distance between the input points, scaled by the lengthscale parameter ℓ,
+            σ² is the variance parameter.
+        """
+        if not presliced:
+            X1, X2 = self._slice(X1, X2)
+        if X2 is None:
+            X2 = X1
+        dist = self.greater_circle(X1, X2) / self.lengthscales
+        dist *= np.sqrt(3.)
+        log_res = tf.math.log(self.variance) + tf.math.log(1. + dist) - dist
+        return tf.math.exp(log_res)
+
+
+class GreatCircleM52(Kernel):
+
+    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+        super().__init__(input_dim, active_dims, name=name)
+        self.variance = Parameter(variance,
+                                  transform=transforms.positiveRescale(variance),
+                                  dtype=settings.float_type)
+
+        self.lengthscales = Parameter(lengthscales,
+                                      transform=transforms.positiveRescale(lengthscales),
+                                      dtype=settings.float_type)
+        levi_civita = np.zeros((3, 3, 3))
+        for a1 in range(3):
+            for a2 in range(3):
+                for a3 in range(3):
+                    levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
+
+        self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @params_as_tensors
+    def greater_circle(self, a, b):
+        """
+        Greater circle with broadcast
+        :param a: [N,3]
+        :param b: [M, 3]
+        :return: [N, M]
+        """
+        # aj,ijk -> aik
+        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1], [1]])
+        # aik, bk -> aib
+        cross = tf.linalg.tensordot(A, b, axes=[[2], [1]])
+        # aib -> ab
+        cross_mag = tf.linalg.norm(cross, axis=1)
+        # ab
+        dot_prod = tf.linalg.tensordot(a, b, axes=[[1], [1]])
+        return tf.math.atan2(cross_mag, dot_prod)
+
+    @params_as_tensors
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.shape(X)[:-1], self.variance)
+
+    @params_as_tensors
+    def K(self, X1, X2=None, presliced=False):
+        """
+        The Matern 5/2 kernel. Functions drawn from a GP with this kernel are twice
+        differentiable. The kernel equation is
+        k(r) =  σ² (1 + √5r + 5/3r²) exp{-√5 r}
+        where:
+        r  is the Euclidean distance between the input points, scaled by the lengthscale parameter ℓ,
+        σ² is the variance parameter.
+        """
+        if not presliced:
+            X1, X2 = self._slice(X1, X2)
+        if X2 is None:
+            X2 = X1
+        dist = self.greater_circle(X1, X2) / self.lengthscales
+        dist *= np.sqrt(5.)
+        dist2 = np.square(dist) / 3.
+        log_res = tf.math.log(self.variance) + tf.math.log(1. + dist + dist2) - dist
+        return tf.math.exp(log_res)
+
+
+class GreatCircleM12(Kernel):
+
+    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+        super().__init__(input_dim, active_dims, name=name)
+        self.variance = Parameter(variance,
+                                  transform=transforms.positiveRescale(variance),
+                                  dtype=settings.float_type)
+
+        self.lengthscales = Parameter(lengthscales,
+                                      transform=transforms.positiveRescale(lengthscales),
+                                      dtype=settings.float_type)
+        levi_civita = np.zeros((3, 3, 3))
+        for a1 in range(3):
+            for a2 in range(3):
+                for a3 in range(3):
+                    levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
+
+        self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @params_as_tensors
+    def greater_circle(self, a, b):
+        """
+        Greater circle with broadcast
+        :param a: [N,3]
+        :param b: [M, 3]
+        :return: [N, M]
+        """
+        # aj,ijk -> aik
+        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1], [1]])
+        # aik, bk -> aib
+        cross = tf.linalg.tensordot(A, b, axes=[[2], [1]])
+        # aib -> ab
+        cross_mag = tf.linalg.norm(cross, axis=1)
+        # ab
+        dot_prod = tf.linalg.tensordot(a, b, axes=[[1], [1]])
+        return tf.math.atan2(cross_mag, dot_prod)
+
+    @params_as_tensors
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.shape(X)[:-1], self.variance)
+
+    @params_as_tensors
+    def K(self, X1, X2=None, presliced=False):
+        """
+        The Matern 1/2 kernel. Functions drawn from a GP with this kernel are not
+        differentiable anywhere. The kernel equation is
+        k(r) = σ² exp{-r}
+        where:
+        r  is the Euclidean distance between the input points, scaled by the lengthscale parameter ℓ.
+        σ² is the variance parameter
+        """
+        if not presliced:
+            X1, X2 = self._slice(X1, X2)
+        if X2 is None:
+            X2 = X1
+        dist = self.greater_circle(X1, X2) / self.lengthscales
+        log_res = tf.math.log(self.variance) - dist
+        return tf.math.exp(log_res)
+
 
 class GreatCircleRQ(Kernel):
     def __init__(self, input_dim, variance, lengthscales, alpha=10., active_dims=None, name=None):
         super().__init__(input_dim, active_dims, name=name)
         self.variance = Parameter(variance,
-                                   transform=transforms.positiveRescale(variance),
-                                   dtype=settings.float_type)
+                                  transform=transforms.positiveRescale(variance),
+                                  dtype=settings.float_type)
 
         self.lengthscales = Parameter(lengthscales,
                                       transform=transforms.positiveRescale(lengthscales),
                                       dtype=settings.float_type)
         self.alpha = Parameter(alpha,
-                                      transform=transforms.positiveRescale(alpha),
-                                      dtype=settings.float_type)
+                               transform=transforms.positiveRescale(alpha),
+                               dtype=settings.float_type)
 
-        levi_civita = np.zeros((3,3,3))
+        levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
             for a2 in range(3):
                 for a3 in range(3):
-                    levi_civita[a1,a2,a3] = np.sign(a2 - a1) * np.sign(a3-a1) * np.sign(a3 - a2)
+                    levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
@@ -109,14 +293,14 @@ class GreatCircleRQ(Kernel):
         :param b: [M, 3]
         :return: [N, M]
         """
-        #aj,ijk -> aik
-        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1],[1]])
-        #aik, bk -> aib
-        cross = tf.linalg.tensordot(A, b, axes=[[2],[1]])
-        #aib -> ab
-        cross_mag = tf.linalg.norm(cross,axis=1)
-        #ab
-        dot_prod = tf.linalg.tensordot(a,b, axes=[[1], [1]])
+        # aj,ijk -> aik
+        A = tf.linalg.tensordot(a, self.levi_civita, axes=[[1], [1]])
+        # aik, bk -> aib
+        cross = tf.linalg.tensordot(A, b, axes=[[2], [1]])
+        # aib -> ab
+        cross_mag = tf.linalg.norm(cross, axis=1)
+        # ab
+        dot_prod = tf.linalg.tensordot(a, b, axes=[[1], [1]])
         return tf.math.atan2(cross_mag, dot_prod)
 
     @params_as_tensors
@@ -129,10 +313,9 @@ class GreatCircleRQ(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = tf.math.square(self.greater_circle(X1, X2)/self.lengthscales)
-        log_res = tf.math.log(self.variance) - self.alpha*tf.math.log(1. + dist/(2.*self.alpha))
+        dist = tf.math.square(self.greater_circle(X1, X2) / self.lengthscales)
+        log_res = tf.math.log(self.variance) - self.alpha * tf.math.log(1. + dist / (2. * self.alpha))
         return tf.math.exp(log_res)
-
 
 
 class ArcCosineEQ(Kernel):
@@ -187,13 +370,14 @@ class ArcCosineEQ(Kernel):
 
 
 class Piecewise(Kernel):
-    ALLOWED_Q = [0,1,2,3]
+    ALLOWED_Q = [0, 1, 2, 3]
+
     def __init__(
             self,
             input_dim,
             amplitude=1.,
             length_scale=1.,
-            q_order = 0,
+            q_order=0,
             active_dims=None,
             name='Piecewise'):
         if q_order not in self.ALLOWED_Q:
@@ -231,7 +415,7 @@ class Piecewise(Kernel):
         if x2 is None:
             x2 = x1
 
-        j = float((self.input_dim//2) + self.q_order + 1)
+        j = float((self.input_dim // 2) + self.q_order + 1)
         J = float(j + self.q_order)
         # ..., b, c
         r = tf.math.sqrt(tf.reduce_sum(
@@ -245,15 +429,15 @@ class Piecewise(Kernel):
         if self.q_order == 0:
             pass
         if self.q_order == 1:
-            res *= (j+1)*r + 1
+            res *= (j + 1) * r + 1
         if self.q_order == 2:
-            res *= (j**2 + 4.*j + 3.)/3.*tf.math.square(r) \
-                   + (3.*j + 6.)/3.*r \
+            res *= (j ** 2 + 4. * j + 3.) / 3. * tf.math.square(r) \
+                   + (3. * j + 6.) / 3. * r \
                    + 1.
         if self.q_order == 3:
-            res *= (j**3 + 9.*j**2 + 23.*j + 15.)/15. * tf.math.pow(r, 3.) \
-                   + (6.*j**2 + 36.*j + 45.)/15. * tf.math.square(r) \
-                   + (15.*j + 45.)/15.*r \
+            res *= (j ** 3 + 9. * j ** 2 + 23. * j + 15.) / 15. * tf.math.pow(r, 3.) \
+                   + (6. * j ** 2 + 36. * j + 45.) / 15. * tf.math.square(r) \
+                   + (15. * j + 45.) / 15. * r \
                    + 1.
 
         if self.amplitude is not None:
@@ -264,16 +448,19 @@ class Piecewise(Kernel):
 def gpflow_kernel(kernel, dims=3, **kwargs):
     kern_map = dict(RBF=RBF, M32=Matern32, M52=Matern52, M12=Matern12,
                     ArcCosine=ArcCosine, ArcCosineEQ=ArcCosineEQ,
-                    Piecewise=Piecewise, GreatCircleRBF=GreatCircleRBF, GreatCircleRQ=GreatCircleRQ)
+                    Piecewise=Piecewise, GreatCircleRBF=GreatCircleRBF, GreatCircleRQ=GreatCircleRQ,
+                    GreatCircleM12=GreatCircleM12, GreatCircleM32=GreatCircleM32,
+                    GreatCircleM52=GreatCircleM52)
     kern = kern_map.get(kernel, None)
     if kern is None:
         raise ValueError("{} not valid kernel".format(kernel))
     return kern(dims, **kwargs)
 
+
 class VectorAmplitudeWrapper(Kernel):
     def __init__(self,
                  amplitude=None,
-                 inner_kernel:Kernel=None):
+                 inner_kernel: Kernel = None):
         super().__init__(inner_kernel.input_dim, inner_kernel.active_dims, name="VecAmp_{}".format(inner_kernel.name))
         self.inner_kernel = inner_kernel
 
@@ -296,6 +483,7 @@ class VectorAmplitudeWrapper(Kernel):
             return tf.math.square(self.amplitude)[:, None, None] * res
         return res
 
+
 class DirectionalKernel(Kernel):
     def __init__(self,
                  ref_direction=[0., 0., 1.],
@@ -306,7 +494,7 @@ class DirectionalKernel(Kernel):
                  obs_type='DDTEC'):
         super().__init__(3, active_dims,
                          name="DirectionalKernel_{}{}".format("aniso" if anisotropic else "iso",
-                                                               inner_kernel.name))
+                                                              inner_kernel.name))
         self.inner_kernel = inner_kernel
 
         self.obs_type = obs_type
@@ -367,25 +555,24 @@ class DirectionalKernel(Kernel):
                 self.ref_direction[None, :], self.ref_direction[None, :])
 
         if self.amplitude is not None:
-            return tf.math.square(self.amplitude)[:, None, None]*res
+            return tf.math.square(self.amplitude)[:, None, None] * res
         return res
 
 
-
-def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iterations=10, anisotropic=False, use_vec_kernels = False, **kwargs):
+def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iterations=10, anisotropic=False,
+                    use_vec_kernels=False, **kwargs):
     logging.info("Generating directional GP models.")
     amplitude = None
     if len(Y.shape) == 3:
         amplitude = np.ones(Y.shape[1])
     dir_kernels = [
-            gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.02),
-            gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.05),
-            gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.1),
-            gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.2),
-            gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2),
-            gpflow_kernel('GreatCircleRBF', dims=3, variance=10.**2, lengthscales=0.02),
-            gpflow_kernel('GreatCircleRQ', dims=3, variance=10.**2, lengthscales=0.02, alpha=10.)]
-
+        gpflow_kernel('GreatCircleRBF', dims=3, variance=10. ** 2, lengthscales=0.02),
+        gpflow_kernel('GreatCircleM52', dims=3, variance=10. ** 2, lengthscales=0.05),
+        gpflow_kernel('GreatCircleM32', dims=3, variance=10. ** 2, lengthscales=0.1),
+        gpflow_kernel('GreatCircleM12', dims=3, variance=10. ** 2, lengthscales=0.2),
+        gpflow_kernel('GreatCircleRQ', dims=3, variance=10. ** 2, lengthscales=0.02, alpha=10.),
+        # gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)
+    ]
 
     kernels = []
     for d in dir_kernels:
@@ -397,25 +584,21 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
 
     if use_vec_kernels:
         dir_kernels = [
-            gpflow_kernel('RBF', dims=3, variance=10. ** 2, lengthscales=0.02),
-            gpflow_kernel('M52', dims=3, variance=10. ** 2, lengthscales=0.05),
-            gpflow_kernel('M32', dims=3, variance=10. ** 2, lengthscales=0.1),
-            gpflow_kernel('M12', dims=3, variance=10. ** 2, lengthscales=0.2),
-            gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2),
-            gpflow_kernel('GreatCircleRBF', dims=3, variance=10.**2, lengthscales=0.02),
-            gpflow_kernel('GreatCircleRQ', dims=3, variance=10.**2, lengthscales=0.02, alpha=10.)]
-
+            gpflow_kernel('GreatCircleRBF', dims=3, variance=10. ** 2, lengthscales=0.02),
+            gpflow_kernel('GreatCircleM52', dims=3, variance=10. ** 2, lengthscales=0.05),
+            gpflow_kernel('GreatCircleM32', dims=3, variance=10. ** 2, lengthscales=0.1),
+            gpflow_kernel('GreatCircleM12', dims=3, variance=10. ** 2, lengthscales=0.2),
+            gpflow_kernel('GreatCircleRQ', dims=3, variance=10. ** 2, lengthscales=0.02, alpha=10.),
+            # gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)
+        ]
 
         for d in dir_kernels:
             kernels.append(VectorAmplitudeWrapper(
-                                             inner_kernel=d,
-                                             amplitude=amplitude))
-
+                inner_kernel=d,
+                amplitude=amplitude))
 
     models = [HGPR(X, Y, Y_var, kern, regularisation_param=reg_param, parallel_iterations=parallel_iterations,
                    name="HGPR_{}".format(kern.name))
               for kern in kernels]
 
-
     return models
-
