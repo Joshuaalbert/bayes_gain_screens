@@ -4,7 +4,7 @@ from typing import List, Union
 from .coord_transforms import ITRSToENUWithReferences_v2
 from . import logging, angle_type, dist_type, float_type
 from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, great_circle_sep
-from .outlier_detection import filter_tec_dir
+from .outlier_detection import filter_tec
 from timeit import default_timer
 import numpy as np
 import tensorflow as tf
@@ -16,7 +16,8 @@ class Deployment(object):
                  flux_limit=0.05, max_N=250, min_spacing_arcmin=1.,
                  ref_image_fits: str = None, ant=None, dir=None, time=None, freq=None, pol=slice(0, 1, 1),
                  directional_deploy=True, block_size=1, debug=False, working_dir='./deployment', flag_directions=None,
-                 flag_outliers=False, constant_tec_uncert=None, remake_posterior_solsets=False):
+                 constant_tec_uncert=None, constant_const_uncert=None, remake_posterior_solsets=False):
+
         self.debug = debug
         if self.debug:
             logging.info("In debug mode")
@@ -38,7 +39,7 @@ class Deployment(object):
             datapack = datapack.filename
         datapack = DataPack(datapack, readonly=False)
 
-        logging.info("Getting TEC and reference phase data from datapack.")
+        logging.info("Getting TEC, const, and reference phase data from datapack.")
         self.select = dict(ant=ant, dir=dir, time=time, freq=freq, pol=pol)
         datapack.current_solset = phase_solset
         datapack.select(**self.select)
@@ -50,16 +51,25 @@ class Deployment(object):
         tec = tec.astype(np.float64)
         tec_uncert, _ = datapack.weights_tec
         tec_uncert = tec_uncert.astype(np.float64)
-        _, data_directions = datapack.get_directions(axes['dir'])
-        data_directions = np.stack([data_directions.ra.rad * np.cos(data_directions.dec.rad), data_directions.dec.rad],
-                                   axis=1)
-
-        if flag_outliers:
-            logging.info("Flagging outliers in TEC")
-            tec_uncert, _ = filter_tec_dir(tec[0, ...], data_directions, tec_uncert[0, ...], function='multiquadric')
-            tec_uncert = tec_uncert[None, ...]
+        const, axes = datapack.const
+        const = const.astype(np.float64)
+        const_uncert, _ = datapack.weights_const
+        const_uncert = const_uncert.astype(np.float64)
+        
+        # _, data_directions = datapack.get_directions(axes['dir'])
+        # data_directions = np.stack([data_directions.ra.rad * np.cos(data_directions.dec.rad), data_directions.dec.rad],
+        #                            axis=1)
+        # if flag_outliers:
+        #     logging.info("Flagging outliers in TEC")
+        #     tec_uncert, _ = filter_tec(tec[0, ...], tec_uncert[0, ...])
+        #     tec_uncert = tec_uncert[None, ...]
+        #     logging.info("Flagging outliers in const")
+        #     const_uncert, _ = filter_const_dir(const[0, ...], data_directions, const_uncert[0, ...], function='multiquadric')
+        #     const_uncert = const_uncert[None, ...]
         if flag_directions is not None:
             tec_uncert[:, flag_directions, ...] = np.inf
+            const_uncert[:, flag_directions, ...] = np.inf
+
         logging.info("Number flagged: {} from {}".format(np.sum(np.isinf(tec_uncert)), tec_uncert.size))
         logging.info("Transposing data")
         if directional_deploy:
@@ -69,6 +79,13 @@ class Deployment(object):
             tec_uncert = tec_uncert[0, ...].transpose((2, 1, 0))
             if self.debug:
                 logging.info("tec shape: {} should be (Nt, Na, Nd)".format(tec.shape))
+
+            # Nd, Na, Nt -> Nt, Na, Nd
+            const = const[0, ...].transpose((2, 1, 0))
+            self.Nt, self.Na, self.Nd = const.shape
+            const_uncert = const_uncert[0, ...].transpose((2, 1, 0))
+            if self.debug:
+                logging.info("const shape: {} should be (Nt, Na, Nd)".format(const.shape))
         else:
             # Nt, Nd, Na
             tec = tec[0, ...].transpose((2, 0, 1))
@@ -76,20 +93,35 @@ class Deployment(object):
             tec_uncert = tec_uncert[0, ...].transpose((2, 0, 1))
             if self.debug:
                 logging.info("tec shape: {} should be (Nt, Nd, Na)".format(tec.shape))
-        logging.info("Setting minimum uncertainty to 0.5 mTECU")
+            # Nt, Nd, Na
+            const = const[0, ...].transpose((2, 0, 1))
+            self.Nt, self.Nd, self.Na = const.shape
+            const_uncert = const_uncert[0, ...].transpose((2, 0, 1))
+            if self.debug:
+                logging.info("const shape: {} should be (Nt, Nd, Na)".format(const.shape))
         if constant_tec_uncert is not None:
             logging.info("Setting all non-flagged TEC uncert to {}".format(constant_tec_uncert))
             tec_uncert = np.where(tec_uncert == np.inf, np.inf, constant_tec_uncert)
+        logging.info("Setting minimum tec uncertainty to 0.5 mTECU")
         tec_uncert = np.maximum(tec_uncert, 0.5, tec_uncert)
-
-
+        if constant_const_uncert is not None:
+            logging.info("Setting all non-flagged const uncert to {}".format(constant_const_uncert))
+            const_uncert = np.where(const_uncert == np.inf, np.inf, constant_const_uncert)
+        logging.info("Setting minimum const uncertainty to 0.5 mTECU")
+        const_uncert = np.maximum(const_uncert, 0.01, const_uncert)
         logging.info("Checking finiteness")
         if np.any(np.logical_not(np.isfinite(tec))):
-            raise ValueError("Some TECs are not finite.\n{}".format(
+            raise ValueError("Some tec are not finite.\n{}".format(
                 np.where(np.logical_not(np.isfinite(tec)))))
+        if np.any(np.logical_not(np.isfinite(const))):
+            raise ValueError("Some const are not finite.\n{}".format(
+                np.where(np.logical_not(np.isfinite(const)))))
         if np.any(np.isnan(tec_uncert)):
             raise ValueError("Some TEC uncerts are nan.\n{}".format(
                 np.where(np.isnan(tec_uncert))))
+        if np.any(np.isnan(const_uncert)):
+            raise ValueError("Some const uncerts are nan.\n{}".format(
+                np.where(np.isnan(const_uncert))))
         if np.any(np.logical_not(np.isfinite(phase))):
             raise ValueError("Some phases are not finite.\n{}".format(
                 np.where(np.logical_not(np.isfinite(phase)))))
@@ -106,7 +138,7 @@ class Deployment(object):
                                                                make_data_solset=False,
                                                                posterior_name='posterior',
                                                                screen_directions=screen_directions,
-                                                               make_soltabs=['phase000', 'tec000',
+                                                               make_soltabs=['phase000', 'tec000', 'const000',
                                                                              'amplitude000'],
                                                                remake_posterior_solsets=remake_posterior_solsets)
 
@@ -144,6 +176,8 @@ class Deployment(object):
         self.Xt = Xt
         self.tec = tec
         self.tec_uncert = tec_uncert
+        self.const = const
+        self.const_uncert = const_uncert
         self.block_size = block_size
         self.names = None
         self.models = None
@@ -208,7 +242,6 @@ class Deployment(object):
                         # block_size, Na, Nd
                         Y = self.tec[start:stop, :, :]
                         # block_size, Na, Nd
-                        # Y = Y.reshape((-1, self.Nd))
                         Y_var = np.square(self.tec_uncert[start:stop, :, :])
 
                         if self.debug:
@@ -217,8 +250,7 @@ class Deployment(object):
                                 logging.info("Y:\n{}".format(Y))
                                 logging.info("Y_var:\n{}".format(Y_var))
                         logging.info("Data shape should be (block_size, Na, Nd)")
-                        logging.info(
-                            "Shapes:\nX: {}, Y: {}, Y_var: {}, X_screen: {} ref_dir: {}".format(X.shape, Y.shape,
+                        logging.info("Shapes:\nX: {}, Y: {}, Y_var: {}, X_screen: {} ref_dir: {}".format(X.shape, Y.shape,
                                                                                                 Y_var.shape,
                                                                                                 X_screen.shape,
                                                                                                 ref_direction))
@@ -230,8 +262,9 @@ class Deployment(object):
                     else:
                         # block_size, Nd, Na
                         Y = self.tec[start:stop, :, :]
+                        # block_size, Nd*Na
                         Y = Y.reshape((-1, self.Nd * self.Na))
-                        # block_size, Nd, Na
+                        # block_size, Nd*Na
                         Y_var = np.square(self.tec_uncert[start:stop, :, :]).reshape((-1, self.Nd * self.Na))
                         if self.debug:
                             with np.printoptions(precision=2):
