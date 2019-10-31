@@ -62,7 +62,7 @@ def kMS(dicomodel = "image_full_ampphase_di_m.NS.DicoModel", data_column = 'SIM_
       cmd = cmd + '--SolsDir=SOLSDIR  --BeamMode LOFAR --LOFARBeamMode=A --DDFCacheDir=. ' 
       cmd = cmd + '--NodesFile ' + clustercat + ' --DicoModel ' + dicomodel
     
-      print cmd
+      print(cmd)
       os.system(cmd)
 
 

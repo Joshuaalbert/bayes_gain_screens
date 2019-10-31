@@ -33,11 +33,11 @@ def get_solutions_timerange(sols):
     return np.min(t), np.max(t)
 
 
-def fixsymlinks(data_dir, working_dir, obs_num):
+def fixsymlinks(archive_dir, working_dir, obs_num):
     # Code from Tim for fixing symbolic links for DDS3_
     # dds3smoothed = glob.glob('SOLSDIR/*/*killMS.DDS3_full_smoothed*npz')
     print("Fixing symbolic links")
-    dds3 = glob.glob(os.path.join(data_dir, 'SOLSDIR/L{obs_num}*.ms/killMS.DDS3_full.sols.npz'.format(obs_num=obs_num)))
+    dds3 = glob.glob(os.path.join(archive_dir, 'SOLSDIR/L{obs_num}*.ms/killMS.DDS3_full.sols.npz'.format(obs_num=obs_num)))
     for f in dds3:
         ms = os.path.basename(os.path.dirname(f))
         to_folder = os.path.join(working_dir, 'SOLSDIR', ms)
@@ -54,8 +54,8 @@ def fixsymlinks(data_dir, working_dir, obs_num):
             os.symlink(src,dst)
         start_time, _ = get_solutions_timerange(f)
         start_time = os.path.basename(
-            glob.glob(os.path.join(data_dir, 'DDS3_full_{}*_smoothed.npz'.format(int(start_time))))[0]).split('_')[2]
-        src = os.path.join(data_dir, 'DDS3_full_{}_smoothed.npz'.format(start_time))
+            glob.glob(os.path.join(archive_dir, 'DDS3_full_{}*_smoothed.npz'.format(int(start_time))))[0]).split('_')[2]
+        src = os.path.join(archive_dir, 'DDS3_full_{}_smoothed.npz'.format(start_time))
         dst = os.path.join(to_folder, 'killMS.DDS3_full_smoothed.sols.npz')
         if os.path.islink(dst):
             os.unlink(dst)
@@ -156,15 +156,24 @@ def add_args(parser):
     parser.add_argument('--obs_num', help='Obs number L*',
                         default=None, type=int, required=True)
 
-    parser.add_argument('--data_dir', help='Where are the archives stored.',
+    parser.add_argument('--archive_dir', help='Where are the archives stored.',
                         default=None, type=str, required=True)
     parser.add_argument('--working_dir', help='Where to perform the subtract.',
                         default=None, type=str, required=True)
 
 
-def copy_archives(data_dir, working_dir, obs_num):
+def copy_archives(archive_dir, working_dir, obs_num):
     print("Copying archives.")
-    mslist = sorted(glob.glob(os.path.join(data_dir, 'L{obs_num}*_SB*.ms.archive'.format(obs_num=obs_num))))
+    archive_fullmask = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
+    archive_indico = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.DicoModel')
+    archive_clustercat = os.path.join(archive_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
+    fullmask = os.path.join(working_dir, os.path.basename(archive_fullmask))
+    indico = os.path.join(working_dir, os.path.basename(archive_indico))
+    clustercat = os.path.join(working_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
+    os.system('rsync -auvP {} {}'.format(archive_fullmask, fullmask))
+    os.system('rsync -auvP {} {}'.format(archive_indico, indico))
+    os.system('rsync -auvP {} {}'.format(archive_clustercat, clustercat))
+    mslist = sorted(glob.glob(os.path.join(archive_dir, 'L{obs_num}*_SB*.ms.archive'.format(obs_num=obs_num))))
     print('Found archives files:\n{}'.format(mslist))
     outms = []
     for ms in mslist:
@@ -177,11 +186,11 @@ def copy_archives(data_dir, working_dir, obs_num):
     with open(mslist_file, 'w') as f:
         for ms in outms:
             f.write('{}\n'.format(ms))
-    return mslist_file, outms
+    return mslist_file, outms, fullmask, indico, clustercat
 
 
-def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours):
-    data_dir = os.path.abspath(data_dir)
+def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours):
+    archive_dir = os.path.abspath(archive_dir)
     working_dir = os.path.abspath(working_dir)
     region_file = os.path.abspath(region_file)
     try:
@@ -194,12 +203,16 @@ def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, c
         pass
     os.chdir(working_dir)
     solsdir = os.path.join(working_dir, 'SOLSDIR')
-    mslist_file, mslist = copy_archives(data_dir, working_dir, obs_num)
-    fullmask = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
-    indico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
-    clustercat = os.path.join(data_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
+    mslist_file, mslist, fullmask, indico, clustercat = copy_archives(archive_dir, working_dir, obs_num)
     outdico = os.path.join(working_dir, 'image_full_ampphase_di_m_SUB.NS.DicoModel')
-    fixsymlinks(data_dir, working_dir, obs_num)
+    outmask = os.path.join(working_dir, 'cutoutmask.fits')  # just a name, can be anything
+    if not os.path.isfile(fullmask):
+        raise IOError("Missing mask {}".format(fullmask))
+    if not os.path.isfile(indico):
+        raise IOError("Missing dico model {}".format(indico))
+    if not os.path.isfile(clustercat):
+        raise IOError("Missing clustercat {}".format(clustercat))
+    fixsymlinks(archive_dir, working_dir, obs_num)
     if keeplongbaselines:
         uvsel = "[0.100000,5000.000000]"
     else:
@@ -208,12 +221,8 @@ def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, c
     imagecell = 1.5
     data_colname = 'DATA'
     outcolname = 'DATA_SUB'
-    outmask = os.path.join(working_dir,'cutoutmask.fits')  # just a name, can be anything
-
     columnchecker(mslist, data_colname)
-
     imagenpix = getimsize(fullmask)
-
     # predict
     if os.path.isfile(outdico):
         os.unlink(outdico)

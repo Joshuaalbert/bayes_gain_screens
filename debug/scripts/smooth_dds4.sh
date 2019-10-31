@@ -43,8 +43,15 @@ while true; do
   esac
 done
 
+if [ -z "$conda_env" ] || [ -z "$script_dir" ] || [ -z "$obs_num" ] || [ -z "$working_dir" ]
+then
+    usage;
+    exit;
+fi
+
 source ~/.bashrc
 source activate $conda_env
-cmd = "$script_dir/smooth_dds4.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir"
+export PYTHONPATH=
+cmd="python $script_dir/smooth_dds4_simple.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir"
+echo $cmd
 eval $cmd
-source deactivate $conda_env

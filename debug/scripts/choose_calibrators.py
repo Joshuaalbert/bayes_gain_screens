@@ -2,6 +2,8 @@ from astropy.io import fits
 import astropy.coordinates as ac
 import astropy.units as au
 from astropy import wcs
+import matplotlib as mpl
+mpl.use('Agg')
 import pylab as plt
 import numpy as np
 from matplotlib.patches import Circle
@@ -17,9 +19,9 @@ def great_circle_sep(ra1, dec1, ra2, dec2):
     return np.arctan2(np.sqrt(num2), den)
 
 
-def get_screen_directions(image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1.,
+def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1.,
                                      seed_directions=None, fill_in_distance=None,
-                                     fill_in_flux_limit=0.):
+                                     fill_in_flux_limit=0., working_dir=None):
     """Given a srl file containing the sources extracted from the apparent flux image of the field,
     decide the screen directions
 
@@ -32,7 +34,7 @@ def get_screen_directions(image_fits, flux_limit=0.1, max_N=None, min_spacing_ar
     if max_N is not None:
         if seed_directions is not None:
             max_N -= seed_directions.shape[0]
-    with fits.open(image_fits) as hdul:
+    with fits.open(ref_image_fits) as hdul:
         # ra,dec, _, freq
         data = hdul[0].data
         w = wcs.WCS(hdul[0].header)
@@ -48,6 +50,7 @@ def get_screen_directions(image_fits, flux_limit=0.1, max_N=None, min_spacing_ar
             ra = list(seed_directions[:, 0])
             dec = list(seed_directions[:, 1])
         idx = []
+        sizes = []
         for i in arg_sort:
             pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
             #             logging.info("{} -> {}".format(i, pix))
@@ -63,6 +66,7 @@ def get_screen_directions(image_fits, flux_limit=0.1, max_N=None, min_spacing_ar
                 print("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
 
                 idx.append(i)
+                sizes.append(120.)
                 continue
             dist = great_circle_sep(np.array(ra), np.array(dec), ra_, dec_) * 180. / np.pi
             if np.all(dist > min_spacing_arcmin / 60.):
@@ -71,6 +75,7 @@ def get_screen_directions(image_fits, flux_limit=0.1, max_N=None, min_spacing_ar
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
                 print("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                 idx.append(i)
+                sizes.append(120.)
                 continue
             if max_N is not None:
                 if len(idx) > max_N:
@@ -98,6 +103,7 @@ def get_screen_directions(image_fits, flux_limit=0.1, max_N=None, min_spacing_ar
                     print(
                         "Found filler {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                     idx.append(i)
+                    sizes.append(0.5*np.min(dist)*3600.)
                     continue
                 if max_N is not None:
                     if len(idx) > max_N:
@@ -108,10 +114,27 @@ def get_screen_directions(image_fits, flux_limit=0.1, max_N=None, min_spacing_ar
             f = np.array(f)[arg]
             ra = np.array(ra)[arg]
             dec = np.array(dec)[arg]
-        sizes = np.ones(len(idx))
-        sizes[:first_found] = 120.
-        sizes[first_found:] = 240.
+        # sizes = np.ones(len(idx))
+        # sizes[:first_found] = 120.
+        # sizes[first_found:] = 240.
+    f = np.array(f)
+    ra = np.array(ra)
+    dec = np.array(dec)
+    # sizes = list(sizes)
 
+    # plotting
+    plt.scatter(ra, dec, c=np.linspace(0., 1., len(ra)), cmap='jet', s=np.sqrt(10000. * f), alpha=1.)
+    target = Circle((np.mean(ra)*180/np.pi, np.mean(dec)*180/np.pi), radius=3.56 / 2., fc=None, alpha=0.2)
+    ax = plt.gca()
+    ax.add_patch(target)
+    target = Circle((np.mean(ra)*180/np.pi, np.mean(dec)*180/np.pi), radius=4.75 / 2., fc=None, alpha=0.2)
+    ax = plt.gca()
+    ax.add_patch(target)
+    plt.title("Brightest {} sources".format(len(f)))
+    plt.xlabel('ra (deg)')
+    plt.xlabel('dec (deg)')
+    plt.savefig(os.path.join(working_dir, 'calibrators.png'))
+    plt.close('all')
     print("Found {} sources.".format(len(ra)))
     if seed_directions is not None:
         ra = list(seed_directions[:, 0]) + list(ra)
@@ -132,6 +155,7 @@ def write_reg_file(filename, radius_arcsec, directions, color='green'):
             f.write('circle({},{},{}")\n'.format(
                 d.ra.to_string(unit=au.hour, sep=(":", ":"), alwayssign=False, precision=3),
                 d.dec.to_string(unit=au.deg, sep=(":", ":"), alwayssign=True, precision=2), r))
+        print("Wrote calibrators to file: {}".format(filename))
 
 
 def add_args(parser):
@@ -140,7 +164,7 @@ def add_args(parser):
     parser.add_argument('--working_dir', default='./', help='Where to store things like output', required=False,
                         type=str)
     parser.add_argument('--region_file', help='boxfile, required argument', required=True, type=str)
-    parser.add_argument('--image_fits',
+    parser.add_argument('--ref_image_fits',
                         help='image of field.',
                         type=str, required=True)
     parser.add_argument('--flux_limit', help='Peak flux cut off for source selection.',
@@ -150,35 +174,26 @@ def add_args(parser):
 
     parser.add_argument('--min_spacing_arcmin', help='Min distance in arcmin of sources.',
                         default=10., type=float, required=False)
-    parser.add_argument('--plot', help='Whether to plot.',
-                        default=False, type="bool", required=False)
     parser.add_argument('--fill_in_distance',
-                        help='If not None then uses fainter sources to fill in some areas further than fill_in_distance from nearest selected source in arcmin.',
+                        help='If not None then uses fainter sources to fill in some large areas further than fill_in_distance from nearest selected source in arcmin.',
                         default=None, type=float, required=False)
-    parser.add_argument('--min_spacing_arcmin',
+    parser.add_argument('--fill_in_flux_limit',
                         help='If fill_in_distance is not None then this is the secondary peak flux cutoff for fill in sources.',
-                        default=0.05, type=float, required=False)
+                        default=None, type=float, required=False)
 
 
-def main(working_dir, region_file, image_fits,
-         flux_limit, max_N, min_spacing_arcmin, plot, fill_in_distance, fill_in_flux_limit):
-    region_file = os.path.join(os.path.abspath(working_dir), os.path.basename(region_file))
-    directions, sizes = get_screen_directions(image_fits=image_fits,
+def main(working_dir, region_file, ref_image_fits,
+         flux_limit, max_N, min_spacing_arcmin, fill_in_distance, fill_in_flux_limit):
+    directions, sizes = get_screen_directions(ref_image_fits=ref_image_fits,
                                               flux_limit=flux_limit, max_N=max_N, min_spacing_arcmin=min_spacing_arcmin,
-                                              plot=plot,
-                                              fill_in_distance=fill_in_distance, fill_in_flux_limit=fill_in_flux_limit)
+                                              fill_in_distance=fill_in_distance, fill_in_flux_limit=fill_in_flux_limit,
+                                              working_dir=working_dir)
     write_reg_file(region_file, sizes, directions, 'red')
-
-
-def lockman_run():
-    main(working_dir='./', region_file='LH_auto_select.reg', image_fits='lockman_deep_archive.pybdsm.srl.fits',
-         flux_limit=0.15, max_N=None, min_spacing_arcmin=10., plot=False, fill_in_distance=60.,
-         fill_in_flux_limit=0.05)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Keep soures inside box region, subtract everything else and create new ms',
+        description='Select calibrator sources.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()

@@ -5,7 +5,7 @@ function usage()
 {
    cat << HEREDOC
 
-   Usage: $progname --script_dir --working_dir --data_dir --obs_num --ncpu --ref_dir --conda_env
+   Usage: $progname --script_dir --working_dir --data_dir --obs_num --conda_env
 
    optional arguments:
      -h, --help           show this help message and exit
@@ -20,13 +20,11 @@ script_dir=
 obs_num=
 data_dir=
 working_dir=
-ref_dir=0
-ncpu=32
 
 # use getopt and store the output into $OPTS
 # note the use of -o for the short options, --long for the long name options
 # and a : for any option that takes a parameter
-OPTS=$(getopt -o "h" --long "help,conda_env:,script_dir:,obs_num:,data_dir:,working_dir:,ref_dir:,ncpu:" -n "$progname" -- "$@")
+OPTS=$(getopt -o "h" --long "help,conda_env:,script_dir:,obs_num:,data_dir:,working_dir:" -n "$progname" -- "$@")
 if [ $? != 0 ] ; then echo "Error in command line arguments." >&2 ; usage; exit 1 ; fi
 eval set -- "$OPTS"
 
@@ -40,8 +38,6 @@ while true; do
     --working_dir ) working_dir="$2"; shift 2 ;;
     --data_dir ) data_dir="$2"; shift 2 ;;
     --obs_num ) obs_num="$2"; shift 2 ;;
-    --ref_dir ) ref_dir="$2"; shift 2 ;;
-    --ncpu ) ncpu="$2"; shift 2 ;;
     -- ) shift; break ;;
     * ) break ;;
   esac
@@ -56,6 +52,6 @@ fi
 source ~/.bashrc
 source activate $conda_env
 export PYTHONPATH=
-cmd="python $script_dir/tec_inference.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir --ref_dir=$ref_dir --ncpu=$ncpu"
+cmd="python $script_dir/merge_slow.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir"
 echo $cmd
 eval $cmd
