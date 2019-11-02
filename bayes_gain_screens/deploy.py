@@ -5,6 +5,7 @@ from .coord_transforms import ITRSToENUWithReferences_v2
 from . import logging, angle_type, dist_type, float_type
 from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, great_circle_sep
 from .outlier_detection import filter_tec
+from scipy.ndimage import median_filter
 from timeit import default_timer
 import numpy as np
 import tensorflow as tf
@@ -16,6 +17,7 @@ class Deployment(object):
                  flux_limit=0.05, max_N=250, min_spacing_arcmin=1.,
                  ref_image_fits: str = None, ant=None, dir=None, time=None, freq=None, pol=slice(0, 1, 1),
                  directional_deploy=True, block_size=1, debug=False, working_dir='./deployment', flag_directions=None,
+                 flag_outliers=True,
                  constant_tec_uncert=None, constant_const_uncert=None, remake_posterior_solsets=False):
 
         self.debug = debug
@@ -59,13 +61,16 @@ class Deployment(object):
         # _, data_directions = datapack.get_directions(axes['dir'])
         # data_directions = np.stack([data_directions.ra.rad * np.cos(data_directions.dec.rad), data_directions.dec.rad],
         #                            axis=1)
-        # if flag_outliers:
-        #     logging.info("Flagging outliers in TEC")
-        #     tec_uncert, _ = filter_tec(tec[0, ...], tec_uncert[0, ...])
-        #     tec_uncert = tec_uncert[None, ...]
-        #     logging.info("Flagging outliers in const")
-        #     const_uncert, _ = filter_const_dir(const[0, ...], data_directions, const_uncert[0, ...], function='multiquadric')
-        #     const_uncert = const_uncert[None, ...]
+        if flag_outliers:
+            logging.info("Flagging outliers in TEC")
+            tec_uncert = np.where(np.abs(median_filter(tec, size=(1,1,1,5)) - tec) > 50., np.inf, tec_uncert)
+            const_uncert = np.where(np.abs(median_filter(const, size=(1,1,1,5)) - const) > 0.1, np.inf, const_uncert)
+            const = median_filter(const, size=(1,1,1,7))
+            # tec_uncert, _ = filter_tec(tec[0, ...], tec_uncert[0, ...])
+            # tec_uncert = tec_uncert[None, ...]
+            # logging.info("Flagging outliers in const")
+            # const_uncert, _ = filter_const_dir(const[0, ...], data_directions, const_uncert[0, ...], function='multiquadric')
+            # const_uncert = const_uncert[None, ...]
         if flag_directions is not None:
             tec_uncert[:, flag_directions, ...] = np.inf
             const_uncert[:, flag_directions, ...] = np.inf
@@ -212,6 +217,8 @@ class Deployment(object):
             weights_array = []
             log_marginal_likelihood_array = []
 
+            init_hyperparams = None
+
             for t in range(0, self.Nt, self.block_size):
 
                 start = t
@@ -287,8 +294,12 @@ class Deployment(object):
                     if self.debug:
                         logging.info("Models:\n{}".format(self.names))
                     model = AverageModel(self.models, debug=self.debug)
+                    if init_hyperparams is not None:
+                        logging.info("Transferring last hyperparams")
+                        model.set_hyperparams(init_hyperparams)
                     logging.info("Optimising models")
-                    model.optimise()
+                    model.optimise_and_flag()
+                    init_hyperparams = model.get_hyperparams()
                     logging.info("Predicting posteriors and averaging")
                     # batch_size, N
                     (weights, log_marginal_likelihoods), post_mean, post_var = model.predict_f(X_screen,
@@ -327,6 +338,13 @@ class Deployment(object):
                 weights_array = np.concatenate(weights_array, axis=1)
                 log_marginal_likelihood_array = np.concatenate(log_marginal_likelihood_array, axis=1)
 
+            if self.directional_deploy:
+                #Nt, Na, Nd -> Nd, Na, Nt
+                const_mean = self.const.transpose((2,1,0))
+            else:
+                #Nt, Nd, Na -> Nd, Na, Nt
+                const_mean = self.const.transpose((1,2,0))
+
             # Nt, Nd, Na -> Nd_screen, Na, Nt
             post_mean_array = np.concatenate(post_mean_array, axis=0).transpose((1, 2, 0))
             post_std_array = np.concatenate(post_std_array, axis=0).transpose((1, 2, 0))
@@ -340,13 +358,19 @@ class Deployment(object):
             _, freqs = self.datapack.get_freqs(axes['freq'])
             tec_conv = -8.4479745e6 / freqs
 
-            post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di
+            logging.info("Getting NN indices")
+            idx = [np.argmin(
+                great_circle_sep(self.Xd[:, 0], self.Xd[:, 1], ra, dec) for (ra, dec) in zip(*self.Xd_screen.T))]
+            logging.info("Getting NN const")
+            #Nd_screen, Na, Nt
+            const_NN = const_mean[idx, :, :]
+            #1, Nd, Na, Nf, Nt
+            post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di + const_NN[None,..., None, :]
             post_phase_std = np.abs(post_std_array[None, ..., None, :] * tec_conv[:, None])
+            logging.info("Storing phases.")
             self.datapack.phase = post_phase_mean
             self.datapack.weights_phase = post_phase_std
             logging.info("NN interp of amplitudes.")
-            idx = [np.argmin(
-                great_circle_sep(self.Xd[:, 0], self.Xd[:, 1], ra, dec) for (ra, dec) in zip(*self.Xd_screen.T))]
             self.datapack.current_solset = self.phase_solset
             self.datapack.select(**self.select)
             amplitude, _ = self.datapack.amplitude

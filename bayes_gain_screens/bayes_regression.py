@@ -21,11 +21,16 @@ class Smoother(object):
         :param deg: int
             The order of fit.
         """
-        sigma, p = self.non_bayes_fit(x, y, deg, filter_size=1)
-        mu0, Lambda0, a0, b0 = self.prior_fit(sigma, p)
-        #M, N, deg+1
-        X = x[:, None]**(deg - np.arange(deg+1)[None, :])
 
+        # sigma, p = self.non_bayes_fit(x, y, deg, filter_size=1)
+        # mu0, Lambda0, a0, b0 = self.prior_fit(sigma, p)
+        #N, K
+        self.X = x[:, None]**(deg - np.arange(deg+1)[None, :])
+        self.A = np.einsum('ni,nj->ij', self.X, self.X)
+        #M
+        self.XTy = np.einsum('ni,mn->mi',self.X, y)
+        #M, K
+        self.beta0 = np.linalg.lstsq(self.A,)
 
 
     def prior_fit(self,sigma, p):
