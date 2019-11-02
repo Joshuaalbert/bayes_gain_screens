@@ -9,6 +9,13 @@ from bayes_gain_screens import logging
 from dask.multiprocessing import get
 from timeit import default_timer
 
+def filter_const(y, init_y_uncert):
+    def wrap(p):
+        return np.arctan2(np.sin(p), np.cos(p))
+    flags = wrap(wrap(y) - wrap(median_filter(y, (1, 1, 3)))) > 20.
+    init_y_uncert[np.where(flags)] = np.inf
+    return flags, init_y_uncert
+
 def get_smooth_param(x_list, y, desired_std, **kwargs):
     smooth_ = [0.]
     std_ = [0.]
@@ -75,8 +82,13 @@ def filter_log_amplitude_dir_freq(y, directions, freqs, **kwargs):
                 # print(t, a, np.where(final_flags[:, a, :, t]), 'from', Nd*Nf)
     return final_flags
 
+def filter_tec(y, init_y_uncert):
+    flags = (y - median_filter(y, (1, 1, 3))) > 20.
+    init_y_uncert[np.where(flags)] = np.inf
+    return flags, init_y_uncert
+    # return filter_tec_dir(y, directions, init_y_uncert, min_res=8., function='multiquadric')
 
-def filter_tec_dir(y,  directions, init_y_uncert=None, maxiter=46,  **kwargs):
+def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     """
     Uses temporal and spatial smoothing.
 
@@ -99,6 +111,7 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, maxiter=46,  **kwargs):
     final_flags = np.zeros_like(y)
     x_list0 = list(X.T)
     Nd, Na, Nt = y.shape
+    maxiter = Nd
     smooths = np.linspace(0.2, 0.3, maxiter)[::-1]
     for t in range(Nt):
         for a in range(Na):
@@ -109,7 +122,7 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, maxiter=46,  **kwargs):
                 dy = np.abs(y_star - y[:, a, t])
                 # print(np.median(dy), np.percentile(dy, 95))
                 max_dy = np.max(dy[keep])
-                if max_dy < 8.:
+                if max_dy < min_res:
                     break
                 print(max_dy)
                 keep = dy < max_dy
@@ -118,7 +131,6 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, maxiter=46,  **kwargs):
             # print('CONF', np.interp(dy[~keep], np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
 
             if keep.sum() < Nd:
-                #9, 39, 29, 37, 11, 13
                 print(t, a, np.where(final_flags[:, a, t]), 'from', Nd)
 
     init_y_uncert[np.where(final_flags)] = np.inf

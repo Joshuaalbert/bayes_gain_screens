@@ -42,8 +42,8 @@ def add_args(parser):
         return s
 
     def list_parse(s: str):
-        s = s.replace('[','')
-        s = s.replace(']','')
+        s = s.replace('[', '')
+        s = s.replace(']', '')
         return [int(d.strip()) for d in s.split(',')]
 
     parser.register("type", "bool", lambda v: v.lower() == "true")
@@ -55,7 +55,6 @@ def add_args(parser):
     optional = parser._action_groups.pop()  # Edited this line
     parser._action_groups.append(optional)  # added this line
     required = parser.add_argument_group('Required arguments')
-
 
     required.add_argument("--datapack", type=str,
                           default=None,
@@ -77,9 +76,13 @@ def add_args(parser):
     optional.add_argument("--use_vec_kernels", type="bool",
                           default=False,
                           help="""Whether to include directional kernels with vectorised amps.""", required=False)
+    optional.add_argument("--debug", type="bool",
+                          default=False,
+                          help="""Give debug output.""", required=False)
     optional.add_argument("--flag_directions", type="list",
                           default=None,
-                          help="""Flag specific directions for sure. In addition to regular filtering.""", required=False)
+                          help="""Flag specific directions for sure. In addition to regular filtering.""",
+                          required=False)
     optional.add_argument("--ant", type="axes_selection", default=None,
                           help="""The antennas selection: None, regex RS*, or slice format <start>/<stop>/<step>.\n""")
     optional.add_argument("--time", type="axes_selection", default=None,
@@ -102,9 +105,13 @@ def add_args(parser):
                           help="Minimum brightness to be considered for a screen point [Jy/beam].")
     optional.add_argument("--block_size", type=int, default=10,
                           help="Number of timesteps to solve independently at once (more boosts signal to noise, but the ionosphere might change).")
+    optional.add_argument("--block_size", type=int, default=10,
+                          help="Number of timesteps to solve independently at once (more boosts signal to noise, but the ionosphere might change).")
+
 
 def run_paper3():
-    datapack = DataPack('/net/lofar1/data1/albert/imaging/data/P126+65_compact_raw/P126+65_full_compact_raw_v9.h5', readonly=False)
+    datapack = DataPack('/net/lofar1/data1/albert/imaging/data/P126+65_compact_raw/P126+65_full_compact_raw_v9.h5',
+                        readonly=False)
     make_soltab(datapack, from_solset='sol000', from_soltab='phase000', to_solset='sol000', to_soltab='tec000')
     datapack.current_solset = 'sol000'
     reinout_flags = np.load('/home/albert/lofar1_1/imaging/data/flagsTECBay.npy')[None, ...]
@@ -114,12 +121,16 @@ def run_paper3():
     reinout_tec[:, 14, ...] = 0.
     datapack.tec = reinout_tec
 
-    main('directional', datapack, ref_dir=14, output_folder='paper3_directional_deployment', min_spacing_arcmin=1., max_N=250,
+    main('directional', datapack, ref_dir=14, output_folder='paper3_directional_deployment', min_spacing_arcmin=1.,
+         max_N=250,
          flux_limit=0.05, block_size=10, srl_file='/home/albert/ftp/image.pybdsm.srl.fits', ant=None, time=None,
          dir=None, pol=slice(0, 1, 1), freq=None)
 
-def main(deployment_type, datapack, tec_solset, phase_solset, ref_dir, output_folder, min_spacing_arcmin, max_N, flux_limit, block_size, srl_file, use_vec_kernels, ant, time, dir, pol, freq):
-    if deployment_type not in ['directional','non_integral', 'tomographic']:
+
+def main(deployment_type, datapack, tec_solset, phase_solset, ref_dir, output_folder, min_spacing_arcmin, max_N,
+         flux_limit, block_size, srl_file, debug, use_vec_kernels, ant, time, dir, pol, freq, flag_directions,
+         remake_posterior_solsets, constant_tec_uncert, flag_outliers):
+    if deployment_type not in ['directional', 'non_integral', 'tomographic']:
         raise ValueError("Invalid deployment_type".format(deployment_type))
     if deployment_type == 'directional':
         from bayes_gain_screens.directional_models import generate_models
@@ -146,15 +157,46 @@ def main(deployment_type, datapack, tec_solset, phase_solset, ref_dir, output_fo
                             pol=pol,
                             directional_deploy=directional_deploy,
                             block_size=block_size,
-                            working_dir=os.path.abspath(output_folder))
+                            working_dir=os.path.abspath(output_folder),
+                            flag_directions=flag_directions,
+                            debug=debug,
+                            flag_outliers=flag_outliers,
+                            constant_tec_uncert=constant_tec_uncert,
+                            remake_posterior_solsets=remake_posterior_solsets)
     deployment.run(generate_models, use_vec_kernels=use_vec_kernels)
 
-if __name__ == '__main__':
+def test_deployment():
+    main(deployment_type='directional',
+         datapack='/home/albert/lofar1_1/imaging/data/lockman/L667218_DDS4_full.h5',
+         tec_solset='smoothed000',
+         phase_solset='smoothed000',
+         ref_dir=0,
+         output_folder='directional_deploy_L667218',
+         min_spacing_arcmin=2.,
+         max_N=250,
+         flux_limit=0.01,
+         block_size=10,
+         srl_file='/home/albert/lofar1_1/imaging/data/lockman/lockman_deep_archive.pybdsm.srl.fits',
+         debug=False,
+         use_vec_kernels=False,
+         ant=None,
+         time=None,
+         dir=None,
+         pol=slice(0,1,1),
+         freq=None,
+         flag_outliers=False,
+         flag_directions=[45],
+         constant_tec_uncert=None,
+         remake_posterior_solsets=False)
 
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    add_args(parser)
-    flags, unparsed = parser.parse_known_args()
-    logging.info("Running with:")
-    for option, value in vars(flags).items():
-        logging.info("    {} -> {}".format(option, value))
-    main(**vars(flags))
+if __name__ == '__main__':
+    test_deployment()
+
+
+    # parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    # add_args(parser)
+    # flags, unparsed = parser.parse_known_args()
+    # logging.info("Running with:")
+    # for option, value in vars(flags).items():
+    #     logging.info("    {} -> {}".format(option, value))
+    # main(**vars(flags))

@@ -11,6 +11,8 @@ from scipy.special import logsumexp
 from gpflow.training import ScipyOptimizer
 from . import logging
 
+
+
 class HGPR(GPModel):
 
     def __init__(self, X, Y, Y_var, kern, regularisation_param=1., mean_function=None, parallel_iterations=1,
@@ -19,7 +21,7 @@ class HGPR(GPModel):
         likelihood = Gaussian()
         # M, D
         X = DataHolder(X)
-        # T, M
+        # B, (T), M
         Y = DataHolder(Y)
         num_latent = Y.shape[0]
         GPModel.__init__(self, X=X, Y=Y, kern=kern, likelihood=likelihood,
@@ -33,7 +35,6 @@ class HGPR(GPModel):
     def _build_common(self):
         # (T), M, M
         Kmm = self.kern.K(self.X)
-        # with tf.control_dependencies([tf.print(Kmm)]):
         # B, (T), M
         Y_std = tf.math.sqrt(self.Y_var)
 
@@ -208,8 +209,37 @@ class HGPR(GPModel):
 
         return log_marginal_likelihood, post_mean
 
+
+    @name_scope('grad_likelihood_new_data')
+    @params_as_tensors
+    @autoflow((float_type, [None, None]), (float_type, [None, None]), (float_type, [None, None]))
+    def grad_likelihood_new_data(self, Xnew, Y_new, Y_var_new):
+        # B, (T), N
+        Y_std_new = tf.math.sqrt(Y_var_new)
+        # [B, (T), N], [B, (T), N, N]
+        post_mean, post_cov = self._build_predict(Xnew, full_cov=True)
+        M = tf.shape(post_cov)[-1]
+        # N, N
+        eye = tf.linalg.eye(M, dtype=float_type)
+        # B, (T), N, N
+        cov = post_cov / (Y_std_new[..., :, None] * Y_std_new[..., None, :]) + eye
+        # B, (T), N, N
+        L = tf.linalg.cholesky(cov)
+        # B, (T), N
+        Y_new = (Y_new - post_mean) / Y_std_new
+        # B, (T), N, 1
+        Ly = tf.linalg.triangular_solve(L, Y_new[..., :, None])
+        # B, (T)
+        maha = -0.5 * tf.reduce_sum(tf.math.square(Ly), axis=[-2, -1])
+        # B, (T), N
+        grad_lml = tf.gradients(tf.reduce_sum(maha), [Y_std_new])[0] / tf.cast(tf.size(Y_new), float_type)
+        return grad_lml
+
 class AverageModel(object):
-    def __init__(self, models: List[HGPR], debug=False):
+
+    INF_UNCERT = np.finfo(np.float64).max#np.inf works too, but gradient of lml becomes nan.
+
+    def __init__(self, models: List[HGPR], debug=False, flag_outliers=True):
         self.models = models
         self.debug = debug
 
@@ -226,6 +256,36 @@ class AverageModel(object):
             if m.num_latent is not value[0].num_latent:
                 raise ValueError("num_latent must be the same")
         self._models = value
+
+    def set_hyperparams(self, hyperparams:dict):
+        for m in self.models:
+            m.assign(hyperparams[m.name])
+
+    def get_hyperparams(self):
+        return {m.name : m.read_trainables() for m in self.models}
+
+    def optimise_and_flag(self):
+        Y_var = self.models[0].Y_var.value
+        X = self.models[0].X.value
+        Y = self.models[0].Y.value
+        found_outliers = np.zeros(Y_var.shape, dtype=np.bool)
+        for i in range(5):
+            g_lml = np.mean([model.grad_likelihood_new_data(X, Y, Y_var) for model in self.models], axis=0)
+            g_lml_ = g_lml[~found_outliers].flatten()
+            thresh = 0.5*(np.min(g_lml_) + np.max(g_lml_))
+            thresh = g_lml_[np.argmin(np.abs(thresh - g_lml_))]
+            if thresh < 0.25:
+                print("Thresh too small")
+                break
+            found_outliers = g_lml >= thresh
+            for model in self.models:
+                model.Y_var = np.where(found_outliers, np.inf, Y_var)
+        logging.info("Flagged:\n\t{}".format("\n\t".join(["{}".format(v) for v in zip(*np.where(found_outliers))])))
+        for model in self.models:
+            ScipyOptimizer().minimize(model)
+            with np.printoptions(precision=2):
+                logging.info("Learned model:\n{}".format(
+                    "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
 
     def optimise(self):
         for model in self.models:

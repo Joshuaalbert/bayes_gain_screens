@@ -34,9 +34,9 @@ def make_clustercat(reg_file, clustercat):
 
 
 def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu,sol_name):
-    ddfcache = glob.glob(os.path.join(working_dir, '*.ddfcache'))
-    for d in ddfcache:
-        os.unlink(d)
+    # ddfcache = glob.glob(os.path.join(working_dir, '*.ddfcache'))
+    # for d in ddfcache:
+    #     os.unlink(d)
 
     mslist = sorted(glob.glob(os.path.join(data_dir,'L{}*.ms'.format(obs_num))))
     if len(mslist) == 0:
@@ -48,17 +48,32 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu,so
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     out_sols = 'DDS4_full'
 
-    for ms in mslist:
-        cmd = 'kMS.py --MSName {ms} --SolverType KAFCA '.format(ms=ms)
-        cmd = cmd + '--PolMode Scalar --BaseImageName image_full_ampphase_di_m.NS '
-        cmd = cmd + '--dt 0.5 --NIterKF 6 --CovQ 0.1 --LambdaKF=0.5 --NCPU {ncpu}'.format(ncpu=ncpu)
-        cmd = cmd + '--OutSolsName {out_sols} --NChanSols 1 --PowerSmooth=0.0 '.format(out_sols=sol_name)
-        cmd = cmd + '--InCol DATA_SUB --Weighting Natural --UVMinMax=0.100000,5000.000000 '
-        cmd = cmd + '--SolsDir={solsdir}  --BeamMode LOFAR --LOFARBeamMode=A --DDFCacheDir=. '.format(solsdir=solsdir)
-        cmd = cmd + '--NodesFile {clustercat} --DicoModel {masked_dico_model}'.format(clustercat=clustercat, masked_dico_model=masked_dico_model)
+    for i, ms in enumerate(mslist):
+        cmd = ['kMS.py',
+               '--MSName={ms}'.format(ms=ms),
+               '--SolverType=KAFCA',
+               '--PolMode=Scalar',
+               '--BaseImageName=image_full_ampphase_di_m.NS',
+               '--dt=0.5',
+               '--NIterKF=6',
+               '--CovQ=0.1',
+               '--LambdaKF=0.5',
+               '--NCPU={ncpu}'.format(ncpu=ncpu),
+               '--OutSolsName={out_sols}'.format(out_sols=sol_name),
+               '--NChanSols=1',
+               '--PowerSmooth=0.0',
+               '--InCol=DATA_SUB',
+               '--Weighting=Natural',
+               '--UVMinMax=0.100000,5000.000000',
+               '--SolsDir={solsdir}'.format(solsdir=solsdir),
+               '--BeamMode=LOFAR',
+               '--LOFARBeamMode=A',
+               '--DDFCacheDir=.',
+               '--NodesFile={clustercat}'.format(clustercat=clustercat),
+               '--DicoModel={masked_dico_model}'.format(masked_dico_model=masked_dico_model)]
 
-        cmd = cmd.replace(' --', ' \\n--')
-        with open(os.path.join(working_dir, 'instruct.sh'), 'w') as f:
+        cmd = ' \\\n\t'.join(cmd)
+        with open(os.path.join(working_dir, 'instruct_{:02d}.sh'.format(i)), 'w') as f:
             f.write(cmd)
         print(cmd)
         os.system(cmd)
@@ -66,7 +81,6 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu,so
 
 def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
     solsdir = os.path.join(data_dir, 'SOLSDIR')
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
     sol_folders = sorted(glob.glob(os.path.join(solsdir, "L{}*.ms".format(obs_num))))
     if len(sol_folders) == 0:
         raise ValueError("Invalid obs num {}".format(obs_num))
@@ -77,25 +91,15 @@ def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
             print("Can't find {} in {}".format(sol_name, f))
             continue
         sols.append(os.path.abspath(sol[0]))
-    h5files = []
-    for s in sols:
-        cmd = 'killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=s,
-                                                                            h5_file=s.replace('.npz', '.h5'))
-        h5files.append(s.replace('.npz', '.h5'))
-        print(cmd)
-        os.system(cmd)
-
-    cmd = 'H5parm_collector.py --outh5parm={merged_h5parm} [{h5files}]'.format(merged_h5parm=merged_h5parm,
-                                                                               h5files=','.join(h5files))
-    print(cmd)
-    os.system(cmd)
-
     solsfile = os.path.join(working_dir, 'solslist.txt')
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, sol_name))
+    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
     with open(solsfile, 'w') as f:
         for s in sols:
             f.write("{}\n".format(s))
     os.system('MergeSols.py --SolsFilesIn={} --SolFileOut={}'.format(solsfile, merged_sol))
+    os.system('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
+                                                                            h5_file=merged_h5parm))
 
 
 def add_args(parser):
@@ -112,9 +116,13 @@ def add_args(parser):
                         default=None, type=str, required=True)
 
 def main(region_file, obs_num, data_dir, working_dir, ncpu):
-    clustercat = os.path.join(data_dir, 'subtract.ClusterCat.npy')
     region_mask = os.path.join(data_dir, 'cutoutmask.fits')
     full_dico_model = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
+    if not os.path.isfile(region_mask):
+        raise IOError("region mask doesn't exists {}".format(region_mask))
+    if not os.path.isfile(full_dico_model):
+        raise IOError("Dico model doesn't exists {}".format(full_dico_model))
+    clustercat = os.path.join(data_dir, 'subtract.ClusterCat.npy')
     masked_dico_model = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.masked.DicoModel')
     os.chdir(working_dir)
     make_clustercat(region_file, clustercat)
@@ -125,7 +133,7 @@ def main(region_file, obs_num, data_dir, working_dir, ncpu):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Keep soures inside box region, subtract everything else and create new ms',
+        description='Solves for DDS4_full on subtracted DATA_SUB.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()
