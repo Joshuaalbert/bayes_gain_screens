@@ -19,6 +19,20 @@ def great_circle_sep(ra1, dec1, ra2, dec2):
     return np.arctan2(np.sqrt(num2), den)
 
 
+def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1., plot=False,
+                                     seed_directions=None, fill_in_distance=None,
+                                     fill_in_flux_limit=0.):
+    """Given a srl file containing the sources extracted from the apparent flux image of the field,
+    decide the screen directions
+
+    :param srl_fits: str
+        The path to the srl file, typically created by pybdsf
+    :return: float, array [N, 2]
+        The `N` sources' coordinates as an ``astropy.coordinates.ICRS`` object
+    """
+
+
+
 def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1.,
                                      seed_directions=None, fill_in_distance=None,
                                      fill_in_flux_limit=0., working_dir=None):
@@ -31,9 +45,7 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
         The `N` sources' coordinates as an ``astropy.coordinates.ICRS`` object
     """
     print("Getting screen directions from image.")
-    if max_N is not None:
-        if seed_directions is not None:
-            max_N -= seed_directions.shape[0]
+
     with fits.open(ref_image_fits) as hdul:
         # ra,dec, _, freq
         data = hdul[0].data
@@ -45,13 +57,18 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
         ra = []
         dec = []
         f = []
+        sizes = []
         if seed_directions is not None:
             print("Using seed directions.")
             ra = list(seed_directions[:, 0])
             dec = list(seed_directions[:, 1])
+            f = list(flux_limit * np.ones(len(ra)))
+            sizes = list(120*np.ones(len(ra)))
         idx = []
-        sizes = []
         for i in arg_sort:
+            if max_N is not None:
+                if len(ra) >= max_N:
+                    break
             pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
             #             logging.info("{} -> {}".format(i, pix))
             #             pix = np.reshape(np.array(np.unravel_index(i, [Nra, Ndec, 1, 1])), (1, 4))
@@ -63,7 +80,8 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
                 ra.append(ra_)
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                print("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
+                print(
+                    "Auto-append first: Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
 
                 idx.append(i)
                 sizes.append(120.)
@@ -73,13 +91,9 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
                 ra.append(ra_)
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
+                sizes.append(120.)
                 print("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                 idx.append(i)
-                sizes.append(120.)
-                continue
-            if max_N is not None:
-                if len(idx) > max_N:
-                    break
 
         first_found = len(idx)
 
@@ -88,6 +102,9 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
             arg_sort = np.argsort(data[where_limit])[::-1]
             # use remaining brightest sources to get fillers
             for i in arg_sort:
+                if max_N is not None:
+                    if len(ra) >= max_N:
+                        break
                 pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
                 #                 logging.info("{} -> {}".format(i, pix))
                 coords = w.wcs_pix2world([pix], 1)  # degrees
@@ -100,28 +117,16 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
                     ra.append(ra_)
                     dec.append(dec_)
                     f.append(data[pix[3], pix[2], pix[1], pix[0]])
+                    sizes.append(0.5*np.men(dist)*3600.)
                     print(
                         "Found filler {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                     idx.append(i)
-                    sizes.append(0.5*np.min(dist)*3600.)
-                    continue
-                if max_N is not None:
-                    if len(idx) > max_N:
-                        break
 
         if max_N is not None:
-            arg = np.argsort(f)[::-1][:max_N]
-            f = np.array(f)[arg]
-            ra = np.array(ra)[arg]
-            dec = np.array(dec)[arg]
-        # sizes = np.ones(len(idx))
-        # sizes[:first_found] = 120.
-        # sizes[first_found:] = 240.
-    f = np.array(f)
-    ra = np.array(ra)
-    dec = np.array(dec)
-    # sizes = list(sizes)
-
+            f = np.array(f)[:max_N]
+            ra = np.array(ra)[:max_N]
+            dec = np.array(dec)[:max_N]
+            sizes = list(np.array(sizes)[:max_N])
     # plotting
     plt.scatter(ra, dec, c=np.linspace(0., 1., len(ra)), cmap='jet', s=np.sqrt(10000. * f), alpha=1.)
     target = Circle((np.mean(ra)*180/np.pi, np.mean(dec)*180/np.pi), radius=3.56 / 2., fc=None, alpha=0.2)
