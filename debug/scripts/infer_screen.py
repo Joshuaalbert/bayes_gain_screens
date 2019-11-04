@@ -45,7 +45,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
                             debug=False,
                             flag_outliers=True,
                             constant_tec_uncert=None,
-                            remake_posterior_solsets=False)
+                            remake_posterior_solsets=True)
     deployment.run(generate_models, use_vec_kernels=False)
 
     animate_datapack(merged_h5parm,os.path.join(working_dir, 'tec_screen_plots'), num_processes=ncpu,

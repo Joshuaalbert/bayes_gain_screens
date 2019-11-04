@@ -73,7 +73,7 @@ def laplace_gaussian_marginalisation(L, y, order = 10):
     poly_coeffs_2 = np.array([ -c if i%2 == 1 else c for i,c in enumerate(poly_coeffs_1)], float_type)
     #TODO: finish the function
 
-def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None, directions=None, patch_names=None):
+def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None, directions=None, patch_names=None, remake_solset=False):
     if not isinstance(to_soltab, (list, tuple)):
         to_soltab = [to_soltab]
     if select is None:
@@ -90,6 +90,9 @@ def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', fro
         freq_labels, freqs = datapack.get_freqs(axes['freq'])
         pol_labels, pols = datapack.get_pols(axes['pol'])
         Npol, Nd, Na, Nf, Nt = len(pols), len(directions), len(antennas), len(freqs), len(times)
+        if remake_solset:
+            if to_solset in datapack.solsets:
+                datapack.delete_solset(to_solset)
         if to_solset not in datapack.solsets:
             datapack.add_solset(to_solset,
                                 array_file=DataPack.lofar_array,
@@ -459,9 +462,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
         The `N` sources' coordinates as an ``astropy.coordinates.ICRS`` object
     """
     logging.info("Getting screen directions from image.")
-    if max_N is not None:
-        if seed_directions is not None:
-            max_N -= seed_directions.shape[0]
+
     with fits.open(image_fits) as hdul:
         # ra,dec, _, freq
         data = hdul[0].data
@@ -477,8 +478,12 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
             logging.info("Using seed directions.")
             ra = list(seed_directions[:, 0])
             dec = list(seed_directions[:, 1])
+            f = list(flux_limit * np.ones(len(ra)))
         idx = []
         for i in arg_sort:
+            if max_N is not None:
+                if len(ra) >= max_N:
+                    break
             pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
             #             logging.info("{} -> {}".format(i, pix))
             #             pix = np.reshape(np.array(np.unravel_index(i, [Nra, Ndec, 1, 1])), (1, 4))
@@ -490,7 +495,8 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 ra.append(ra_)
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                logging.info("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
+                logging.info(
+                    "Auto-append first: Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
 
                 idx.append(i)
                 continue
@@ -501,10 +507,6 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
                 logging.info("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                 idx.append(i)
-                continue
-            if max_N is not None:
-                if len(idx) > max_N:
-                    break
 
         first_found = len(idx)
 
@@ -513,6 +515,9 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
             arg_sort = np.argsort(data[where_limit])[::-1]
             # use remaining brightest sources to get fillers
             for i in arg_sort:
+                if max_N is not None:
+                    if len(ra) >= max_N:
+                        break
                 pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
                 #                 logging.info("{} -> {}".format(i, pix))
                 coords = w.wcs_pix2world([pix], 1)  # degrees
@@ -528,16 +533,11 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                     logging.info(
                         "Found filler {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                     idx.append(i)
-                    continue
-                if max_N is not None:
-                    if len(idx) > max_N:
-                        break
 
         if max_N is not None:
-            arg = np.argsort(f)[::-1][:max_N]
-            f = np.array(f)[arg]
-            ra = np.array(ra)[arg]
-            dec = np.array(dec)[arg]
+            f = np.array(f)[:max_N]
+            ra = np.array(ra)[:max_N]
+            dec = np.array(dec)[:max_N]
         sizes = np.ones(len(idx))
         sizes[:first_found] = 120.
         sizes[first_found:] = 240.
@@ -562,9 +562,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
         plt.show()
 
     logging.info("Found {} sources.".format(len(ra)))
-    if seed_directions is not None:
-        ra = list(seed_directions[:, 0]) + list(ra)
-        dec = list(seed_directions[:, 1]) + list(dec)
+
     return ac.ICRS(ra=ra * au.rad, dec=dec * au.rad), sizes
 
 
