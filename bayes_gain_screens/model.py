@@ -212,7 +212,7 @@ class HGPR(GPModel):
 
     @name_scope('grad_likelihood_new_data')
     @params_as_tensors
-    @autoflow((float_type, [None, None]), (float_type, [None, None]), (float_type, [None, None]))
+    @autoflow((float_type, [None, None]), (float_type, [None, None, None]), (float_type, [None, None, None]))
     def grad_likelihood_new_data(self, Xnew, Y_new, Y_var_new):
         # B, (T), N
         Y_std_new = tf.math.sqrt(Y_var_new)
