@@ -53,7 +53,7 @@ def main(data_dir, working_dir, obs_num):
     amplitude_screen, axes = datapack.amplitude
     logging.info("Creating screen_slow000/phase000+amplitude000")
     make_soltab(datapack, from_solset='screen_posterior', to_solset='screen_slow000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000'])
+                to_soltab=['phase000', 'amplitude000'], remake_solset=True)
     datapack.current_solset = 'screen_slow000'
     datapack.select(**select)
     _, dir_idx = cKDTree(directions_slow).query(directions_screen)
@@ -75,7 +75,7 @@ def main(data_dir, working_dir, obs_num):
     amplitude_smoothed, axes = datapack.amplitude
     logging.info("Creating smoothed_slow000/phase000+amplitude000")
     make_soltab(datapack, from_solset='smoothed000', to_solset='smoothed_slow000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000'])
+                to_soltab=['phase000', 'amplitude000'],remake_solset=True)
     datapack.current_solset = 'smoothed_slow000'
     datapack.select(**select)
     _, dir_idx = cKDTree(directions_slow).query(directions_smoothed)
