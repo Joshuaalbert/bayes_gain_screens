@@ -30,14 +30,14 @@ def safe_acos_squared(x):
 
 
 class GreatCircleRBF(Kernel):
-    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+    def __init__(self, input_dim, variance, hpd, active_dims=None, name=None):
         super().__init__(input_dim, active_dims, name=name)
         self.variance = Parameter(variance,
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.lengthscales = Parameter(lengthscales,
-                                      transform=transforms.positiveRescale(lengthscales),
+        self.hpd = Parameter(hpd,
+                                      transform=transforms.positiveRescale(hpd),
                                       dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
@@ -46,6 +46,15 @@ class GreatCircleRBF(Kernel):
                     levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @property
+    def scale_factor(self):
+        return 1. / np.sqrt(2*np.log(2.))
+
+    @property
+    @params_as_tensors
+    def lengthscales(self):
+        return self.hpd / self.scale_factor
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -82,14 +91,14 @@ class GreatCircleRBF(Kernel):
 
 class GreatCircleM32(Kernel):
 
-    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+    def __init__(self, input_dim, variance, hpd, active_dims=None, name=None):
         super().__init__(input_dim, active_dims, name=name)
         self.variance = Parameter(variance,
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.lengthscales = Parameter(lengthscales,
-                                      transform=transforms.positiveRescale(lengthscales),
+        self.hpd = Parameter(hpd,
+                                      transform=transforms.positiveRescale(hpd),
                                       dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
@@ -98,6 +107,15 @@ class GreatCircleM32(Kernel):
                     levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @property
+    def scale_factor(self):
+        return 1.032
+
+    @property
+    @params_as_tensors
+    def lengthscales(self):
+        return self.hpd / self.scale_factor
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -143,14 +161,14 @@ class GreatCircleM32(Kernel):
 
 class GreatCircleM52(Kernel):
 
-    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+    def __init__(self, input_dim, variance, hpd, active_dims=None, name=None):
         super().__init__(input_dim, active_dims, name=name)
         self.variance = Parameter(variance,
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.lengthscales = Parameter(lengthscales,
-                                      transform=transforms.positiveRescale(lengthscales),
+        self.hpd = Parameter(hpd,
+                                      transform=transforms.positiveRescale(hpd),
                                       dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
@@ -159,6 +177,15 @@ class GreatCircleM52(Kernel):
                     levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @property
+    def scale_factor(self):
+        return 0.95958
+
+    @property
+    @params_as_tensors
+    def lengthscales(self):
+        return self.hpd / self.scale_factor
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -205,14 +232,14 @@ class GreatCircleM52(Kernel):
 
 class GreatCircleM12(Kernel):
 
-    def __init__(self, input_dim, variance, lengthscales, active_dims=None, name=None):
+    def __init__(self, input_dim, variance, hpd, active_dims=None, name=None):
         super().__init__(input_dim, active_dims, name=name)
         self.variance = Parameter(variance,
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.lengthscales = Parameter(lengthscales,
-                                      transform=transforms.positiveRescale(lengthscales),
+        self.hpd = Parameter(hpd,
+                                      transform=transforms.positiveRescale(hpd),
                                       dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
@@ -221,6 +248,15 @@ class GreatCircleM12(Kernel):
                     levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @property
+    def scale_factor(self):
+        return 1./np.log(2.)
+
+    @property
+    @params_as_tensors
+    def lengthscales(self):
+        return self.hpd / self.scale_factor
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -264,14 +300,14 @@ class GreatCircleM12(Kernel):
 
 
 class GreatCircleRQ(Kernel):
-    def __init__(self, input_dim, variance, lengthscales, alpha=10., active_dims=None, name=None):
+    def __init__(self, input_dim, variance, hpd, alpha=10., active_dims=None, name=None):
         super().__init__(input_dim, active_dims, name=name)
         self.variance = Parameter(variance,
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.lengthscales = Parameter(lengthscales,
-                                      transform=transforms.positiveRescale(lengthscales),
+        self.hpd = Parameter(hpd,
+                                      transform=transforms.positiveRescale(hpd),
                                       dtype=settings.float_type)
         self.alpha = Parameter(alpha,
                                transform=transforms.positiveRescale(alpha),
@@ -284,6 +320,16 @@ class GreatCircleRQ(Kernel):
                     levi_civita[a1, a2, a3] = np.sign(a2 - a1) * np.sign(a3 - a1) * np.sign(a3 - a2)
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
+
+    @property
+    @params_as_tensors
+    def scale_factor(self):
+        return tf.math.reciprocal(np.sqrt(2.) * tf.math.sqrt(tf.math.pow(np.sqrt(2.), 1./self.alpha) - 1.) * tf.math.sqrt(self.alpha))
+
+    @property
+    @params_as_tensors
+    def lengthscales(self):
+        return self.hpd / self.scale_factor
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -309,6 +355,15 @@ class GreatCircleRQ(Kernel):
 
     @params_as_tensors
     def K(self, X1, X2=None, presliced=False):
+        """
+        Rational Quadratic kernel. The kernel equation is
+        k(r) = σ² (1 + r² / 2α)^(-α)
+        where:
+        r  is the Euclidean distance between the input points, scaled by the lengthscale parameter ℓ,
+        σ² is the variance parameter,
+        α  determines relative weighting of small-scale and large-scale fluctuations.
+        For α → ∞, the RQ kernel becomes equivalent to the squared exponential.
+        """
         if not presliced:
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
@@ -564,13 +619,17 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
     logging.info("Generating directional GP models.")
     amplitude = None
     if len(Y.shape) == 3:
-        amplitude = np.ones(Y.shape[1])
+        #B, T, N -> T
+        amplitude = np.var(Y.transpoes((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
+
+    initial_hpd = 1.*np.pi/180.
+    # h*l = hpd -> l = hpd / h
     dir_kernels = [
-        gpflow_kernel('GreatCircleRBF', dims=3, variance=10. ** 2, lengthscales=0.02),
-        gpflow_kernel('GreatCircleM52', dims=3, variance=10. ** 2, lengthscales=0.05),
-        gpflow_kernel('GreatCircleM32', dims=3, variance=10. ** 2, lengthscales=0.1),
-        gpflow_kernel('GreatCircleM12', dims=3, variance=10. ** 2, lengthscales=0.2),
-        gpflow_kernel('GreatCircleRQ', dims=3, variance=10. ** 2, lengthscales=0.02, alpha=10.),
+        gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
         # gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)
     ]
 
@@ -584,11 +643,11 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
 
     if use_vec_kernels:
         dir_kernels = [
-            gpflow_kernel('GreatCircleRBF', dims=3, variance=10. ** 2, lengthscales=0.02),
-            gpflow_kernel('GreatCircleM52', dims=3, variance=10. ** 2, lengthscales=0.05),
-            gpflow_kernel('GreatCircleM32', dims=3, variance=10. ** 2, lengthscales=0.1),
-            gpflow_kernel('GreatCircleM12', dims=3, variance=10. ** 2, lengthscales=0.2),
-            gpflow_kernel('GreatCircleRQ', dims=3, variance=10. ** 2, lengthscales=0.02, alpha=10.),
+            gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
             # gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)
         ]
 
