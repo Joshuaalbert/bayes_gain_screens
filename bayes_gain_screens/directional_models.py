@@ -620,7 +620,7 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
     amplitude = None
     if len(Y.shape) == 3:
         #B, T, N -> T
-        amplitude = np.var(Y.transpoes((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
+        amplitude = np.var(Y.transpose((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
 
     initial_hpd = 1.*np.pi/180.
     # h*l = hpd -> l = hpd / h
