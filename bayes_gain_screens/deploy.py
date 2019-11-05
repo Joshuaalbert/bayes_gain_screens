@@ -16,9 +16,9 @@ def smooth(v, axis=-1):
     size = np.ones(len(v.shape), dtype=np.int)
     size[axis] = 3
     out[..., :-1] += np.cumsum(median_filter(np.diff(v[..., ::-1]), size), axis=axis)[..., ::-1]
-    out += v[..., -1]
+    out += v[..., -1: ]
     out[..., 1:] += np.cumsum(median_filter(np.diff(v),size), axis=axis)
-    out += v[..., 0]
+    out += v[..., 0:1]
     out /= 2.
     return out
 
