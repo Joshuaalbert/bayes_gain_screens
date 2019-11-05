@@ -269,23 +269,26 @@ class AverageModel(object):
         X = self.models[0].X.value
         Y = self.models[0].Y.value
         found_outliers = np.zeros(Y_var.shape, dtype=np.bool)
-        for i in range(5):
+        for i in range(2):
             g_lml = np.mean([model.grad_likelihood_new_data(X, Y, Y_var) for model in self.models], axis=0)
             g_lml_ = g_lml[~found_outliers].flatten()
-            thresh = 0.5*(np.min(g_lml_) + np.max(g_lml_))
-            thresh = g_lml_[np.argmin(np.abs(thresh - g_lml_))]
-            if thresh < 0.25:
-                print("Thresh too small")
-                break
+            thresh = np.min(g_lml_) + 1.5*np.mean(np.abs(g_lml_ - np.min(g_lml_)))
             found_outliers = g_lml >= thresh
             for model in self.models:
                 model.Y_var = np.where(found_outliers, np.inf, Y_var)
-        logging.info("Flagged:\n\t{}".format("\n\t".join(["{}".format(v) for v in zip(*np.where(found_outliers))])))
-        for model in self.models:
-            ScipyOptimizer().minimize(model)
-            with np.printoptions(precision=2):
-                logging.info("Learned model:\n{}".format(
-                    "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
+                try:
+                    ScipyOptimizer().minimize(model)
+                except:
+                    logging.error("Problem with optimisation!!")
+                    model.initialzie(force=True)
+                    ScipyOptimizer().minimize(model)
+                    pass
+        outliers = self.models[0].Y_var.value == np.inf
+
+        logging.info("Flagged {} outliers".format(outliers.sum()))
+        with np.printoptions(precision=2):
+            logging.info("Learned model:\n{}".format(
+                "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
 
     def optimise(self):
         for model in self.models:

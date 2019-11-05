@@ -619,10 +619,14 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
     logging.info("Generating directional GP models.")
     amplitude = None
     if len(Y.shape) == 3:
-        #B, T, N -> T
-        amplitude = np.var(Y.transpose((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
+        Y_flag = np.copy(Y)
+        for _ in range(3):
+            # B, T, N -> B*N, T -> T
+            amplitude = np.nanstd(Y_flag.transpose((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
+            Y_flag[Y_flag > 3.*amplitude[None,:, None]] = np.nan
+        amplitude = np.nanstd(Y_flag.transpose((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
 
-    initial_hpd = 1.*np.pi/180.
+    initial_hpd = 2.*np.pi/180.
     # h*l = hpd -> l = hpd / h
     dir_kernels = [
         gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
