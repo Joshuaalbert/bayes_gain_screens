@@ -644,6 +644,7 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
                                          inner_kernel=d,
                                          amplitude=amplitude,
                                          obs_type='DDTEC'))
+        d.hpd.trainable = False
 
     if use_vec_kernels:
         dir_kernels = [
