@@ -11,6 +11,17 @@ import numpy as np
 import tensorflow as tf
 import os, glob
 
+def smooth(v, axis=-1):
+    out = np.zeros(v.shape)
+    size = np.ones(len(v.shape), dtype=np.int)
+    size[axis] = 3
+    out[..., :-1] += np.cumsum(median_filter(np.diff(v[..., ::-1]), size), axis=axis)[..., ::-1]
+    out += v[..., -1]
+    out[..., 1:] += np.cumsum(median_filter(np.diff(v),size), axis=axis)
+    out += v[..., 0]
+    out /= 2.
+    return out
+
 class Deployment(object):
     def __init__(self, datapack: Union[DataPack, str], ref_dir_idx=0,
                  tec_solset='sol000', phase_solset='sol000',
@@ -63,9 +74,14 @@ class Deployment(object):
         #                            axis=1)
         if flag_outliers:
             logging.info("Flagging outliers in TEC")
-            tec_uncert = np.where(np.abs(median_filter(tec, size=(1,1,1,5)) - tec) > 50., np.inf, tec_uncert)
-            const_uncert = np.where(np.abs(median_filter(const, size=(1,1,1,5)) - const) > 0.1, np.inf, const_uncert)
-            const = median_filter(const, size=(1,1,1,7))
+            flag = np.abs(smooth(tec, axis=-1) - tec) > 30.
+            tec_uncert[flag] = np.inf
+            # for _ in range(3):
+            #     f = median_filter(tec_f, size=(1,1,1,3))
+            #     flag = np.abs(tec_f - f) > 30.
+            #     tec_f[flag] = f[flag]
+            #     tec_uncert[flag] = np.inf
+            const = median_filter(const, size=(1,1,1,31))
             # tec_uncert, _ = filter_tec(tec[0, ...], tec_uncert[0, ...])
             # tec_uncert = tec_uncert[None, ...]
             # logging.info("Flagging outliers in const")
@@ -84,7 +100,6 @@ class Deployment(object):
             tec_uncert = tec_uncert[0, ...].transpose((2, 1, 0))
             if self.debug:
                 logging.info("tec shape: {} should be (Nt, Na, Nd)".format(tec.shape))
-
             # Nd, Na, Nt -> Nt, Na, Nd
             const = const[0, ...].transpose((2, 1, 0))
             self.Nt, self.Na, self.Nd = const.shape
@@ -299,7 +314,7 @@ class Deployment(object):
                         model.set_hyperparams(init_hyperparams)
                     logging.info("Optimising models")
                     model.optimise_and_flag()
-                    init_hyperparams = model.get_hyperparams()
+                    # init_hyperparams = model.get_hyperparams()
                     logging.info("Predicting posteriors and averaging")
                     # batch_size, N
                     (weights, log_marginal_likelihoods), post_mean, post_var = model.predict_f(X_screen,
