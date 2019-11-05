@@ -284,11 +284,11 @@ class AverageModel(object):
                     ScipyOptimizer().minimize(model)
                     pass
         outliers = self.models[0].Y_var.value == np.inf
-
-        logging.info("Flagged {} outliers".format(outliers.sum()))
-        with np.printoptions(precision=2):
-            logging.info("Learned model:\n{}".format(
-                "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
+        for model in self.models:
+            logging.info("Flagged {} outliers".format(outliers.sum()))
+            with np.printoptions(precision=2):
+                logging.info("Learned model:\n{}".format(
+                    "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
 
     def optimise(self):
         for model in self.models:
