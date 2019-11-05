@@ -626,16 +626,20 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
             Y_flag[Y_flag > 3.*amplitude[None,:, None]] = np.nan
         amplitude = np.nanstd(Y_flag.transpose((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
 
-    initial_hpd = 2.*np.pi/180.
+    initial_hpd = 1.*np.pi/180.
     # h*l = hpd -> l = hpd / h
-    dir_kernels = [
-        gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
-        # gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)
-    ]
+    with defer_build():
+        dir_kernels = [
+            gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
+            gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
+            # gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)
+        ]
+        for d in dir_kernels:
+            d.hpd.transform = transforms.Chain(transforms.Logistic(initial_hpd*0.7, 4*initial_hpd), transforms.positiveRescale(initial_hpd))
+            d.compile()
 
     kernels = []
     for d in dir_kernels:
