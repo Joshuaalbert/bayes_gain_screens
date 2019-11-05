@@ -299,10 +299,9 @@ class AverageModel(object):
             try:
                 opt.minimize(model)
             except:
-                print((model.read_trainables()))
-                print(model.X.value)
-                print(model.Y.value)
-                raise ValueError("Failure")
+                logging.error("Problem with optimisation!!")
+                model.initialzie(force=True)
+                ScipyOptimizer().minimize(model)
             with np.printoptions(precision=2):
                 logging.info("Learned model:\n{}".format(
                     "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
