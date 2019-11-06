@@ -295,6 +295,9 @@ class AverageModel(object):
     def optimise(self):
         for model in self.models:
             logging.info("Optimising model: {}".format(model.name))
+            with np.printoptions(precision=2):
+                logging.info("Initial model:\n{}".format(
+                    "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
             opt = ScipyOptimizer()
             try:
                 opt.minimize(model)
