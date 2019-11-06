@@ -47,14 +47,12 @@ class GreatCircleRBF(Kernel):
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
-    @property
     def scale_factor(self):
         return 1. / np.sqrt(2*np.log(2.))
 
-    @property
     @params_as_tensors
     def lengthscales(self):
-        return self.hpd / self.scale_factor
+        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -84,7 +82,7 @@ class GreatCircleRBF(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.greater_circle(X1, X2) / self.lengthscales
+        dist = self.greater_circle(X1, X2) / self.lengthscales()
         log_res = tf.math.log(self.variance) - 0.5 * tf.math.square(dist)
         return tf.math.exp(log_res)
 
@@ -108,14 +106,12 @@ class GreatCircleM32(Kernel):
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
-    @property
     def scale_factor(self):
         return 1.032
 
-    @property
     @params_as_tensors
     def lengthscales(self):
-        return self.hpd / self.scale_factor
+        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -153,7 +149,7 @@ class GreatCircleM32(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.greater_circle(X1, X2) / self.lengthscales
+        dist = self.greater_circle(X1, X2) / self.lengthscales()
         dist *= np.sqrt(3.)
         log_res = tf.math.log(self.variance) + tf.math.log(1. + dist) - dist
         return tf.math.exp(log_res)
@@ -178,14 +174,12 @@ class GreatCircleM52(Kernel):
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
-    @property
     def scale_factor(self):
         return 0.95958
 
-    @property
     @params_as_tensors
     def lengthscales(self):
-        return self.hpd / self.scale_factor
+        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -223,7 +217,7 @@ class GreatCircleM52(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.greater_circle(X1, X2) / self.lengthscales
+        dist = self.greater_circle(X1, X2) / self.lengthscales()
         dist *= np.sqrt(5.)
         dist2 = np.square(dist) / 3.
         log_res = tf.math.log(self.variance) + tf.math.log(1. + dist + dist2) - dist
@@ -249,14 +243,12 @@ class GreatCircleM12(Kernel):
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
-    @property
     def scale_factor(self):
         return 1./np.log(2.)
 
-    @property
     @params_as_tensors
     def lengthscales(self):
-        return self.hpd / self.scale_factor
+        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -294,7 +286,7 @@ class GreatCircleM12(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.greater_circle(X1, X2) / self.lengthscales
+        dist = self.greater_circle(X1, X2) / self.lengthscales()
         log_res = tf.math.log(self.variance) - dist
         return tf.math.exp(log_res)
 
@@ -321,15 +313,13 @@ class GreatCircleRQ(Kernel):
 
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
-    @property
     @params_as_tensors
     def scale_factor(self):
         return tf.math.reciprocal(np.sqrt(2.) * tf.math.sqrt(tf.math.pow(np.sqrt(2.), 1./self.alpha) - 1.) * tf.math.sqrt(self.alpha))
 
-    @property
     @params_as_tensors
     def lengthscales(self):
-        return self.hpd / self.scale_factor
+        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def greater_circle(self, a, b):
@@ -368,7 +358,7 @@ class GreatCircleRQ(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = tf.math.square(self.greater_circle(X1, X2) / self.lengthscales)
+        dist = tf.math.square(self.greater_circle(X1, X2) / self.lengthscales())
         log_res = tf.math.log(self.variance) - self.alpha * tf.math.log(1. + dist / (2. * self.alpha))
         return tf.math.exp(log_res)
 
@@ -604,7 +594,8 @@ class DirectionalKernel(Kernel):
                 dir_sym = kern_dir.K(k1, self.ref_direction[None, :])
                 res = kern_dir.K(k1, k2) - dir_sym - tf.transpose(dir_sym, (1, 0)) + kern_dir.K(
                     self.ref_direction[None, :], self.ref_direction[None, :])
-            res = kern_dir.K(k1, k2) - kern_dir.K(self.ref_direction[None, :], k2) - kern_dir.K(k1,
+            else:
+                res = kern_dir.K(k1, k2) - kern_dir.K(self.ref_direction[None, :], k2) - kern_dir.K(k1,
                                                                                                 self.ref_direction[None,
                                                                                                 :]) + kern_dir.K(
                 self.ref_direction[None, :], self.ref_direction[None, :])
