@@ -4,7 +4,7 @@ from .directional_models import gpflow_kernel
 
 
 def generate_models(X, Y, Y_var, ref_direction, ref_location, reg_param=1., parallel_iterations=10, **kwargs):
-    fed_settings = [('RQ', dict(variance=9., lengthscales=15., alpha=10.))
+    fed_settings = [('RQ', dict(variance=9., lengthscales=15., alpha=10.)),
                     ('RBF', dict(variance=9., lengthscales=15.)),
                     ('M52', dict(variance=9., lengthscales=15.)),
                     ('M32', dict(variance=9., lengthscales=15.)),
