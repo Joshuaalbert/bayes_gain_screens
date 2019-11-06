@@ -4,7 +4,7 @@ from typing import List, Union
 from .coord_transforms import ITRSToENUWithReferences_v2
 from . import logging, angle_type, dist_type, float_type
 from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, great_circle_sep
-from .outlier_detection import filter_tec
+from .outlier_detection import filter_tec_dir
 from scipy.ndimage import median_filter
 from timeit import default_timer
 import numpy as np
@@ -68,25 +68,17 @@ class Deployment(object):
         const = const.astype(np.float64)
         const_uncert, _ = datapack.weights_const
         const_uncert = const_uncert.astype(np.float64)
+
+        const = median_filter(const, size=(1, 1, 1, 31))
         
-        # _, data_directions = datapack.get_directions(axes['dir'])
-        # data_directions = np.stack([data_directions.ra.rad * np.cos(data_directions.dec.rad), data_directions.dec.rad],
-        #                            axis=1)
+        _, data_directions = datapack.get_directions(axes['dir'])
+        data_directions = np.stack([data_directions.ra.rad * np.cos(data_directions.dec.rad), data_directions.dec.rad],
+                                   axis=1)
         if flag_outliers:
             logging.info("Flagging outliers in TEC")
-            flag = np.abs(smooth(tec, axis=-1) - tec) > 30.
-            tec_uncert[flag] = np.inf
-            # for _ in range(3):
-            #     f = median_filter(tec_f, size=(1,1,1,3))
-            #     flag = np.abs(tec_f - f) > 30.
-            #     tec_f[flag] = f[flag]
-            #     tec_uncert[flag] = np.inf
-            const = median_filter(const, size=(1,1,1,31))
-            # tec_uncert, _ = filter_tec(tec[0, ...], tec_uncert[0, ...])
-            # tec_uncert = tec_uncert[None, ...]
-            # logging.info("Flagging outliers in const")
-            # const_uncert, _ = filter_const_dir(const[0, ...], data_directions, const_uncert[0, ...], function='multiquadric')
-            # const_uncert = const_uncert[None, ...]
+            tec_uncert, _ = filter_tec_dir(tec[0,...], data_directions, init_y_uncert=tec_uncert[0,...], min_res=8., function='multiquadric')
+            tec_uncert = tec_uncert[None,...]
+            logging.info("Fraction flagged: {:.3f}".format(np.sum(tec_uncert==np.inf)/tec_uncert.size))
         if flag_directions is not None:
             tec_uncert[:, flag_directions, ...] = np.inf
             const_uncert[:, flag_directions, ...] = np.inf
@@ -379,6 +371,8 @@ class Deployment(object):
             logging.info("Getting NN const")
             #Nd_screen, Na, Nt
             const_NN = const_mean[idx, :, :]
+            logging.info("Storing const")
+
             #1, Nd, Na, Nf, Nt
             post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di + const_NN[None,..., None, :]
             post_phase_std = np.abs(post_std_array[None, ..., None, :] * tec_conv[:, None])

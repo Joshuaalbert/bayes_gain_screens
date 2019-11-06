@@ -57,6 +57,8 @@ fi
 source ~/.bashrc
 #ddf_singularity
 
+singularity exec -B /tmp,/dev/shm CleanSHM.py &> "$log"
+
 singularity exec -B /tmp,/dev/shm,/home/albert,/beegfs/lofar/albert /home/albert/store/lofar_sksp_ddf.simg \
     python /home/albert/store/scripts/pipeline.py \
         --archive_dir="$archive_dir" \
@@ -66,20 +68,20 @@ singularity exec -B /tmp,/dev/shm,/home/albert,/beegfs/lofar/albert /home/albert
         --ncpu=32 \
         --block_size=10 \
         --deployment_type=directional \
-        --do_choose_calibrators=2 \
-        --do_subtract=2 \
-        --do_solve_dds4=2 \
-        --do_smooth_dds4=2 \
-        --do_slow_dds4=2 \
+        --do_choose_calibrators=0 \
+        --do_subtract=0 \
+        --do_solve_dds4=0 \
+        --do_smooth_dds4=0 \
+        --do_slow_dds4=0 \
         --do_image_smooth=0 \
         --do_image_dds4=0 \
-        --do_tec_inference=2 \
-        --do_infer_screen=0 \
-        --do_merge_slow=0 \
+        --do_tec_inference=0 \
+        --do_infer_screen=2 \
+        --do_merge_slow=2 \
         --do_image_smooth_slow=0 \
         --do_image_screen_slow=0 \
         --do_image_screen=0 \
-        --obs_num="$obs_num" &> "$log"
+        --obs_num="$obs_num" &>> "$log"
 
 
 singularity exec -B /tmp,/dev/shm,/home/albert,/beegfs/lofar/albert /home/albert/store/lofar_sksp_ddf_gainscreens_premerge.simg \
@@ -102,6 +104,6 @@ singularity exec -B /tmp,/dev/shm,/home/albert,/beegfs/lofar/albert /home/albert
         --do_infer_screen=0 \
         --do_merge_slow=0 \
         --do_image_smooth_slow=0 \
-        --do_image_screen_slow=0 \
+        --do_image_screen_slow=2 \
         --do_image_screen=0 \
         --obs_num="$obs_num" &>> "$log"
