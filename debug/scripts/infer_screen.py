@@ -30,7 +30,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
                             tec_solset='directionally_referenced',
                             phase_solset='smoothed000',
                             flux_limit=0.05,
-                            max_N=250,
+                            max_N=80,
                             min_spacing_arcmin=4.,
                             ref_image_fits=ref_image_fits,
                             ant=None,
