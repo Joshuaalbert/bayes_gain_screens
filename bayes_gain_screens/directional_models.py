@@ -592,13 +592,15 @@ class DirectionalKernel(Kernel):
         if self.obs_type == 'DDTEC':
             if sym:
                 dir_sym = kern_dir.K(k1, self.ref_direction[None, :])
-                res = kern_dir.K(k1, k2) - dir_sym - tf.transpose(dir_sym, (1, 0)) + kern_dir.K(
-                    self.ref_direction[None, :], self.ref_direction[None, :])
+                res = kern_dir.K(k1, k2) \
+                      - dir_sym \
+                      - tf.transpose(dir_sym, (1, 0)) \
+                      + kern_dir.K(self.ref_direction[None, :], self.ref_direction[None, :])
             else:
-                res = kern_dir.K(k1, k2) - kern_dir.K(self.ref_direction[None, :], k2) - kern_dir.K(k1,
-                                                                                                self.ref_direction[None,
-                                                                                                :]) + kern_dir.K(
-                self.ref_direction[None, :], self.ref_direction[None, :])
+                res = kern_dir.K(k1, k2) \
+                      - kern_dir.K(self.ref_direction[None, :], k2) \
+                      - kern_dir.K(k1, self.ref_direction[None, :]) \
+                      + kern_dir.K(self.ref_direction[None, :], self.ref_direction[None, :])
 
         if self.amplitude is not None:
             return tf.math.square(self.amplitude)[:, None, None] * res
@@ -617,29 +619,41 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
             Y_flag[Y_flag > 3.*amplitude[None,:, None]] = np.nan
         amplitude = np.nanstd(Y_flag.transpose((0,2,1)).reshape((-1, Y.shape[1])), axis=0)
 
-    initial_hpd = 1.*np.pi/180.
+    initial_hpd = 2.*np.pi/180.
     # h*l = hpd -> l = hpd / h
-    with defer_build():
-        dir_kernels = [
-            gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
-            gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
-            gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
-            gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
-            gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
-            # gpflow_kernel('ArcCosine', dims=3, variance=10. ** 2)
-        ]
-        for d in dir_kernels:
-            d.hpd.transform = transforms.Chain(transforms.Logistic(initial_hpd*0.7, 4*initial_hpd), transforms.positiveRescale(initial_hpd))
-            d.compile()
+    dir_kernels = [
+        gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
+    ]
 
     kernels = []
     for d in dir_kernels:
         kernels.append(DirectionalKernel(ref_direction=ref_direction,
-                                         anisotropic=anisotropic,
+                                         anisotropic=False,
                                          inner_kernel=d,
                                          amplitude=amplitude,
                                          obs_type='DDTEC'))
-        # d.hpd.trainable = False
+
+    dir_kernels = [
+        gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
+        gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
+    ]
+
+    kernels = []
+    for d in dir_kernels:
+        kernels.append(DirectionalKernel(ref_direction=ref_direction,
+                                         anisotropic=True,
+                                         inner_kernel=d,
+                                         amplitude=amplitude,
+                                         obs_type='DDTEC'))
+
+
 
     if use_vec_kernels:
         dir_kernels = [
