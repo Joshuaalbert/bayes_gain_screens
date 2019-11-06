@@ -114,7 +114,13 @@ def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 5
     kwargs['sols'] = 'DDS4_full'
     kwargs['solsdir'] = os.path.join(data_dir, 'SOLSDIR')
-    cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_kms_sols_template'), **kwargs)
+
+    if 'init_dico' in kwargs.keys():
+        kwargs['major_iters'] = 1
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_kms_sols_restart_template'),
+                              **kwargs)
+    else:
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_kms_sols_template'), **kwargs)
     os.system(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
@@ -137,7 +143,12 @@ def image_smoothed(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 5
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:smoothed000/phase000+amplitude000'.format(merged_sol)
-    cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
+    if 'init_dico' in kwargs.keys():
+        kwargs['major_iters'] = 1
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'),
+                              **kwargs)
+    else:
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
     os.system(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
@@ -160,7 +171,12 @@ def image_smoothed_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 8
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:smoothed_slow000/phase000+amplitude000'.format(merged_sol)
-    cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
+    if 'init_dico' in kwargs.keys():
+        kwargs['major_iters'] = 1
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'),
+                              **kwargs)
+    else:
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
     os.system(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
@@ -184,7 +200,12 @@ def image_screen(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 7
     merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:screen_posterior/phase000+amplitude000'.format(merged_h5parm)
-    cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
+    if 'init_dico' in kwargs.keys():
+        kwargs['major_iters'] = 1
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'),
+                              **kwargs)
+    else:
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
     os.system(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
@@ -208,7 +229,12 @@ def image_screen_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 8
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:screen_slow000/phase000+amplitude000'.format(merged_sol)
-    cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
+
+    if 'init_dico' in kwargs.keys():
+        kwargs['major_iters'] = 1
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'), **kwargs)
+    else:
+        cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
     os.system(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
@@ -266,23 +292,29 @@ def add_args(parser):
                         default=None, type=str, required=True)
     parser.add_argument('--script_dir', help='Where the scripts are stored.',
                         default=None, type=str, required=True)
+    parser.add_argument('--use_init_dico', help='Whether to initialise clean with dico.',
+                        default=False, type="bool", required=False)
 
 
-def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu):
+def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_dico):
+    kwargs = {}
+    init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
+    if os.path.isfile(init_dico) and use_init_dico:
+        kwargs['init_dico'] = init_dico
     if image_type == 'image_subtract_dirty':
         image_dirty(obs_num=obs_num,
                     data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
                     data_column='DATA_SUB')
     if image_type == 'image_smoothed':
-        image_smoothed(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA')
+        image_smoothed(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_smoothed_slow':
-        image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA')
+        image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_screen':
-        image_screen(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA')
+        image_screen(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_screen_slow':
-        image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA')
+        image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_dds4':
-        image_DDS4(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA')
+        image_DDS4(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
 
 
 if __name__ == '__main__':
