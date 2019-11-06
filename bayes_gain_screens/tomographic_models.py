@@ -1,14 +1,22 @@
 from .tomographic_kernel import TomographicKernel
 from .model import HGPR
-from .directional_models import gpflow_kernel
+from gpflow.kernels import RBF, Matern32, Matern52, Matern12, RationalQuadratic
 
+def gpflow_kernel(kernel, dims=3, **kwargs):
+    kern_map = dict(RBF=RBF, M32=Matern32, M52=Matern52, M12=Matern12, RQ=RationalQuadratic)
+    kern = kern_map.get(kernel, None)
+    if kern is None:
+        raise ValueError("{} not valid kernel".format(kernel))
+    return kern(dims, **kwargs)
 
 def generate_models(X, Y, Y_var, ref_direction, ref_location, reg_param=1., parallel_iterations=10, **kwargs):
+
     fed_settings = [('RQ', dict(variance=9., lengthscales=15., alpha=10.)),
                     ('RBF', dict(variance=9., lengthscales=15.)),
                     ('M52', dict(variance=9., lengthscales=15.)),
                     ('M32', dict(variance=9., lengthscales=15.)),
                     ('M12', dict(variance=9., lengthscales=15.))]
+
     kernels = []
     for k in fed_settings:
         kernels.append(TomographicKernel(a=250., b=100.,
