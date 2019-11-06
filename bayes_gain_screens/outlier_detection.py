@@ -88,6 +88,17 @@ def filter_tec(y, init_y_uncert):
     return flags, init_y_uncert
     # return filter_tec_dir(y, directions, init_y_uncert, min_res=8., function='multiquadric')
 
+def smooth(v, axis=-1):
+    out = np.zeros(v.shape)
+    size = np.ones(len(v.shape), dtype=np.int)
+    size[axis] = 3
+    out[..., :-1] += np.cumsum(median_filter(np.diff(v[..., ::-1]), size), axis=axis)[..., ::-1]
+    out += v[..., -1: ]
+    out[..., 1:] += np.cumsum(median_filter(np.diff(v),size), axis=axis)
+    out += v[..., 0:1]
+    out /= 2.
+    return out
+
 def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     """
     Uses temporal and spatial smoothing.
@@ -104,6 +115,7 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     """
     if init_y_uncert is None:
         init_y_uncert = 1.*np.ones_like(y)
+    time_flag = np.abs(smooth(y, axis=-1) - y) > 10.
     # Nd, 2
     X = directions
     X -= np.mean(X, axis=0)
@@ -112,12 +124,11 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     x_list0 = list(X.T)
     Nd, Na, Nt = y.shape
     maxiter = Nd
-    smooths = np.linspace(0.2, 0.3, maxiter)[::-1]
     for t in range(Nt):
         for a in range(Na):
-            keep = np.ones(Nd, dtype=np.bool)
+            keep = np.logical_not(time_flag[:,a,t])#np.ones(Nd, dtype=np.bool)
             for i in range(maxiter):
-                svm = Rbf(*list(X[keep, :].T), y[keep, a, t], smooth=smooths[i], **kwargs)
+                svm = Rbf(*list(X[keep, :].T), y[keep, a, t], smooth=0.2, **kwargs)
                 y_star = svm(*x_list0)
                 dy = np.abs(y_star - y[:, a, t])
                 # print(np.median(dy), np.percentile(dy, 95))
@@ -133,8 +144,8 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
             if keep.sum() < Nd:
                 print(t, a, np.where(final_flags[:, a, t]), 'from', Nd)
 
-    init_y_uncert[np.where(final_flags)] = np.inf
-    return init_y_uncert, final_flags
+    final_y_uncert = np.where(final_flags, np.inf, init_y_uncert)
+    return final_y_uncert, final_flags
 
 def filter_tec_dir_time(y,  directions, init_y_uncert=None, maxiter=46, block_size=2,  num_processes=1, **kwargs):
     """
