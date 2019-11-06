@@ -349,6 +349,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', image_screen_slow_working_dir)
         cmd.add('script_dir', script_dir)
+        cmd.add('use_init_dico', 'False')
         dsk['image_screen_slow'] = (cmd, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
     else:
         dsk['image_screen_slow'] = (lambda *x: None, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
@@ -422,7 +423,7 @@ def test_main():
          ncpu=32,
          ref_dir=0,
          block_size=10,
-         deployment_type='directional',
+         deployment_type='tomographic',
          do_choose_calibrators=0,
          do_subtract=0,
          do_image_subtract_dirty=0,
