@@ -578,7 +578,7 @@ class DirectionalKernel(Kernel):
         k2 = X2
 
         if self.anisotropic:
-            # M_ij.k_nj
+            # M_ij.k_nj -> k_ni
             k1 = tf.matmul(k1, self.M, transpose_b=True)
             if sym:
                 k2 = k1
@@ -637,21 +637,20 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
                                          amplitude=amplitude,
                                          obs_type='DDTEC'))
 
-    dir_kernels = [
-        gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
-        gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
-    ]
-
-    kernels = []
-    for d in dir_kernels:
-        kernels.append(DirectionalKernel(ref_direction=ref_direction,
-                                         anisotropic=True,
-                                         inner_kernel=d,
-                                         amplitude=amplitude,
-                                         obs_type='DDTEC'))
+    # dir_kernels = [
+    #     gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=initial_hpd),
+    #     gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=initial_hpd),
+    #     gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=initial_hpd),
+    #     gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=initial_hpd),
+    #     gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=initial_hpd, alpha=10.),
+    # ]
+    #
+    # for d in dir_kernels:
+    #     kernels.append(DirectionalKernel(ref_direction=ref_direction,
+    #                                      anisotropic=True,
+    #                                      inner_kernel=d,
+    #                                      amplitude=amplitude,
+    #                                      obs_type='DDTEC'))
 
 
 
