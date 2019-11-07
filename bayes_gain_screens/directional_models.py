@@ -535,7 +535,7 @@ class DirectionalKernel(Kernel):
                  anisotropic=False,
                  active_dims=None,
                  amplitude=None,
-                 inner_kernel=None,
+                 inner_kernel:Kernel=None,
                  obs_type='DDTEC'):
         super().__init__(3, active_dims,
                          name="DirectionalKernel_{}{}".format("aniso" if anisotropic else "iso",
@@ -556,6 +556,7 @@ class DirectionalKernel(Kernel):
             # Na, 3, 3
             self.M = Parameter(np.eye(3), dtype=float_type,
                                transform=transforms.LowerTriangular(3, squeeze=True))
+
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):

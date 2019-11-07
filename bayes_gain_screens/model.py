@@ -9,6 +9,7 @@ import numpy as np
 from typing import List
 from scipy.special import logsumexp
 from gpflow.training import ScipyOptimizer
+from scipy.optimize import brute
 from . import logging
 
 
@@ -292,22 +293,42 @@ class AverageModel(object):
                 logging.info("Learned model:\n{}".format(
                     "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
 
-    def optimise(self):
-        for model in self.models:
-            logging.info("Optimising model: {}".format(model.name))
-            with np.printoptions(precision=2):
-                logging.info("Initial model:\n{}".format(
-                    "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
-            opt = ScipyOptimizer()
-            try:
-                opt.minimize(model)
-            except:
-                logging.error("Problem with optimisation!!")
-                model.initialzie(force=True)
+    def optimise(self, search=False):
+        if search:
+            for model in self.models:
+                logging.info("Search Optimising model: {}".format(model.name))
+
+                def _loss(params):
+                    model.inner_kernel.hpd = params[0]
+                    model.inner_kernel.hpd.trainable = False
+                    ScipyOptimizer().minimize(model)
+                    try:
+                        return -model.compute_likelihood()
+                    except:
+                        return np.inf
+
+                res = brute(_loss, (slice(0.5*np.pi/180., 4*np.pi/180., 0.2*np.pi),), finish=None)
+                model.inner_kernel.hpd = res[0]
+                model.inner_kernel.hpd.trainable = False
                 ScipyOptimizer().minimize(model)
-            with np.printoptions(precision=2):
-                logging.info("Learned model:\n{}".format(
-                    "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
+                model.inner_kernel.hpd.trainable = True
+                ScipyOptimizer().minimize(model)
+                with np.printoptions(precision=2):
+                    logging.info("Learned model:\n{}".format(
+                        "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
+        else:
+            for model in self.models:
+                logging.info("Optimising model: {}".format(model.name))
+                opt = ScipyOptimizer()
+                try:
+                    opt.minimize(model)
+                except:
+                    logging.error("Problem with optimisation!!")
+                    model.initialzie(force=True)
+                    ScipyOptimizer().minimize(model)
+                with np.printoptions(precision=2):
+                    logging.info("Learned model:\n{}".format(
+                        "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
 
 
     def predict_f(self, X, only_mean=True):
