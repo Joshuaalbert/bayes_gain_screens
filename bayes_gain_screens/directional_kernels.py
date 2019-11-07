@@ -456,8 +456,8 @@ class ThinLayerRQ(Kernel):
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.hpd = Parameter(hpd,
-                             transform=transforms.positiveRescale(hpd),
+        self.alpha = Parameter(alpha,
+                             transform=transforms.positiveRescale(alpha),
                              dtype=settings.float_type)
 
         self.height_hpd_ratio = Parameter(height / hpd,
