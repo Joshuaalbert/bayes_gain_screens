@@ -2,9 +2,11 @@ import numpy as np
 import tensorflow as tf
 from gpflow import transforms, params_as_tensors
 from gpflow import settings
+
 float_type = settings.float_type
 from gpflow.kernels import Kernel
 from gpflow.params import Parameter
+
 
 class ThinLayerRBF(Kernel):
     def __init__(self, input_dim, variance, hpd, height, active_dims=None, name=None):
@@ -13,34 +15,27 @@ class ThinLayerRBF(Kernel):
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.hpd = Parameter(hpd,
-                              transform=transforms.positiveRescale(hpd),
-                              dtype=settings.float_type)
-
-        self.height = Parameter(height,
-                             transform=transforms.positiveRescale(height),
-                             dtype=settings.float_type)
+        self.height_hpd_ratio = Parameter(height / hpd,
+                                          transform=transforms.positiveRescale(height / hpd),
+                                          dtype=settings.float_type)
 
     @params_as_tensors
     def sep_in_layer(self, k1, k2):
         eps = tf.constant(1e-6, dtype=k1.dtype)
         # N
-        secphi1 = tf.math.reciprocal(k1[:,2] + eps)
+        secphi1 = tf.math.reciprocal(k1[:, 2] + eps)
         # M
-        secphi2 = tf.math.reciprocal(k2[:,2] + eps)
+        secphi2 = tf.math.reciprocal(k2[:, 2] + eps)
         # N, M
-        costheta = tf.math.reduce_sum(k1[:,None,:]*k2, axis=-1)
+        costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
+        l = (self.height_hpd_ratio * self.scale_factor()) * tf.math.sqrt(
+            secphi1[:, None] ** 2 + secphi2 ** 2 - 2. * (secphi1[:, None] * secphi2) * costheta + eps)
 
         return l
 
     def scale_factor(self):
-        return 1. / np.sqrt(2*np.log(2.))
-
-    @params_as_tensors
-    def lengthscales(self):
-        return self.hpd / self.scale_factor()
+        return 1. / np.sqrt(2 * np.log(2.))
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):
@@ -52,7 +47,7 @@ class ThinLayerRBF(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.sep_in_layer(X1, X2) / self.lengthscales()
+        dist = self.sep_in_layer(X1, X2)
         log_res = tf.math.log(self.variance) - 0.5 * tf.math.square(dist)
         return tf.math.exp(log_res)
 
@@ -65,8 +60,8 @@ class GreatCircleRBF(Kernel):
                                   dtype=settings.float_type)
 
         self.hpd = Parameter(hpd,
-                                      transform=transforms.positiveRescale(hpd),
-                                      dtype=settings.float_type)
+                             transform=transforms.positiveRescale(hpd),
+                             dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
             for a2 in range(3):
@@ -76,7 +71,7 @@ class GreatCircleRBF(Kernel):
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
     def scale_factor(self):
-        return 1. / np.sqrt(2*np.log(2.))
+        return 1. / np.sqrt(2 * np.log(2.))
 
     @params_as_tensors
     def lengthscales(self):
@@ -122,13 +117,9 @@ class ThinLayerM52(Kernel):
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.hpd = Parameter(hpd,
-                             transform=transforms.positiveRescale(hpd),
-                             dtype=settings.float_type)
-
-        self.height = Parameter(height,
-                                transform=transforms.positiveRescale(height),
-                                dtype=settings.float_type)
+        self.height_hpd_ratio = Parameter(height / hpd,
+                                          transform=transforms.positiveRescale(height / hpd),
+                                          dtype=settings.float_type)
 
     @params_as_tensors
     def sep_in_layer(self, k1, k2):
@@ -140,16 +131,13 @@ class ThinLayerM52(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
+        l = (self.height_hpd_ratio * self.scale_factor()) * tf.math.sqrt(
+            secphi1[:, None] ** 2 + secphi2 ** 2 - 2. * (secphi1[:, None] * secphi2) * costheta + eps)
 
         return l
 
     def scale_factor(self):
         return 0.95958
-
-    @params_as_tensors
-    def lengthscales(self):
-        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):
@@ -161,7 +149,7 @@ class ThinLayerM52(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.sep_in_layer(X1, X2) / self.lengthscales()
+        dist = self.sep_in_layer(X1, X2)
         dist *= np.sqrt(5.)
         dist2 = np.square(dist) / 3.
         log_res = tf.math.log(self.variance) + tf.math.log(1. + dist + dist2) - dist
@@ -177,8 +165,8 @@ class GreatCircleM52(Kernel):
                                   dtype=settings.float_type)
 
         self.hpd = Parameter(hpd,
-                                      transform=transforms.positiveRescale(hpd),
-                                      dtype=settings.float_type)
+                             transform=transforms.positiveRescale(hpd),
+                             dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
             for a2 in range(3):
@@ -244,13 +232,9 @@ class ThinLayerM32(Kernel):
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.hpd = Parameter(hpd,
-                             transform=transforms.positiveRescale(hpd),
-                             dtype=settings.float_type)
-
-        self.height = Parameter(height,
-                                transform=transforms.positiveRescale(height),
-                                dtype=settings.float_type)
+        self.height_hpd_ratio = Parameter(height / hpd,
+                                          transform=transforms.positiveRescale(height / hpd),
+                                          dtype=settings.float_type)
 
     @params_as_tensors
     def sep_in_layer(self, k1, k2):
@@ -262,16 +246,13 @@ class ThinLayerM32(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
+        l = (self.height_hpd_ratio * self.scale_factor()) * tf.math.sqrt(
+            secphi1[:, None] ** 2 + secphi2 ** 2 - 2. * (secphi1[:, None] * secphi2) * costheta + eps)
 
         return l
 
     def scale_factor(self):
         return 1.032
-
-    @params_as_tensors
-    def lengthscales(self):
-        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):
@@ -283,7 +264,7 @@ class ThinLayerM32(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.sep_in_layer(X1, X2) / self.lengthscales()
+        dist = self.sep_in_layer(X1, X2)
         dist *= np.sqrt(3.)
         log_res = tf.math.log(self.variance) + tf.math.log(1. + dist) - dist
         return tf.math.exp(log_res)
@@ -298,8 +279,8 @@ class GreatCircleM32(Kernel):
                                   dtype=settings.float_type)
 
         self.hpd = Parameter(hpd,
-                                      transform=transforms.positiveRescale(hpd),
-                                      dtype=settings.float_type)
+                             transform=transforms.positiveRescale(hpd),
+                             dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
             for a2 in range(3):
@@ -364,13 +345,9 @@ class ThinLayerM12(Kernel):
                                   transform=transforms.positiveRescale(variance),
                                   dtype=settings.float_type)
 
-        self.hpd = Parameter(hpd,
-                             transform=transforms.positiveRescale(hpd),
-                             dtype=settings.float_type)
-
-        self.height = Parameter(height,
-                                transform=transforms.positiveRescale(height),
-                                dtype=settings.float_type)
+        self.height_hpd_ratio = Parameter(height / hpd,
+                                          transform=transforms.positiveRescale(height / hpd),
+                                          dtype=settings.float_type)
 
     @params_as_tensors
     def sep_in_layer(self, k1, k2):
@@ -382,16 +359,13 @@ class ThinLayerM12(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
+        l = (self.height_hpd_ratio * self.scale_factor()) * tf.math.sqrt(
+            secphi1[:, None] ** 2 + secphi2 ** 2 - 2. * (secphi1[:, None] * secphi2) * costheta + eps)
 
         return l
 
     def scale_factor(self):
         return 1. / np.log(2.)
-
-    @params_as_tensors
-    def lengthscales(self):
-        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):
@@ -403,7 +377,7 @@ class ThinLayerM12(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.sep_in_layer(X1, X2) / self.lengthscales()
+        dist = self.sep_in_layer(X1, X2)
         log_res = tf.math.log(self.variance) - dist
         return tf.math.exp(log_res)
 
@@ -417,8 +391,8 @@ class GreatCircleM12(Kernel):
                                   dtype=settings.float_type)
 
         self.hpd = Parameter(hpd,
-                                      transform=transforms.positiveRescale(hpd),
-                                      dtype=settings.float_type)
+                             transform=transforms.positiveRescale(hpd),
+                             dtype=settings.float_type)
         levi_civita = np.zeros((3, 3, 3))
         for a1 in range(3):
             for a2 in range(3):
@@ -428,7 +402,7 @@ class GreatCircleM12(Kernel):
         self.levi_civita = Parameter(levi_civita, dtype=settings.float_type, trainable=False)
 
     def scale_factor(self):
-        return 1./np.log(2.)
+        return 1. / np.log(2.)
 
     @params_as_tensors
     def lengthscales(self):
@@ -486,13 +460,9 @@ class ThinLayerRQ(Kernel):
                              transform=transforms.positiveRescale(hpd),
                              dtype=settings.float_type)
 
-        self.height = Parameter(height,
-                                transform=transforms.positiveRescale(height),
-                                dtype=settings.float_type)
-
-        self.alpha = Parameter(alpha,
-                               transform=transforms.positiveRescale(alpha),
-                               dtype=settings.float_type)
+        self.height_hpd_ratio = Parameter(height / hpd,
+                                          transform=transforms.positiveRescale(height / hpd),
+                                          dtype=settings.float_type)
 
     @params_as_tensors
     def sep_in_layer(self, k1, k2):
@@ -504,7 +474,8 @@ class ThinLayerRQ(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
+        l = (self.height_hpd_ratio * self.scale_factor()) * tf.math.sqrt(
+            secphi1[:, None] ** 2 + secphi2 ** 2 - 2. * (secphi1[:, None] * secphi2) * costheta + eps)
 
         return l
 
@@ -512,10 +483,6 @@ class ThinLayerRQ(Kernel):
     def scale_factor(self):
         return tf.math.reciprocal(
             np.sqrt(2.) * tf.math.sqrt(tf.math.pow(np.sqrt(2.), 1. / self.alpha) - 1.) * tf.math.sqrt(self.alpha))
-
-    @params_as_tensors
-    def lengthscales(self):
-        return self.hpd / self.scale_factor()
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):
@@ -527,7 +494,7 @@ class ThinLayerRQ(Kernel):
             X1, X2 = self._slice(X1, X2)
         if X2 is None:
             X2 = X1
-        dist = self.sep_in_layer(X1, X2) / self.lengthscales()
+        dist = self.sep_in_layer(X1, X2)
         log_res = tf.math.log(self.variance) - self.alpha * tf.math.log(1. + dist / (2. * self.alpha))
         return tf.math.exp(log_res)
 
@@ -540,8 +507,8 @@ class GreatCircleRQ(Kernel):
                                   dtype=settings.float_type)
 
         self.hpd = Parameter(hpd,
-                                      transform=transforms.positiveRescale(hpd),
-                                      dtype=settings.float_type)
+                             transform=transforms.positiveRescale(hpd),
+                             dtype=settings.float_type)
         self.alpha = Parameter(alpha,
                                transform=transforms.positiveRescale(alpha),
                                dtype=settings.float_type)
@@ -556,7 +523,8 @@ class GreatCircleRQ(Kernel):
 
     @params_as_tensors
     def scale_factor(self):
-        return tf.math.reciprocal(np.sqrt(2.) * tf.math.sqrt(tf.math.pow(np.sqrt(2.), 1./self.alpha) - 1.) * tf.math.sqrt(self.alpha))
+        return tf.math.reciprocal(
+            np.sqrt(2.) * tf.math.sqrt(tf.math.pow(np.sqrt(2.), 1. / self.alpha) - 1.) * tf.math.sqrt(self.alpha))
 
     @params_as_tensors
     def lengthscales(self):
@@ -637,7 +605,7 @@ class DirectionalKernel(Kernel):
                  anisotropic=False,
                  active_dims=None,
                  amplitude=None,
-                 inner_kernel:Kernel=None,
+                 inner_kernel: Kernel = None,
                  obs_type='DDTEC'):
         super().__init__(3, active_dims,
                          name="DirectionalKernel_{}{}".format("aniso" if anisotropic else "iso",
@@ -658,7 +626,6 @@ class DirectionalKernel(Kernel):
             # Na, 3, 3
             self.M = Parameter(np.eye(3), dtype=float_type,
                                transform=transforms.LowerTriangular(3, squeeze=True))
-
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):
