@@ -5,6 +5,9 @@ import astropy.units as au
 from astropy.io import fits
 from astropy import wcs
 import astropy.time as at
+
+from gpflow import settings
+float_type = settings.float_type
 from .settings import dist_type, float_type, jitter
 from timeit import default_timer
 from astropy.io import fits
@@ -837,3 +840,19 @@ def forward_gradients_v2(ys, xs, grad_xs=None, gate_gradients=False):
         v = tf.ones_like(ys)  # dummy variable
     g = tf.gradients(ys, xs, grad_ys=v)
     return tf.gradients(g, v, grad_ys=grad_xs)
+
+
+@tf.custom_gradient
+def safe_acos_squared(x):
+    safe_x = tf.clip_by_value(x, tf.constant(-1., float_type), tf.constant(1., float_type))
+    acos = tf.math.acos(safe_x)
+    result = tf.math.square(acos)
+
+    def grad(dy):
+        g = -2. * acos / tf.math.sqrt(1. - tf.math.square(safe_x))
+        g = tf.where(tf.equal(safe_x, tf.constant(1., float_type)), tf.constant(-2., float_type) * tf.ones_like(g), g)
+        g = tf.where(tf.equal(safe_x, tf.constant(-1., float_type)), tf.constant(-100, float_type) * tf.ones_like(g), g)
+        with tf.control_dependencies([tf.print(tf.reduce_all(tf.is_finite(g)), tf.reduce_all(tf.is_finite(dy)))]):
+            return g * dy
+
+    return result, grad
