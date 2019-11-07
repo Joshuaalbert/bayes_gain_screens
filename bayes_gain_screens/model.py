@@ -324,7 +324,7 @@ class AverageModel(object):
                     opt.minimize(model)
                 except:
                     logging.error("Problem with optimisation!!")
-                    model.initialzie(force=True)
+                    model.initialize(force=True)
                     ScipyOptimizer().minimize(model)
                 with np.printoptions(precision=2):
                     logging.info("Learned model:\n{}".format(

@@ -36,6 +36,10 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
     if norm is None:
         norm = plt.Normalize(np.nanmin(colors) if vmin is not None else vmin, np.nanmax(colors) if vmax is not None else vmax)
 
+    if radius is None:
+        radius = np.max(np.linalg.norm(points - np.mean(points, axis=0), axis=1))
+
+
     def voronoi_finite_polygons_2d(vor, radius=radius):
         """
         Reconstruct infinite voronoi regions in a 2D diagram to finite
@@ -66,8 +70,9 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
         new_vertices = vor.vertices.tolist()
 
         center = vor.points.mean(axis=0)
-        if radius is None:
-            radius = vor.points.ptp().max()
+        # if radius is None:
+        #     radius = np.max(np.linalg.norm(points - np.mean(points, axis=0),axis=1))
+        #     # radius = vor.points.ptp().max()
 
         # Construct a map containing all ridges for a given point
         all_ridges = {}
@@ -139,8 +144,8 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
 
     #plt.plot(points[:,0], points[:,1], 'ko')
     if relim:
-        ax.set_xlim(vor.min_bound[0] - 0.1, vor.max_bound[0] + 0.1)
-        ax.set_ylim(vor.min_bound[1] - 0.1, vor.max_bound[1] + 0.1)
+        ax.set_xlim(vor.min_bound[0] - 0.1*radius, vor.max_bound[0] + 0.1*radius)
+        ax.set_ylim(vor.min_bound[1] - 0.1*radius, vor.max_bound[1] + 0.1*radius)
     return ax
 
 
