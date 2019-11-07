@@ -307,7 +307,7 @@ class AverageModel(object):
                     except:
                         return np.inf
 
-                res = brute(_loss, (slice(0.5*np.pi/180., 4*np.pi/180., 0.2*np.pi),), finish=None)
+                res = brute(_loss, (slice(0.5*np.pi/180., 4*np.pi/180., 0.2*np.pi/180.),), finish=None)
                 model.kern.inner_kernel.hpd = res[0]
                 model.kern.inner_kernel.hpd.trainable = False
                 ScipyOptimizer().minimize(model)
