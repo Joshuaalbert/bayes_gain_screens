@@ -31,7 +31,7 @@ class ThinLayerRBF(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:,None,:]*k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1**2 + secphi2**2 - 2.*secphi1*secphi2*costheta + eps)
+        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
 
         return l
 
@@ -140,7 +140,7 @@ class ThinLayerM52(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1 ** 2 + secphi2 ** 2 - 2. * secphi1 * secphi2 * costheta + eps)
+        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
 
         return l
 
@@ -262,7 +262,7 @@ class ThinLayerM32(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1 ** 2 + secphi2 ** 2 - 2. * secphi1 * secphi2 * costheta + eps)
+        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
 
         return l
 
@@ -382,7 +382,7 @@ class ThinLayerM12(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1 ** 2 + secphi2 ** 2 - 2. * secphi1 * secphi2 * costheta + eps)
+        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
 
         return l
 
@@ -504,7 +504,7 @@ class ThinLayerRQ(Kernel):
         # N, M
         costheta = tf.math.reduce_sum(k1[:, None, :] * k2, axis=-1)
         # N, M
-        l = self.height * tf.math.sqrt(secphi1 ** 2 + secphi2 ** 2 - 2. * secphi1 * secphi2 * costheta + eps)
+        l = self.height * tf.math.sqrt(secphi1[:, None]**2 + secphi2**2 - 2.*(secphi1[:, None]*secphi2)*costheta + eps)
 
         return l
 

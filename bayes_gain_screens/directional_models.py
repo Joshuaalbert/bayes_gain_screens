@@ -8,6 +8,7 @@ from .model import HGPR
 from gpflow.kernels import Matern52, Matern32, Matern12, RBF, ArcCosine
 from . import logging
 
+
 def gpflow_kernel(kernel, dims=3, **kwargs):
     kern_map = dict(RBF=RBF, M32=Matern32, M52=Matern52, M12=Matern12,
                     ArcCosine=ArcCosine,
