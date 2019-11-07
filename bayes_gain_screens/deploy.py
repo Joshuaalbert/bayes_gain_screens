@@ -305,7 +305,7 @@ class Deployment(object):
                         logging.info("Transferring last hyperparams")
                         model.set_hyperparams(init_hyperparams)
                     logging.info("Optimising models")
-                    model.optimise()
+                    model.optimise(search=True)
                     # init_hyperparams = model.get_hyperparams()
                     logging.info("Predicting posteriors and averaging")
                     # batch_size, N
