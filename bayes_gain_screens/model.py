@@ -299,8 +299,8 @@ class AverageModel(object):
                 logging.info("Search Optimising model: {}".format(model.name))
 
                 def _loss(params):
-                    model.inner_kernel.hpd = params[0]
-                    model.inner_kernel.hpd.trainable = False
+                    model.kern.inner_kernel.hpd = params[0]
+                    model.kern.inner_kernel.hpd.trainable = False
                     ScipyOptimizer().minimize(model)
                     try:
                         return -model.compute_likelihood()
@@ -308,10 +308,10 @@ class AverageModel(object):
                         return np.inf
 
                 res = brute(_loss, (slice(0.5*np.pi/180., 4*np.pi/180., 0.2*np.pi),), finish=None)
-                model.inner_kernel.hpd = res[0]
-                model.inner_kernel.hpd.trainable = False
+                model.kern.inner_kernel.hpd = res[0]
+                model.kern.inner_kernel.hpd.trainable = False
                 ScipyOptimizer().minimize(model)
-                model.inner_kernel.hpd.trainable = True
+                model.kern.inner_kernel.hpd.trainable = True
                 ScipyOptimizer().minimize(model)
                 with np.printoptions(precision=2):
                     logging.info("Learned model:\n{}".format(
