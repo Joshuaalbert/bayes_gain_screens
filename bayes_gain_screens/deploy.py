@@ -372,6 +372,7 @@ class Deployment(object):
             #Nd_screen, Na, Nt
             const_NN = const_mean[idx, :, :]
             logging.info("Storing const")
+            self.datapack.const = const_NN[None,...]
 
             #1, Nd, Na, Nf, Nt
             post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di + const_NN[None,..., None, :]
