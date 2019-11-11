@@ -128,6 +128,8 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
         for a in range(Na):
             keep = np.logical_not(time_flag[:,a,t])#np.ones(Nd, dtype=np.bool)
             for i in range(maxiter):
+                if keep.sum() < Nd//2:
+                    keep = np.ones(Nd, dtype=np.bool)
                 svm = Rbf(*list(X[keep, :].T), y[keep, a, t], smooth=0.3, **kwargs)
                 y_star = svm(*x_list0)
                 dy = np.abs(y_star - y[:, a, t])
