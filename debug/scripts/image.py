@@ -1,10 +1,13 @@
 import os
+import sys
 import glob
 import argparse
 import pylab as plt
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
+import pyregion
+
 
 
 def flatten(f):
@@ -45,7 +48,31 @@ def flatten(f):
     return hdu
 
 
-def plot_image(filename, save_name=None, PPD=5, fig_size=20.):
+def plot_image(filename, save_name=None, PPD=5, fig_size=20., background_mean=None, noise=None, radec_pix_center=None,
+               radius_pix=None, ds9_regions=None):
+    """
+    Plot radio image.
+
+    :param filename: str
+        Fits file to plot
+    :param save_name: str or list
+        file name(s) with appendix
+    :param PPD: float
+        pix per dot (compress image be this much)
+    :param fig_size: float
+        fig size in inches
+    :param background_mean: float
+        value in muJy/beam
+    :param noise: float
+        value in muJy/beam
+    :param radec_pix_center: tuple(float,float)
+        Pixels of point to focus on (from ds9)
+    :param radius_pix: float
+        Pixels radius
+    :param ds9_regions: str
+        File with regions to plot
+    """
+    print("Plotting {}".format(filename))
     with fits.open(filename) as f:
         hdu = flatten(f)
         data = hdu.data
@@ -53,16 +80,24 @@ def plot_image(filename, save_name=None, PPD=5, fig_size=20.):
 
         dpi = (npix / PPD) / fig_size
 
-        ###
-        # cheap noise floor
-        data0 = np.copy(data)
-        for _ in range(5):
-            data0 = np.where(data - np.nanmean(data0) < 3. * np.nanstd(data0), data, np.nan)
-        noise = np.nanstd(data0)
-        background = np.nanmean(data0)
+        if background_mean is None or noise is None:
+            ###
+            # cheap noise floor
+            data0 = np.copy(data)
+            for _ in range(5):
+                data0 = np.where(data - np.nanmean(data0) < 3. * np.nanstd(data0), data, np.nan)
+            noise = np.nanstd(data0)
+            background_mean = np.nanmean(data0)
+            print("Found backgroud mean: {:.2f}muJy/beam, and background std: {:.2f}muJy/beam".format(
+                background_mean * 1e6, noise * 1e6))
+        else:
+            background_mean = background_mean / 1e6
+            noise = noise / 1e6
+            print("Using backgroud mean: {:.2f}muJy/beam, and background std: {:.2f}muJy/beam".format(
+                background_mean * 1e6, noise * 1e6))
 
-        vmin = background - 5. * noise  # np.percentile(data, 20.)
-        vmax = background + 50. * noise  # np.percentile(data, 80.)*10.
+        vmin = background_mean - 5. * noise  # np.percentile(data, 20.)
+        vmax = background_mean + 50. * noise  # np.percentile(data, 80.)*10.
 
         wcs = WCS(hdu.header)
         fig = plt.figure(figsize=(fig_size, fig_size))
@@ -71,12 +106,30 @@ def plot_image(filename, save_name=None, PPD=5, fig_size=20.):
                   vmin=np.sign(vmin) * np.sqrt(np.sign(vmin) * vmin),
                   vmax=np.sign(vmax) * np.sqrt(np.sign(vmax) * vmax),
                   origin='lower', cmap='bone_r')
+        if radec_pix_center is not None:
+            print("Centering on {} to radius {}".format(radec_pix_center, radius_pix))
+            ax.set_xlim(radec_pix_center[0] - radius_pix, radec_pix_center[0] + radius_pix)
+            ax.set_ylim(radec_pix_center[1] - radius_pix, radec_pix_center[1] + radius_pix)
         ax.coords.grid(True, color='black', ls='solid')
         ax.coords[0].set_axislabel('Right Ascension (J2000)')
         ax.coords[1].set_axislabel('Declination (J2000)')
+        if ds9_regions is not None:
+            print("Adding ds9 regions: {}".format(ds9_regions))
+            r = pyregion.open(ds9_regions).as_imagecoord(hdu.header)
+            patch_list, text_list = r.get_mpl_patches_texts()
+            for p in patch_list:
+                ax.add_patch(p)
+            for t in text_list:
+                ax.add_artist(t)
         if save_name is not None:
-            plt.savefig(save_name, dpi=dpi)
-        plt.close('all')
+            if isinstance(save_name, (tuple, list)):
+                for s in save_name:
+                    plt.savefig(s, dpi=dpi, bbox_inches='tight', pad_inches=0)
+                    print("Saved to {}".format(s))
+            else:
+                plt.savefig(save_name, dpi=dpi, bbox_inches='tight', pad_inches=0)
+                print("Saved to {}".format(save_name))
+            plt.close('all')
 
 
 def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
@@ -88,8 +141,6 @@ def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 100e-6
-    kwargs['nfacets'] = 11
-    kwargs['robust'] = -0.5
     kwargs['major_iters'] = 0
     cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_dirty_template'), **kwargs)
     os.system(cmd)
@@ -109,8 +160,6 @@ def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 100e-6
-    kwargs['nfacets'] = 11
-    kwargs['robust'] = -0.5
     kwargs['major_iters'] = 5
     kwargs['sols'] = 'DDS4_full'
     kwargs['solsdir'] = os.path.join(data_dir, 'SOLSDIR')
@@ -138,8 +187,6 @@ def image_smoothed(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 100e-6
-    kwargs['nfacets'] = 11
-    kwargs['robust'] = -0.5
     kwargs['major_iters'] = 5
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:smoothed000/phase000+amplitude000'.format(merged_sol)
@@ -166,9 +213,7 @@ def image_smoothed_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 0.
-    kwargs['nfacets'] = 11
-    kwargs['robust'] = -0.5
-    kwargs['major_iters'] = 8
+    kwargs['major_iters'] = 5
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:smoothed_slow000/phase000+amplitude000'.format(merged_sol)
     if 'init_dico' in kwargs.keys():
@@ -195,9 +240,7 @@ def image_screen(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 0.
-    kwargs['nfacets'] = 11
-    kwargs['robust'] = -0.5
-    kwargs['major_iters'] = 7
+    kwargs['major_iters'] = 5
     merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:screen_posterior/phase000+amplitude000'.format(merged_h5parm)
     if 'init_dico' in kwargs.keys():
@@ -224,9 +267,7 @@ def image_screen_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 0.
-    kwargs['nfacets'] = 11
-    kwargs['robust'] = -0.5
-    kwargs['major_iters'] = 8
+    kwargs['major_iters'] = 5
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:screen_slow000/phase000+amplitude000'.format(merged_sol)
 
@@ -298,6 +339,9 @@ def add_args(parser):
 
 def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_dico):
     kwargs = {}
+    kwargs['peak_factor'] = 0.001
+    kwargs['nfacets'] = 11
+    kwargs['robust'] = -0.5
     init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
     if os.path.isfile(init_dico) and use_init_dico:
         kwargs['init_dico'] = init_dico
@@ -319,11 +363,15 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Keep soures inside box region, subtract everything else and create new ms',
+        description='Image with kms sols or h5parm.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()
     print("Running with:")
     for option, value in vars(flags).items():
         print("    {} -> {}".format(option, value))
-    main(**vars(flags))
+    try:
+        main(**vars(flags))
+        exit(0)
+    except:
+        exit(1)

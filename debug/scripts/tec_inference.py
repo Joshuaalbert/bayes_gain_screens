@@ -256,6 +256,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir, unravel_index):
                             np.meshgrid(np.linspace(-200., 200., 401), np.linspace(-np.pi, np.pi, 100), indexing='ij')],
                            axis=1)
 
+    tec_conv = -8.4479745e6 / freqs
     D, Nf, N = Yreal.shape
 
     tec_mean_array = np.zeros((D, N))
@@ -273,8 +274,10 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir, unravel_index):
         sigma, Yreal_res, Yimag_res = get_residual_gaussian_statistics(Yimag,
                                                                        Yreal,
                                                                        ant_idx, d, dir_idx)
+        phase = np.arctan2(Yimag, Yreal)
+        diff_tec = wrap(wrap(phase[d,:,1:]) - wrap(phase[d,:,:-1]))/tec_conv[:,None]
 
-        tec_diff_prior = 20.
+        tec_diff_prior = np.sqrt(np.mean(diff_tec**2))
         const_diff_prior = 0.1
         priors = dict(tec_mean_prior=0., tec_uncert_prior=100., const_mean_prior=0., const_uncert_prior=1.)
 
@@ -302,7 +305,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir, unravel_index):
             ls_obj = SolveLossVI(Yreal[d, keep, n], Yimag[d, keep, n], freqs[keep], sigma=sigma[keep], **priors)
             result2 = minimize(ls_obj.loss_func,
                                [result1[0], deconstrain(3., 0.01, 55.), result1[1], deconstrain(0.5, 0.001, 2 * np.pi)],
-                               method='BFGS').x
+                               method='BFGS', options={'gtol':1e-8, 'norm':2.}).x
             result2[2] = np.arctan2(np.sin(result2[2]), np.cos(result2[2]))
             tec_mean, _tec_uncert, const_mean, _const_uncert = result2
             tec_uncert = constrain(_tec_uncert, 0.01, 55.)
@@ -313,13 +316,13 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir, unravel_index):
             const_uncert_array[d, n] = const_uncert
 
             if n > 50:
-                dt0 = np.diff(tec_mean_array[d, :n + 1])
+                # dt0 = np.diff(tec_mean_array[d, :n + 1])
                 dc0 = np.diff(const_mean_array[d, :n + 1])
-                dt, dc = dt0, dc0
+                dc = dc0
                 for _ in range(3):
-                    dt = np.where(np.abs(dt0) > 3 * np.nanstd(dt), np.nan, dt0)
+                    # dt = np.where(np.abs(dt0) > 3 * np.nanstd(dt), np.nan, dt0)
                     dc = np.where(np.abs(dc0) > 3 * np.nanstd(dc), np.nan, dc0)
-                tec_diff_prior = 1.5 * max(1., np.sqrt(np.nanmean(dt ** 2)))
+                # tec_diff_prior = 1.5 * max(1., np.sqrt(np.nanmean(dt ** 2)))
                 const_diff_prior = 1.5 * max(0.01, np.sqrt(np.nanmean(dc ** 2)))
 
             priors['tec_mean_prior'] = tec_mean
@@ -632,4 +635,8 @@ if __name__ == '__main__':
     print("Running with:")
     for option, value in vars(flags).items():
         print("    {} -> {}".format(option, value))
-    main(**vars(flags))
+    try:
+        main(**vars(flags))
+        exit(0)
+    except:
+        exit(1)

@@ -110,7 +110,7 @@ def flatten(f):
 
     naxis = f[0].header['NAXIS']
     if naxis < 2:
-        raise RadioError('Can\'t make map from this')
+        raise ValueError('Can\'t make map from this')
     if naxis == 2:
         return fits.PrimaryHDU(header=f[0].header, data=f[0].data)
 
@@ -145,7 +145,8 @@ def flatten(f):
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
-
+    parser.add_argument('--only_setup', help='Whether to stop before doing subtract.',
+                        default=False, type="bool", required=False)
     parser.add_argument('--region_file', help='boxfile, required argument', required=True, type=str)
     parser.add_argument('--ncpu', help='number of cpu to use, default=34', default=32, type=int)
     parser.add_argument('--keeplongbaselines',
@@ -189,7 +190,7 @@ def copy_archives(archive_dir, working_dir, obs_num):
     return mslist_file, outms, fullmask, indico, clustercat
 
 
-def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours):
+def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours, only_setup):
     archive_dir = os.path.abspath(archive_dir)
     working_dir = os.path.abspath(working_dir)
     region_file = os.path.abspath(region_file)
@@ -222,6 +223,9 @@ def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines
     data_colname = 'DATA'
     outcolname = 'DATA_SUB'
     columnchecker(mslist, data_colname)
+    if only_setup:
+        print("Only data setup. Not doing subtract at user request.")
+        return
     imagenpix = getimsize(fullmask)
     # predict
     if os.path.isfile(outdico):
@@ -283,4 +287,8 @@ if __name__ == '__main__':
     print("Running with:")
     for option, value in vars(flags).items():
         print("    {} -> {}".format(option, value))
-    main(**vars(flags))
+    try:
+        main(**vars(flags))
+        exit(0)
+    except:
+        exit(1)
