@@ -24,7 +24,7 @@ def smooth(v, axis=-1):
 
 class Deployment(object):
     def __init__(self, datapack: Union[DataPack, str], ref_dir_idx=0,
-                 tec_solset='sol000', phase_solset='sol000',
+                 tec_solset='directionally_referenced', phase_solset='smoothed000',
                  flux_limit=0.05, max_N=250, min_spacing_arcmin=1.,
                  ref_image_fits: str = None, ant=None, dir=None, time=None, freq=None, pol=slice(0, 1, 1),
                  directional_deploy=True, block_size=1, debug=False, working_dir='./deployment', flag_directions=None,
@@ -72,7 +72,7 @@ class Deployment(object):
         const = median_filter(const, size=(1, 1, 1, 31))
         
         _, data_directions = datapack.get_directions(axes['dir'])
-        data_directions = np.stack([data_directions.ra.rad * np.cos(data_directions.dec.rad), data_directions.dec.rad],
+        data_directions = np.stack([data_directions.ra.rad, data_directions.dec.rad],
                                    axis=1)
         if flag_outliers:
             logging.info("Flagging outliers in TEC")
@@ -360,23 +360,31 @@ class Deployment(object):
             self.datapack.select(**self.select)
             self.datapack.tec = post_mean_array[None, ...]
             self.datapack.weights_tec = post_std_array[None, ...]
-            logging.info("Storing phase")
-            axes = self.datapack.axes_phase
-            _, freqs = self.datapack.get_freqs(axes['freq'])
-            tec_conv = -8.4479745e6 / freqs
-
             logging.info("Getting NN indices")
-            idx = [np.argmin(
-                great_circle_sep(self.Xd[:, 0], self.Xd[:, 1], ra, dec) for (ra, dec) in zip(*self.Xd_screen.T))]
+            dir_idx = [np.argmin(
+                great_circle_sep(self.Xd[:, 0], self.Xd[:, 1], ra, dec) for (ra, dec) in zip(self.Xd_screen[:, 0], self.Xd_screen[:, 1]))]
             logging.info("Getting NN const")
             #Nd_screen, Na, Nt
-            const_NN = const_mean[idx, :, :]
+            const_NN = const_mean[dir_idx, :, :]
             logging.info("Storing const")
             self.datapack.const = const_NN[None,...]
 
+            logging.info("Computing screen phase")
+            axes = self.datapack.axes_phase
+            _, freqs = self.datapack.get_freqs(axes['freq'])
+            tec_conv = -8.4479745e6 / freqs
             #1, Nd, Na, Nf, Nt
             post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di + const_NN[None,..., None, :]
             post_phase_std = np.abs(post_std_array[None, ..., None, :] * tec_conv[:, None])
+
+            logging.info("Replacing calbrator phases with smoothed phases")
+            self.datapack.current_solset = self.phase_solset
+            self.datapack.select(**self.select)
+            smoothed_phase, _ = self.datapack.phase
+            smoothed_phase_uncert, _ = self.datapack.weights_phase
+            post_phase_mean[:,:self.Nd,...] = smoothed_phase
+            post_phase_std[:,:self.Nd,...] = smoothed_phase_uncert
+
             logging.info("Storing phases.")
             self.datapack.phase = post_phase_mean
             self.datapack.weights_phase = post_phase_std
@@ -387,10 +395,10 @@ class Deployment(object):
             logging.info("Storing amplitudes.")
             self.datapack.current_solset = self.screen_solset
             self.datapack.select(**self.select)
-            self.datapack.amplitude = amplitude[:, idx, ...]
+            self.datapack.amplitude = amplitude[:, dir_idx, ...]
             logging.info("Saving weights")
-            np.save(os.path.join(self.cwd, 'weights.npy'), weights_array)
-            np.save(os.path.join(self.cwd, 'log_marginal_likelihoods.npy'), log_marginal_likelihood_array)
+            np.savez(os.path.join(self.cwd, 'weights.npz'), weights = weights_array, names = self.names,
+                     log_marginal_likelihoods = log_marginal_likelihood_array)
             if self.debug:
                 with np.printoptions(formatter={'float': '{: 0.3f}'.format}):
                     for idx, weights in enumerate(list(weights_array)):
