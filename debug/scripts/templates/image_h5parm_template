@@ -1,13 +1,8 @@
 DDF.py \
     --Data-MS=mslist.txt \
-    --Deconv-PeakFactor=0.001000 \
     --Data-ColName={data_column} \
     --Parallel-NCPU={ncpu} \
     --Output-Mode=Clean \
-    --Deconv-CycleFactor=0 \
-    --Deconv-MaxMinorIter=1000000 \
-    --Deconv-MaxMajorIter={major_iters} \
-    --Deconv-Mode=SSD \
     --Weight-Robust={robust} \
     --Image-NPix=20000 \
     --CF-wmax=50000 \
@@ -22,8 +17,12 @@ DDF.py \
     --Facets-NFacets={nfacets} \
     --SSDClean-NEnlargeData=0 \
     --Freq-NDegridBand=1 \
+    --Deconv-CycleFactor=0 \
+    --Deconv-MaxMinorIter=1000000 \
+    --Deconv-MaxMajorIter={major_iters} \
+    --Deconv-Mode=SSD \
     --Deconv-RMSFactor=3.0 \
-    --Deconv-PeakFactor=0.1 \
+    --Deconv-PeakFactor={peak_factor} \
     --Deconv-FluxThreshold={fluxthreshold} \
     --Data-Sort=1 \
     --Cache-Dir=. \

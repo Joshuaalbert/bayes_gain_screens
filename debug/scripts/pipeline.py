@@ -1,8 +1,10 @@
 import os
 import subprocess
+import sys
 import shutil
 import glob
 import argparse
+import datetime
 from timeit import default_timer
 
 
@@ -22,10 +24,9 @@ def create_qsub_script(working_dir, name, cmd):
 
 
 class CMD(object):
-    def __init__(self, working_dir, script_dir, script_name, shell='python', detach_process=False, use_qsub=False):
+    def __init__(self, working_dir, script_dir, script_name, shell='python', detach_process=False):
         self.cmd = [shell, os.path.join(script_dir, script_name)]
         self.detach_process = detach_process
-        self.use_qsub = use_qsub
         self.working_dir = working_dir
 
     def add(self, name, value):
@@ -34,26 +35,38 @@ class CMD(object):
     def __call__(self):
         cmd = ' \\\n\t'.join(self.cmd)
         print("Running:\n{}".format(cmd))
-        if self.use_qsub:
-            submit_script = create_qsub_script(self.working_dir, 'submit_script.sh', cmd)
-            print("Launching with qsub...")
-            proc = subprocess.Popen(['qsub', submit_script])
+        if not self.detach_process:
+            with subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  universal_newlines=True) as proc, \
+                    open(os.path.join(self.working_dir, 'state.log'), 'w') as log:
+                # stdout,stderr = proc.communicate()
+                while True:
+                    # Write to stdout which goes to job log, and to task log file
+                    byte = proc.stdout.read(1)
+                    if byte:
+                        sys.stdout.buffer.write(byte)
+                        sys.stdout.flush()
+                        log.write(byte)
+                        log.flush()
+                    else:
+                        break
+                exit_status = proc.returncode
         else:
             proc = subprocess.Popen(self.cmd)
-            if not self.detach_process:
-                proc.communicate()
-            print("Finisihed:\n{}".format(cmd))
-        return 0
+            exit_status = 0
+
+        print("Finisihed:\n{}\nwith exit code {}".format(cmd, exit_status))
+        return exit_status
 
 
 def make_working_dir(root_working_dir, name, do_flag):
     '''If 0 then return most recent working_dir, if 1 then most recent if it exists else stop, if 2 then make a new directory.'''
-    previous_working_dirs = sorted(glob.glob(os.path.join(root_working_dir,"{}*".format(name))))
+    previous_working_dirs = sorted(glob.glob(os.path.join(root_working_dir, "{}*".format(name))))
     if len(previous_working_dirs) == 0:
         working_dir = os.path.join(root_working_dir, name)
         most_recent = working_dir
     else:
-        working_dir = os.path.join(root_working_dir, "{}_{}".format(name,len(previous_working_dirs)))
+        working_dir = os.path.join(root_working_dir, "{}_{}".format(name, len(previous_working_dirs)))
         most_recent = previous_working_dirs[-1]
 
     if do_flag == 0:
@@ -93,24 +106,35 @@ def iterative_topological_sort(graph, start):
 
     return stack + order[::-1]  # new return value!
 
+def now():
+    return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-def execute_dask(dsk, key, timing_file=None):
+def execute_dask(dsk, key, timing_file=None, state_file=None):
     graph = {k: v[1:] for k, v in dsk.items()}
     topo_order = iterative_topological_sort(graph, key)[::-1]
     res = {}
-    for k in topo_order:
-        print("Executing task {}".format(k))
-        t0 = default_timer()
-        try:
-            res[k] = dsk[k][0]()
-        except KeyboardInterrupt:
-            print("Key board interruption, beware of any launched qsub processes that might linger.")
-            exit(1)
-        time_to_run = default_timer() - t0
-        if res[k] is not None:
-            print("Task {} took {:.2f} hours".format(k, time_to_run / 3600.))
-            if timing_file is not None:
-                update_timing(timing_file, k, time_to_run)
+    with open(state_file, 'w') as state:
+        for k in topo_order:
+            print("{} | Executing task {}".format(now(), k))
+            state.write("{} | START {}\n".format(now(), k))
+            t0 = default_timer()
+            try:
+                res[k] = dsk[k][0]()
+            except KeyboardInterrupt:
+                state.write("{} | CTRL-C {}\n".format(now(), k))
+                print("Key board interruption, beware of any launched qsub processes that might linger.")
+                exit(2)
+            time_to_run = default_timer() - t0
+            if res[k] is not None:
+                print("Task {} took {:.2f} hours".format(k, time_to_run / 3600.))
+                if res[k] == 0:
+                    state.write("{} | END {}\n".format(now(), k))
+                    if timing_file is not None:
+                        update_timing(timing_file, k, time_to_run)
+                else:
+                    state.write("{} | FAIL {}\n".format(now(), k))
+                    print("FAILURE at: {}".format(k))
+                    exit(3)
     return res
 
 
@@ -135,6 +159,7 @@ def update_timing(timing_file, name, time):
 def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, ref_dir, ref_image_fits,
          block_size,
          deployment_type,
+         no_subtract,
          do_choose_calibrators,
          do_subtract,
          do_image_subtract_dirty,
@@ -206,7 +231,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('ref_image_fits', ref_image_fits)
         cmd.add('working_dir', choose_calibrators_working_dir)
         cmd.add('flux_limit', 0.15)
-        cmd.add('min_spacing_arcmin', 10.)
+        cmd.add('min_spacing_arcmin', 6.)
         # cmd.add('fill_in_distance', 1.5*60.)
         # cmd.add('fill_in_flux_limit', 0.05)
         dsk['choose_calibrators'] = (cmd,)
@@ -220,6 +245,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('obs_num', obs_num)
         cmd.add('archive_dir', archive_dir)
         cmd.add('working_dir', subtract_working_dir)
+        cmd.add('only_setup', no_subtract)
         dsk['subtract'] = (cmd, 'choose_calibrators')
     else:
         dsk['subtract'] = (lambda *x: None, 'choose_calibrators')
@@ -276,6 +302,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', image_smooth_working_dir)
         cmd.add('script_dir', script_dir)
+        cmd.add('use_init_dico', True)
         dsk['image_smooth'] = (cmd, 'smooth_dds4')
     else:
         dsk['image_smooth'] = (lambda *x: None, 'smooth_dds4')
@@ -288,6 +315,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', image_dds4_working_dir)
         cmd.add('script_dir', script_dir)
+        cmd.add('use_init_dico', True)
         dsk['image_dds4'] = (cmd, 'solve_dds4')
     else:
         dsk['image_dds4'] = (lambda *x: None, 'solve_dds4')
@@ -313,6 +341,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('working_dir', infer_screen_working_dir)
         cmd.add('ref_image_fits', ref_image_fits)
         cmd.add('block_size', block_size)
+        cmd.add('max_N', 250)
         cmd.add('deployment_type', deployment_type)
         dsk['infer_screen'] = (cmd, 'tec_inference', 'smooth_dds4')
     else:
@@ -326,6 +355,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', image_screen_working_dir)
         cmd.add('script_dir', script_dir)
+        cmd.add('use_init_dico', True)
         dsk['image_screen'] = (cmd, 'infer_screen')
     else:
         dsk['image_screen'] = (lambda *x: None, 'infer_screen')
@@ -337,9 +367,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', merge_slow_working_dir)
-        dsk['merge_slow'] = (cmd, 'infer_screen', 'smooth_dds4','slow_solve_dds4')
+        dsk['merge_slow'] = (cmd, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
     else:
-        dsk['merge_slow'] = (lambda *x: None, 'infer_screen', 'smooth_dds4','slow_solve_dds4')
+        dsk['merge_slow'] = (lambda *x: None, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
 
     if do_image_screen_slow:
         cmd = CMD(image_screen_slow_working_dir, script_dir, 'image.py')
@@ -349,7 +379,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', image_screen_slow_working_dir)
         cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', 'False')
+        cmd.add('use_init_dico', True)
         dsk['image_screen_slow'] = (cmd, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
     else:
         dsk['image_screen_slow'] = (lambda *x: None, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
@@ -362,12 +392,14 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', image_smooth_slow_working_dir)
         cmd.add('script_dir', script_dir)
+        cmd.add('use_init_dico', True)
         dsk['image_smooth_slow'] = (cmd, 'smooth_dds4', 'slow_solve_dds4', 'merge_slow')
     else:
         dsk['image_smooth_slow'] = (lambda *x: None, 'smooth_dds4', 'slow_solve_dds4', 'merge_slow')
 
     dsk['endpoint'] = (lambda *x: None,) + tuple([k for k in dsk.keys()])
-    execute_dask(dsk, 'endpoint', timing_file=timing_file)
+    state_file = os.path.join(root_working_dir, 'STATE_{:03d}'.format(len(glob.glob(os.path.join(root_working_dir, 'STATE_*')))))
+    execute_dask(dsk, 'endpoint', timing_file=timing_file, state_file=state_file)
 
 
 def add_args(parser):
@@ -387,13 +419,23 @@ def add_args(parser):
         "image_screen",
         "image_screen_slow"]
 
-    parser.register("type", "bool", lambda v: v.lower() == "true")
+    def string_or_none(s):
+        if s.lower() == 'none':
+            return None
+        else:
+            return s
 
-    parser.add_argument('--region_file', help='boxfile, required argument', required=False, type=str, default=None)
+    parser.register("type", "bool", lambda v: v.lower() == "true")
+    parser.register('type', 'str_or_none', string_or_none)
+
+    parser.add_argument('--no_subtract', help='Whether to skip subtract, useful for imaging only.',
+                        default=False, type="bool", required=False)
+    parser.add_argument('--region_file', help='boxfile, required argument', required=False, type='str_or_none',
+                        default=None)
     parser.add_argument('--ref_dir', help='Which direction to reference from', required=False, type=int, default=0)
     parser.add_argument('--ref_image_fits',
                         help='Reference image from which to extract screen directions and auto select calibrators (if region file is None)',
-                        required=False, default=None, type=str)
+                        required=False, default=None, type='str_or_none')
     parser.add_argument('--ncpu', help='number of cpu to use', default=32, type=int, required=False)
     parser.add_argument('--obs_num', help='Obs number L*',
                         default=None, type=int, required=True)
@@ -414,33 +456,37 @@ def add_args(parser):
 
 
 def test_main():
-    main('/home/albert/store/lockman/archive',#P126+65',
-         '/home/albert/store/root',
-         '/home/albert/store/lockman/test/scripts',
-         obs_num=664320,#667204,#664480,#562061,
-         region_file=None,#'/home/albert/store/lockman/LHdeepbright.reg'
-         ref_image_fits=None,#'/home/albert/store/lockman/lotss_archive_deep_image.app.restored.fits',
+    main('/home/albert/store/lockman/archive',  # P126+65',
+         '/home/albert/store/root_nominal',
+         '/home/albert/store/scripts',
+         obs_num=667218,  # 664320,#667204,#664480,#562061,
+         region_file='/home/albert/store/lockman/LHdeepbright.reg',
+         ref_image_fits=None,  # '/home/albert/store/lockman/lotss_archive_deep_image.app.restored.fits',
          ncpu=32,
          ref_dir=0,
          block_size=10,
-         deployment_type='tomographic',
+         deployment_type='directional',
+         no_subtract=False,
          do_choose_calibrators=0,
-         do_subtract=0,
-         do_image_subtract_dirty=0,
-         do_solve_dds4=0,
-         do_smooth_dds4=0,
-         do_slow_dds4=0,
-         do_image_smooth=0,
-         do_image_dds4=0,
-         do_image_smooth_slow=2,
-         do_tec_inference=0,
+         do_subtract=2,
+         do_image_subtract_dirty=2,
+         do_solve_dds4=2,
+         do_smooth_dds4=2,
+         do_slow_dds4=2,
+         do_tec_inference=2,
          do_merge_slow=2,
          do_infer_screen=0,
+         do_image_dds4=0,
+         do_image_smooth=0,
+         do_image_smooth_slow=0,
          do_image_screen=0,
-         do_image_screen_slow=2)
+         do_image_screen_slow=0)
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        test_main()
+        exit(0)
     parser = argparse.ArgumentParser(
         description='Runs full pipeline on a single obs_num.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -449,4 +495,8 @@ if __name__ == '__main__':
     print("Running with:")
     for option, value in vars(flags).items():
         print("    {} -> {}".format(option, value))
-    main(**vars(flags))
+    try:
+        main(**vars(flags))
+        exit(0)
+    except:
+        exit(1)

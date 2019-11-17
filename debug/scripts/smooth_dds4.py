@@ -395,4 +395,8 @@ if __name__ == '__main__':
     print("Running with:")
     for option, value in vars(flags).items():
         print("    {} -> {}".format(option, value))
-    main(**vars(flags))
+    try:
+        main(**vars(flags))
+        exit(0)
+    except:
+        exit(1)

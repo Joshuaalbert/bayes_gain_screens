@@ -8,7 +8,7 @@ import numpy as np
 import argparse
 import os
 
-def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, ref_image_fits, ncpu):
+def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, ref_image_fits, ncpu, max_N):
     directional_deploy = True
     generate_models = None
     if deployment_type not in ['directional', 'non_integral', 'tomographic']:
@@ -30,7 +30,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
                             tec_solset='directionally_referenced',
                             phase_solset='smoothed000',
                             flux_limit=0.05,
-                            max_N=80,
+                            max_N=max_N,
                             min_spacing_arcmin=4.,
                             ref_image_fits=ref_image_fits,
                             ant=None,
@@ -81,6 +81,8 @@ def add_args(parser):
                         default='directional', type=str, required=False)
     parser.add_argument('--block_size', help='The number of time steps to process at once.',
                         default=10, type=int, required=False)
+    parser.add_argument('--max_N', help='The maximum number of screen directions.',
+                        default=250, type=int, required=False)
     parser.add_argument('--ref_image_fits', help='The Gaussian source list of the field used to choose locations of screen points.',
                         type=str, required=True)
 
@@ -94,4 +96,8 @@ if __name__ == '__main__':
     print("Running with:")
     for option, value in vars(flags).items():
         print("\t{} -> {}".format(option, value))
-    main(**vars(flags))
+    try:
+        main(**vars(flags))
+        exit(0)
+    except:
+        exit(1)

@@ -26,11 +26,12 @@ ref_dir=0
 deployment_type="directional"
 block_size=10
 ref_image_fits=
+max_N=80
 
 # use getopt and store the output into $OPTS
 # note the use of -o for the short options, --long for the long name options
 # and a : for any option that takes a parameter
-OPTS=$(getopt -o "h" --long "help,conda_env:,script_dir:,obs_num:,data_dir:,working_dir:,ncpu:,ref_dir:,deployment_type:,block_size:,ref_image_fits:" -n "$progname" -- "$@")
+OPTS=$(getopt -o "h" --long "help,conda_env:,script_dir:,obs_num:,data_dir:,working_dir:,ncpu:,ref_dir:,deployment_type:,block_size:,ref_image_fits:,max_N:" -n "$progname" -- "$@")
 if [ $? != 0 ] ; then echo "Error in command line arguments." >&2 ; usage; exit 1 ; fi
 eval set -- "$OPTS"
 
@@ -49,6 +50,7 @@ while true; do
     --deployment_type ) deployment_type="$2"; shift 2 ;;
     --block_size ) block_size="$2"; shift 2 ;;
     --ref_image_fits ) ref_image_fits="$2"; shift 2 ;;
+    --max_N ) max_N="$2"; shift 2 ;;
     -- ) shift; break ;;
     * ) break ;;
   esac
@@ -66,6 +68,8 @@ source activate $conda_env
 export PYTHONPATH=
 cmd="python $script_dir/infer_screen.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir \
 --ncpu=$ncpu --ref_dir=$ref_dir --deployment_type=$deployment_type --block_size=$block_size \
---ref_image_fits=$ref_image_fits"
+--ref_image_fits=$ref_image_fits --max_N=$max_N"
 echo $cmd
 eval $cmd
+EC=$?
+exit $?

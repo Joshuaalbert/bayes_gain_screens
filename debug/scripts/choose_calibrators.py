@@ -127,6 +127,10 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
             ra = np.array(ra)[:max_N]
             dec = np.array(dec)[:max_N]
             sizes = list(np.array(sizes)[:max_N])
+    f = np.array(f)
+    ra = np.array(ra)
+    dec = np.array(dec)
+    sizes = list(sizes)
     # plotting
     plt.scatter(ra, dec, c=np.linspace(0., 1., len(ra)), cmap='jet', s=np.sqrt(10000. * f), alpha=1.)
     target = Circle((np.mean(ra)*180/np.pi, np.mean(dec)*180/np.pi), radius=3.56 / 2., fc=None, alpha=0.2)
@@ -205,4 +209,8 @@ if __name__ == '__main__':
     print("Running with:")
     for option, value in vars(flags).items():
         print("    {} -> {}".format(option, value))
-    main(**vars(flags))
+    try:
+        main(**vars(flags))
+        exit(0)
+    except:
+        exit(1)
