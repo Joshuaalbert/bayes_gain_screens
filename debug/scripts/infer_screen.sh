@@ -64,7 +64,7 @@ then
 fi
 
 source ~/.bashrc
-source activate $conda_env
+conda activate $conda_env
 export PYTHONPATH=
 cmd="python $script_dir/infer_screen.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir \
 --ncpu=$ncpu --ref_dir=$ref_dir --deployment_type=$deployment_type --block_size=$block_size \

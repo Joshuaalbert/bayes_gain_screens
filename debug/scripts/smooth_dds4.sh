@@ -50,7 +50,7 @@ then
 fi
 
 source ~/.bashrc
-source activate $conda_env
+conda activate $conda_env
 export PYTHONPATH=
 cmd="python $script_dir/smooth_dds4_simple.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir"
 echo $cmd
