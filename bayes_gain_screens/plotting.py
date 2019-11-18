@@ -1,23 +1,18 @@
 import matplotlib
 from matplotlib.colorbar import ColorbarBase
-# matplotlib.use('Agg')
+matplotlib.use('Agg')
 import numpy as np
 import os
 from concurrent import futures
 from .datapack import DataPack
 from . import logging
-import astropy.coordinates as ac
-import astropy.time as at
 import astropy.units as au
 from scipy.spatial import ConvexHull, cKDTree
 from scipy.spatial.distance import pdist
-# import psutil
 import pylab as plt
 
-plt.style.use('ggplot')
-from matplotlib.patches import Polygon, Rectangle
+from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
-import matplotlib.colors as colors
 from scipy.spatial import Voronoi
 from . import TEC_CONV
 
