@@ -488,7 +488,8 @@ class DataPack(object):
                 if sel[0] != np.min(sel) or sel[-1] != np.max(sel):
                     break
                 try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
-                if np.all(np.equal(list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))), sel)):
+                comp_list = list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1)))
+                if comp_list == sel:
                     _sel = try_slice
             corrected_selection.append(_sel)
 
