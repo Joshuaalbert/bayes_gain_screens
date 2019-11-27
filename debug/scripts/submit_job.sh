@@ -72,30 +72,30 @@ fi
 source ~/.bashrc
 #ddf_singularity
 
-#singularity exec -B /tmp,/dev/shm ${HOME}/store/lofar_sksp_ddf.simg CleanSHM.py
-##&> "$log"
-#
-#singularity exec -B /tmp,/dev/shm,${HOME},${mount_dirs} ${HOME}/store/lofar_sksp_ddf.simg \
-#    python ${HOME}/store/scripts/pipeline.py \
-#        --archive_dir="$archive_dir" \
-#        --root_working_dir="$root_working_dir" \
-#        --script_dir="$script_dir" \
-#        --region_file="$region_file" \
-#        --ref_dir=0 \
-#        --ncpu=24 \
-#        --block_size=50 \
-#        --deployment_type=directional \
-#        --no_subtract=False \
-#        --do_choose_calibrators=2 \
-#        --do_subtract=2 \
-#        --do_solve_dds4=2 \
-#        --do_smooth_dds4=2 \
-#        --do_slow_dds4=2 \
-#        --do_tec_inference=2 \
-#        --do_infer_screen=2 \
-#        --do_merge_slow=2 \
-#        --obs_num="$obs_num"
-##         &>> "$log"
+singularity exec -B /tmp,/dev/shm ${HOME}/store/lofar_sksp_ddf.simg CleanSHM.py
+#&> "$log"
+
+singularity exec -B /tmp,/dev/shm,${HOME},${mount_dirs} ${HOME}/store/lofar_sksp_ddf.simg \
+    python ${HOME}/store/scripts/pipeline.py \
+        --archive_dir="$archive_dir" \
+        --root_working_dir="$root_working_dir" \
+        --script_dir="$script_dir" \
+        --region_file="$region_file" \
+        --ref_dir=0 \
+        --ncpu=32 \
+        --block_size=50 \
+        --deployment_type=directional \
+        --no_subtract=False \
+        --do_choose_calibrators=2 \
+        --do_subtract=2 \
+        --do_solve_dds4=2 \
+        --do_smooth_dds4=2 \
+        --do_slow_dds4=2 \
+        --do_tec_inference=2 \
+        --do_infer_screen=2 \
+        --do_merge_slow=2 \
+        --obs_num="$obs_num"
+#         &>> "$log"
 
 singularity exec -B /tmp,/dev/shm ${HOME}/store/lofar_sksp_ddf.simg CleanSHM.py
 # &>> "$log"
@@ -111,8 +111,8 @@ singularity exec -B /tmp,/dev/shm,${HOME},${mount_dirs} ${HOME}/store/lofar_sksp
         --block_size=10 \
         --deployment_type=directional \
         --do_image_smooth=2 \
-        --do_image_dds4=0 \
-        --do_image_smooth_slow=0 \
+        --do_image_dds4=2 \
+        --do_image_smooth_slow=2 \
         --do_image_screen_slow=0 \
         --do_image_screen=0 \
         --obs_num="$obs_num"

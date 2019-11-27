@@ -24,37 +24,18 @@ def create_qsub_script(working_dir, name, cmd):
 
 
 class CMD(object):
-    def __init__(self, working_dir, script_dir, script_name, shell='python', detach_process=False):
+    def __init__(self, working_dir, script_dir, script_name, shell='python'):
         self.cmd = [shell, os.path.join(script_dir, script_name)]
-        self.detach_process = detach_process
         self.working_dir = working_dir
 
     def add(self, name, value):
         self.cmd.append("--{}={}".format(name, value))
 
     def __call__(self):
-        cmd = ' \\\n\t'.join(self.cmd)
+        proc_log = os.path.join(self.working_dir, 'state.log')
+        cmd = ' \\\n\t'.join(self.cmd+['2>&1 | tee -a {}'.format(proc_log)])
         print("Running:\n{}".format(cmd))
-        if not self.detach_process:
-            with subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  universal_newlines=True) as proc, \
-                    open(os.path.join(self.working_dir, 'state.log'), 'w') as log:
-                # stdout,stderr = proc.communicate()
-                while True:
-                    # Write to stdout which goes to job log, and to task log file
-                    byte = proc.stdout.read(1)
-                    if byte:
-                        sys.stdout.buffer.write(byte)
-                        sys.stdout.flush()
-                        log.write(byte)
-                        log.flush()
-                    else:
-                        break
-                exit_status = proc.returncode
-        else:
-            proc = subprocess.Popen(self.cmd)
-            exit_status = 0
-
+        exit_status = subprocess.call(cmd, shell=True)
         print("Finisihed:\n{}\nwith exit code {}".format(cmd, exit_status))
         return exit_status
 
@@ -114,27 +95,34 @@ def execute_dask(dsk, key, timing_file=None, state_file=None):
     topo_order = iterative_topological_sort(graph, key)[::-1]
     res = {}
     with open(state_file, 'w') as state:
+        state.write("{} | START_PIPELINE\n".format(now()))
+        state.flush()
         for k in topo_order:
             print("{} | Executing task {}".format(now(), k))
             state.write("{} | START {}\n".format(now(), k))
+            state.flush()
             t0 = default_timer()
-            try:
-                res[k] = dsk[k][0]()
-            except KeyboardInterrupt:
-                state.write("{} | CTRL-C {}\n".format(now(), k))
-                print("Key board interruption, beware of any launched qsub processes that might linger.")
-                exit(2)
+            res[k] = dsk[k][0]()
             time_to_run = default_timer() - t0
             if res[k] is not None:
                 print("Task {} took {:.2f} hours".format(k, time_to_run / 3600.))
                 if res[k] == 0:
                     state.write("{} | END {}\n".format(now(), k))
+                    state.flush()
                     if timing_file is not None:
                         update_timing(timing_file, k, time_to_run)
                 else:
                     state.write("{} | FAIL {}\n".format(now(), k))
+                    state.flush()
                     print("FAILURE at: {}".format(k))
+                    state.write("{} | PIPELINE_FAILURE\n".format(now()))
+                    state.flush()
                     exit(3)
+            else:
+                state.write("{} | END_WITHOUT_RUN {}\n".format(now(), k))
+                print("{} skipped.".format(k))
+        state.write("{} | PIPELINE_SUCCESS\n".format(now()))
+        state.flush()
     return res
 
 
@@ -398,7 +386,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_smooth_slow'] = (lambda *x: None, 'smooth_dds4', 'slow_solve_dds4', 'merge_slow')
 
     dsk['endpoint'] = (lambda *x: None,) + tuple([k for k in dsk.keys()])
-    state_file = os.path.join(root_working_dir, 'STATE_{:03d}'.format(len(glob.glob(os.path.join(root_working_dir, 'STATE_*')))))
+    # state_file = os.path.join(root_working_dir, 'STATE_{:03d}'.format(len(glob.glob(os.path.join(root_working_dir, 'STATE_*')))))
+    state_file = os.path.join(root_working_dir, 'STATE')
     execute_dask(dsk, 'endpoint', timing_file=timing_file, state_file=state_file)
 
 
@@ -495,8 +484,5 @@ if __name__ == '__main__':
     print("Running with:")
     for option, value in vars(flags).items():
         print("    {} -> {}".format(option, value))
-    try:
-        main(**vars(flags))
-        exit(0)
-    except:
-        exit(1)
+
+    main(**vars(flags))
