@@ -227,7 +227,7 @@ def update_step(prior_mu, prior_Gamma, Y, Sigma, freqs, tec_min=-300., tec_max =
 
     s = SolveLossVI(gains.real, gains.imag, freqs,
                     tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
-                    S=20, sigma=np.sqrt(Sigma), L_Sigma=L_Sigma)
+                    S=20, L_Sigma=L_Sigma)
 
     sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
                  (slice(tec_min, tec_max, 10.),))
