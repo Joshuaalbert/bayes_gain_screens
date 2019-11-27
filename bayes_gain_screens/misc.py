@@ -24,6 +24,7 @@ from .coord_transforms import itrs_to_enu_with_references,tf_coord_transform
 from .settings import angle_type, dist_type
 from scipy.special import erfinv
 import datetime
+import networkx as nx
 
 def tf_datetime():
     return tf.timestamp()
@@ -35,6 +36,20 @@ def lock_print(lock, *message):
     with tf.control_dependencies(lock):
         with tf.control_dependencies([tf.print(tf_datetime(), ":",*message)]):
             return tf.no_op()
+
+def direction_walk_order(directions):
+    """
+    Get the order of directions to solve referencing to the smoothed phase.
+    Assumes directions are ordered from brightest to faintest.
+    :param dirctions: ICRS
+    :return: List of tuples of (ref_dir, solve_dir)
+    """
+    g = nx.complete_graph(directions.shape[0])
+    for u,v in g.edges:
+        g[u][v]['weight'] = great_circle_sep(*directions[u,:], *directions[v,:])
+    h = nx.minimum_spanning_tree(g)
+    for
+    return nx.bfs_edges(h,0)
 
 def laplace_gaussian_marginalisation(L, y, order = 10):
     """
