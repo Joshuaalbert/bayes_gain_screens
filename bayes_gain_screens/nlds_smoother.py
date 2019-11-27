@@ -314,7 +314,8 @@ class NLDSSmoother(object):
             # K,K
             Omega_0_pl = tf.placeholder(float_type, shape=[K, K], name='Omega_0')
             # B, N
-            y_pl = tf.placeholder(float_type, shape=[B, N], name='y')
+            y_pl = tf.placeholder(float_type, shape=[None, N], name='y')
+            B = tf.shape(y_pl)[0]
             mu_0_pl = tf.placeholder(float_type, shape=[K], name='mu_0')
             Gamma_0_pl = tf.placeholder(float_type, shape=[K, K], name='Gamma_0')
 
