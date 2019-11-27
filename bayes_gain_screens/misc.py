@@ -48,7 +48,6 @@ def direction_walk_order(directions):
     for u,v in g.edges:
         g[u][v]['weight'] = great_circle_sep(*directions[u,:], *directions[v,:])
     h = nx.minimum_spanning_tree(g)
-    for
     return nx.bfs_edges(h,0)
 
 def laplace_gaussian_marginalisation(L, y, order = 10):
