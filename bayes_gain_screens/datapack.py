@@ -15,29 +15,14 @@ from . import deprecated
 
 def _load_array_file(array_file):
     '''Loads a csv where each row is x,y,z in geocentric ITRS coords of the antennas'''
-    try:
-        types = np.dtype({'names': ['station','X_ITRS', 'Y_ITRS', 'Z_ITRS'],
-                          'formats': ['S16', np.double, np.double, np.double, np.double]})
-        d = np.genfromtxt(array_file, comments='#', delimiter=',', dtype=types)
-        labels = np.array(d['station'].astype(str))
-        locs = ac.SkyCoord(x=d['X_ITRS'] * au.m, y=d['Y_ITRS'] * au.m, z=d['Z_ITRS'] * au.m, frame='itrs')
-        Nantenna = int(np.size(d['X_ITRS']))
-        diameters = None
-    except:
-        try:
-            types = np.dtype({'names': ['X', 'Y', 'Z', 'diameter', 'station_label'],
-                              'formats': [np.double, np.double, np.double, np.double, 'S16']})
-            d = np.genfromtxt(array_file, comments='#', dtype=types)
-            diameters = d['diameter']
-            labels = np.array(d['station_label'].astype(str))
-            locs = ac.SkyCoord(x=d['X'] * au.m, y=d['Y'] * au.m, z=d['Z'] * au.m, frame='itrs')
-            Nantenna = int(np.size(d['X']))
-        except:
-            d = np.genfromtxt(array_file, comments='#', usecols=(0, 1, 2))
-            locs = ac.SkyCoord(x=d[:, 0] * au.m, y=d[:, 1] * au.m, z=d[:, 2] * au.m, frame='itrs')
-            Nantenna = d.shape[0]
-            labels = np.array(["ant{:02d}".format(i) for i in range(Nantenna)])
-            diameters = None
+
+    types = np.dtype({'names': ['station','X_ITRS', 'Y_ITRS', 'Z_ITRS'],
+                      'formats': ['S16', np.double, np.double, np.double, np.double]})
+    d = np.genfromtxt(array_file, comments='#', delimiter=',', dtype=types)
+    labels = np.array(d['station'].astype(str))
+    locs = ac.SkyCoord(x=d['X_ITRS'] * au.m, y=d['Y_ITRS'] * au.m, z=d['Z_ITRS'] * au.m, frame='itrs')
+    Nantenna = int(np.size(d['X_ITRS']))
+    diameters = None
     return np.array(labels).astype(np.str_), locs.cartesian.xyz.to(au.m).value.transpose()
 
 
@@ -106,9 +91,9 @@ class DataPack(object):
     # _H: tb.File
     _arrays = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
     lofar_array = os.path.join(_arrays, 'arrays/lofar.antenna.cfg')
-    lofar_array_hba = os.path.join(_arrays, 'arrays/lofar.hba.antenna.cfg')
-    lofar_cycle0_array = os.path.join(_arrays, 'arrays/lofar.cycle0.hba.antenna.cfg')
-    gmrt_array = os.path.join(_arrays, 'arrays/gmrtPos.csv')
+    # lofar_array_hba = os.path.join(_arrays, 'arrays/lofar.hba.antenna.cfg')
+    # lofar_cycle0_array = os.path.join(_arrays, 'arrays/lofar.cycle0.hba.antenna.cfg')
+    # gmrt_array = os.path.join(_arrays, 'arrays/gmrtPos.csv')
 
     def __init__(self, filename, readonly=False):
         if isinstance(filename, DataPack):
@@ -201,6 +186,18 @@ class DataPack(object):
                       patch_names)
 
     def add_solset(self,solset, antenna_labels = None, antennas=None, array_file=None, patch_names=None, directions=None):
+        """
+        Create a solset.
+
+        :param solset: str
+            Name of solset
+        :param antenna_labels, antennas: see set_antennas
+        :param array_file: str
+            array file to load, lofar array if None
+        :params patch_names, directions: see set_directions
+        :param directions:
+        :return:
+        """
         if solset in self.solsets:
             logging.warn("Solset {} already exists.".format(solset))
             self.current_solset = solset
@@ -313,6 +310,7 @@ class DataPack(object):
                 raise ValueError("Current solset is None.")
             solset_group = self._H.root._v_groups[self.current_solset]
             if 'antenna' not in solset_group._v_leaves:
+                logging.info("antenna not in leaves. Adding.")
                 self.add_antenna_table()
             antenna_table = solset_group._v_leaves['antenna']
             antenna_table.remove_rows(0)
@@ -453,6 +451,7 @@ class DataPack(object):
             raise ValueError("Current solset is None.")
 
         selection = []
+        # goal is to reduce everything to slices if possible for efficient usage of pytables
         for axis_val, axis in zip(*self.soltab_axes(soltab)):
             axis_selection = self._selection.get(axis, None)
             if axis_selection is None:
@@ -460,30 +459,37 @@ class DataPack(object):
             elif isinstance(axis_selection, slice):
                 selection.append(axis_selection)
             elif isinstance(axis_selection, (tuple, list)):
-                selection.append(list(axis_selection))
+                list_select = []
+                for element in axis_selection:
+                    if isinstance(element, int):
+                        if element >= len(axis_val):
+                            raise ValueError("Selecting index greater than length of axis {} {}".format(element, axis_val))
+                        list_select.append(element)
+                    else:
+                        idx = np.where(axis_val.astype(type(element)) == element)[0]
+                        if len(idx) == 0:
+                            raise ValueError("Element not in axis {} {}".format(element, axis_val))
+                        list_select.append(idx[0])
+                selection.append(list_select)
             elif isinstance(axis_selection, str):
-                found = list(np.where(np.array([re.search(axis_selection,v.astype(type(axis_selection))) is not None for v in axis_val],dtype=np.bool))[0])
-                selection.append(found)
+                is_pattern = []
+                for idx, element in enumerate(axis_val):
+                    if re.search(axis_selection, element.astype(type(axis_selection))) is not None:
+                        is_pattern.append(idx)
+                selection.append(is_pattern)
             else:
-                selection.append(np.searchsorted(axis_val, axis_selection.astype(axis_val.dtype)))
-                # raise ValueError("Selection {} not supported.".format(axis_selection))
+                raise ValueError("Unable to parse {}".format(axis_selection))
 
         # replace all lists with slices if possible: limitation of only one list per indexing
-        def _is_jump_contiguous(sel,n):
-            if len(range(int(sel[0]), int(sel[-1])+1, n)) != len(sel):
-                return False
-            return np.all(np.equal(list(range(int(sel[0]), int(sel[-1])+1, n)), sel))
         corrected_selection = []
         for sel in selection:
             _sel = sel
             if isinstance(sel, list):
-                for i in sel:
-                    if int(i) != i:
-                        raise ValueError("One of the list elements is not an int. {}".format(i))
-                for n in range(1,len(sel)+1,1):
-                    if _is_jump_contiguous(sel,n):
-                        _sel = slice(int(sel[0]), int(sel[-1])+1, n)
-                        break
+                if sel[0] != np.min(sel) or sel[-1] != np.max(sel):
+                    break
+                try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
+                if np.all(np.equal(list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))), sel)):
+                    _sel = try_slice
             corrected_selection.append(_sel)
 
         num_lists = sum([1 if isinstance(sel,list) else 0 for sel in corrected_selection])
@@ -673,6 +679,14 @@ class DataPack(object):
     def array_center(self):
         with self:
             _, antennas = self.get_antennas(None)
+            center = antennas.cartesian.xyz[:,0]
+            center = ac.SkyCoord(x=center[0], y=center[1], z=center[2], frame='itrs')
+            return center
+
+    @property
+    def mean_array_loc(self):
+        with self:
+            _, antennas = self.get_antennas(None)
             center = np.mean(antennas.cartesian.xyz, axis=1)
             center = ac.SkyCoord(x=center[0], y=center[1], z=center[2], frame='itrs')
             return center
@@ -682,13 +696,16 @@ class DataPack(object):
             antenna_labels, antennas = self.antennas
 
             if ants is None:
-                ant_idx = slice(None)
+                lookup = slice(None, None, None)
             else:
                 ants = np.array(ants).astype(antenna_labels.dtype)
-                sorter = np.argsort(antenna_labels)
-                ant_idx = np.searchsorted(antenna_labels, ants, sorter=sorter)
-            antennas = antennas[ant_idx]
-            return antenna_labels[ant_idx], ac.SkyCoord(antennas[:, 0] * au.m, antennas[:, 1] * au.m,
+                lookup = []
+                for a in ants:
+                    if a not in antenna_labels:
+                        raise ValueError("Antenna not found in solset {} {}".format(a, antenna_labels))
+                    lookup.append(np.where(a == antenna_labels)[0][0])
+            antennas = antennas[lookup, :]
+            return antenna_labels[lookup], ac.SkyCoord(antennas[:, 0] * au.m, antennas[:, 1] * au.m,
                                                         antennas[:, 2] * au.m, frame='itrs')
     @property
     def pointing_center(self):
@@ -703,13 +720,16 @@ class DataPack(object):
         with self:
             patch_names, directions = self.directions
             if dirs is None:
-                dir_idx = slice(None)
+                lookup = slice(None, None, None)
             else:
                 dirs = np.array(dirs).astype(patch_names.dtype)
-                sorter = np.argsort(patch_names)
-                dir_idx = np.searchsorted(patch_names, dirs, sorter=sorter)
-            directions = directions[dir_idx]
-            return patch_names[dir_idx], ac.SkyCoord(directions[:, 0] * au.rad, directions[:, 1] * au.rad, frame='icrs')
+                lookup = []
+                for a in dirs:
+                    if a not in patch_names:
+                        raise ValueError("Direction not found in solset {} {}".format(a, patch_names))
+                    lookup.append(np.where(a == patch_names)[0][0])
+            directions = directions[lookup, :]
+            return patch_names[lookup], ac.SkyCoord(directions[:, 0] * au.rad, directions[:, 1] * au.rad, frame='icrs')
 
 
     def get_times(self, times):
