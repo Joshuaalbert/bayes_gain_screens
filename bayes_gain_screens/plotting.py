@@ -512,7 +512,7 @@ def _parallel_plot(arg):
         axes = {k: v for (v, k) in zip(*dp.datapack.soltab_axes(soltabs[0]))}
     # timeslice the selection
     times = axes['time']  # mjs
-    sel_list = list(range(len(times)[time_slice]))#times[time_slice]
+    # sel_list = list(range(len(times))[time_slice])#times[time_slice]
     kwargs['time_sel'] = time_slice#sel_list
     fignames = [os.path.join(output_folder, "fig-{:04d}.png".format(j)) for j in range(len(times))[time_slice]]
     dp.plot(fignames=fignames, **kwargs)
