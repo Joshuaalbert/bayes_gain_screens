@@ -1,5 +1,7 @@
 import os
 os.environ['OMP_NUM_THREADS'] = "1"
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
 from scipy.ndimage import median_filter
 from bayes_gain_screens import logging

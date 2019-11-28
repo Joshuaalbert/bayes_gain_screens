@@ -206,7 +206,7 @@ class SolveLossVI(object):
         return loss
 
 
-def update_step(prior_mu, prior_Gamma, Y, Sigma, freqs, tec_min=-300., tec_max = 300.):
+def update_step(prior_mu, prior_Gamma, Y, Sigma, freqs, tec_min=-300., tec_max = 300., spacing=10.):
     """
     Perform a single VI optimisation (update step).
 
@@ -230,7 +230,7 @@ def update_step(prior_mu, prior_Gamma, Y, Sigma, freqs, tec_min=-300., tec_max =
                     S=20, L_Sigma=L_Sigma)
 
     sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
-                 (slice(tec_min, tec_max, 10.),))
+                 (slice(tec_min, tec_max, spacing),))
 
     sol3 = minimize(s.loss_func,
                     np.array([sol1[0], deconstrain_tec(5.)]),
@@ -246,9 +246,11 @@ def update_step(prior_mu, prior_Gamma, Y, Sigma, freqs, tec_min=-300., tec_max =
 
 
 class Update(object):
-    def __init__(self, freqs, S=200):
+    def __init__(self, freqs, tec_scale=300., spacing=10., S=200):
         self.freqs = freqs
         self.S = S
+        self.tec_scale = tec_scale
+        self.spacing = spacing
 
     def __call__(self, prior_mu, prior_Gamma, y, Sigma):
         """
@@ -268,7 +270,8 @@ class Update(object):
 
         def _call(prior_mu, prior_Gamma, y, Sigma):
             prior_mu, prior_Gamma, y, Sigma = prior_mu.numpy(), prior_Gamma.numpy(), y.numpy(), Sigma.numpy()
-            post_mu, post_Gamma = update_step(prior_mu, prior_Gamma, y, Sigma, self.freqs)
+            post_mu, post_Gamma = update_step(prior_mu, prior_Gamma, y, Sigma, self.freqs,
+                                              -self.tec_scale, self.tec_scale, self.spacing)
             return [post_mu.astype(np.float64), post_Gamma.astype(np.float64)]
 
         return tf.py_function(_call, [prior_mu, prior_Gamma, y, Sigma], [float_type, float_type], name='updater')

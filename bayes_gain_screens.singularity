@@ -1,0 +1,56 @@
+BootStrap: docker
+From: ubuntu:latest
+
+%help
+# help section
+
+%runscript
+# what happens when you run the image
+#TODO: put arg parsing here to run the whole script from here once debugging done.
+exec "$@"
+
+%post
+# Build instructions
+apt-get update
+apt-get -y install vim build-essential manpages-dev wget git
+apt-get clean
+
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh
+bash ~/miniconda.sh -b -p /opt/miniconda3
+. /opt/miniconda3/etc/profile.d/conda.sh
+hash -r 
+conda config --set auto_activate_base false --set always_yes yes
+conda update -q conda
+conda info -a
+
+conda create -q -n tf_py python=3.6
+conda activate tf_py
+
+cd $HOME
+mkdir git
+cd git 
+git clone https://github.com/Joshuaalbert/bayes_gain_screens.git
+cd bayes_gain_screens
+pip install -r requirements.txt
+pip install --no-deps pyregion pyparsing
+python setup.py install
+
+
+$test
+# gets called to test build went correct
+
+%setup
+# run before build (can access $SINGULARITY_ROOTFS)
+
+%files
+# These get copied <src> <dst> with cp
+
+%labels
+#These get stored in meta data. singularity inspect this.simg
+
+%environment
+#These are sourced at runtime
+
+. /opt/miniconda3/etc/profile.d/conda.sh
+conda activate tf_py
+

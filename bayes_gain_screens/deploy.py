@@ -374,7 +374,7 @@ class Deployment(object):
             _, freqs = self.datapack.get_freqs(axes['freq'])
             tec_conv = -8.4479745e6 / freqs
             #1, Nd, Na, Nf, Nt
-            post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di + const_NN[None,..., None, :]
+            post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di# + const_NN[None,..., None, :]
             post_phase_std = np.abs(post_std_array[None, ..., None, :] * tec_conv[:, None])
 
             logging.info("Replacing calbrator phases with smoothed phases")
@@ -385,7 +385,9 @@ class Deployment(object):
             post_phase_mean[:,:self.Nd,...] = smoothed_phase
             post_phase_std[:,:self.Nd,...] = smoothed_phase_uncert
 
-            logging.info("Storing phases.")
+            logging.info("Storing screen phases.")
+            self.datapack.current_solset = self.screen_solset
+            self.datapack.select(**self.select)
             self.datapack.phase = post_phase_mean
             self.datapack.weights_phase = post_phase_std
             logging.info("NN interp of amplitudes.")

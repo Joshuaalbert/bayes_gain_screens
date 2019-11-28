@@ -33,7 +33,7 @@ def make_clustercat(reg_file, clustercat):
     np.save(clustercat, centers)
 
 
-def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu,sol_name):
+def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu, sol_name):
     # ddfcache = glob.glob(os.path.join(working_dir, '*.ddfcache'))
     # for d in ddfcache:
     #     os.unlink(d)
@@ -46,7 +46,6 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu,so
         raise IOError("Clustercat doesn't exist {}".format(clustercat))
 
     solsdir = os.path.join(data_dir, 'SOLSDIR')
-    out_sols = 'DDS4_full'
 
     for i, ms in enumerate(mslist):
         cmd = ['kMS.py',

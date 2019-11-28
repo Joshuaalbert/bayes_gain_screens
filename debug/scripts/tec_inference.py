@@ -516,10 +516,11 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
 
     logging.info("Finding outliers based on mean residual")
     tec_conv = -8.4479745e6 / freqs
-    phase_model = tec_conv[:, None] * tec_mean[..., None, :] + const_mean[..., None, :]
+    phase_model = tec_conv[:, None] * tec_mean[..., None, :] + const_mean[..., None, :] + phase_di
+    phase_model_uncert = np.sqrt((tec_conv[:, None]* tec_uncert[..., None, :])**2 + const_uncert[..., None, :]**2)
 
-    Yreal_model = amp_smooth * np.cos(phase_model)
-    Yimag_model = amp_smooth * np.sin(phase_model)
+    Yreal_model = amp_smooth * np.cos(phase_model - phase_di)
+    Yimag_model = amp_smooth * np.sin(phase_model - phase_di)
 
     res_real = Yreal_model - Yreal.reshape(Yreal_model.shape)
     res_imag = Yimag_model - Yimag.reshape(Yimag_model.shape)
@@ -536,7 +537,12 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     #     np.nanmean(total_res, axis=-2), axis=-1, keepdims=True)
     # tec_uncert[flag] = np.inf
 
-    logging.info("Storing results")
+    logging.info("Updating smoothed phase")
+    datapack.current_solset = 'smoothed000'
+    datapack.select(**select)
+    datapack.phase = phase_model
+    datapack.weights_phase = phase_model_uncert
+    logging.info("Storing TEC and const")
     datapack.current_solset = 'directionally_referenced'
     # Npol, Nd, Na, Nf, Nt
     datapack.select(**select)
@@ -544,7 +550,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     datapack.weights_tec = tec_uncert
     datapack.const = const_mean
     datapack.weights_const = const_uncert
-    logging.info("Stored tec and const results. Done")
+    logging.info("Done ddtec VI.")
 
     # animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_plots_flagged'), num_processes=ncpu,
     #                  solset='directionally_referenced',
@@ -628,7 +634,7 @@ def add_args(parser):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Smoothes the DDS4_full solutions and stores in smoothed000 solset.',
+        description='Variational inference of DDTEC and a constant term. Updates the smoothed000 solset too.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()
