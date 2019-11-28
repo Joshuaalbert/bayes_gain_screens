@@ -16,7 +16,7 @@ def main(data_dir, working_dir, obs_num):
     os.chdir(working_dir)
     logging.info("Merging slow solutions into screen and smoothed.")
     original_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
-    slow_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full_slow'))
+    slow_h5parm = os.path.join(data_dir, 'L{}_{}_slow_merged.h5'.format(obs_num, 'DDS4_full'))
     select = dict(pol = slice(0, 1, 1))
 
     ###

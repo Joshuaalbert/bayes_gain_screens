@@ -304,6 +304,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('conda_env', 'tf_py')
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
+        cmd.add('ncpu', ncpu)
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', tec_inference_working_dir)
         cmd.add('ref_dir', ref_dir)

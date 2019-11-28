@@ -21,6 +21,7 @@ root_working_dir=${HOME}/store/root_chap3
 script_dir=${HOME}/store/scripts
 region_file=None
 mount_dirs=/beegfs/lofar
+ncpu=24
 #${HOME}/store/lockman/LHdeepbright.reg
 
 # use getopt and store the output into $OPTS
@@ -41,6 +42,7 @@ while true; do
     --script_dir ) script_dir="$2"; shift 2 ;;
     --region_file ) region_file="$2"; shift 2 ;;
     --mount_dirs ) mount_dirs="$2"; shift 2 ;;
+    --ncpu ) ncpu="$2"; shift 2 ;;
     -- ) shift; break ;;
     * ) break ;;
   esac
@@ -82,18 +84,18 @@ singularity exec -B /tmp,/dev/shm,${HOME},${mount_dirs} ${HOME}/store/lofar_sksp
         --script_dir="$script_dir" \
         --region_file="$region_file" \
         --ref_dir=0 \
-        --ncpu=32 \
+        --ncpu="$ncpu" \
         --block_size=50 \
         --deployment_type=directional \
         --no_subtract=False \
-        --do_choose_calibrators=2 \
-        --do_subtract=2 \
-        --do_solve_dds4=2 \
+        --do_choose_calibrators=0 \
+        --do_subtract=0 \
+        --do_solve_dds4=0 \
         --do_smooth_dds4=2 \
-        --do_slow_dds4=2 \
+        --do_slow_dds4=0 \
         --do_tec_inference=2 \
         --do_infer_screen=2 \
-        --do_merge_slow=2 \
+        --do_merge_slow=0 \
         --obs_num="$obs_num"
 #         &>> "$log"
 
@@ -107,12 +109,12 @@ singularity exec -B /tmp,/dev/shm,${HOME},${mount_dirs} ${HOME}/store/lofar_sksp
         --script_dir="$script_dir" \
         --region_file="$region_file" \
         --ref_dir=0 \
-        --ncpu=32 \
+        --ncpu="$ncpu" \
         --block_size=10 \
         --deployment_type=directional \
-        --do_image_smooth=2 \
-        --do_image_dds4=2 \
-        --do_image_smooth_slow=2 \
+        --do_image_smooth=0 \
+        --do_image_dds4=0 \
+        --do_image_smooth_slow=0 \
         --do_image_screen_slow=0 \
         --do_image_screen=0 \
         --obs_num="$obs_num"

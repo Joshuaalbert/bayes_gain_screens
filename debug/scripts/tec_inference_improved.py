@@ -1,5 +1,4 @@
 import os
-
 os.environ['OMP_NUM_THREADS'] = "1"
 import numpy as np
 import pylab as plt
@@ -10,7 +9,7 @@ from bayes_gain_screens import logging
 from bayes_gain_screens.datapack import DataPack
 from bayes_gain_screens.misc import make_soltab, great_circle_sep
 from bayes_gain_screens.plotting import animate_datapack
-from bayes_gain_screens.nlds_smoother import Update, NLDSSmoother, update_step, build_get_params
+from bayes_gain_screens.nlds_smoother import Update, NLDSSmoother, update_step
 from dask.multiprocessing import get
 from scipy.optimize import least_squares
 import argparse
@@ -40,16 +39,16 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
 
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
-
     update = Update(freqs, S=200)
-
     for d in range(D):
+        t0 = default_timer()
         Sigma_0 = 1 ** 2 * np.eye(2 * Nf)
         Omega_0 = np.diag([50., 0.1]) ** 2
         mu_0 = np.array([0., 0.])
         Gamma_0 = np.diag([200., 2 * np.pi]) ** 2
         ###
         # warm-up
+        logging.info("On {}: Warming up".format(d))
         # B, Nf
         Y_warmup = np.transpose(Yreal[d, :, : 50] + 1j * Yimag[d, :, :50])
         res = NLDSSmoother(2, Nf, N, update=update, momentum=0.9).run(Y_warmup, Sigma_0, Omega_0, mu_0,
@@ -71,6 +70,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
             Gamma_0 = res['post_Gamma'][-1,:,:] + np.diag([200., 2 * np.pi]) ** 2
             tec_mean_array[d, start:stop] = res['post_mu'][:, 0]
             tec_uncert_array[d, start:stop] = np.sqrt(res['post_Gamma'][:, 0, 0])
+        logging.info("Timing {:.2f} timesteps / second".format(N/(default_timer() - t0)))
 
 
     return tec_mean_array, tec_uncert_array
@@ -131,8 +131,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
         phase_dd = phase_raw[:, solve_dir:solve_dir+1, ...] - phase_di
 
         # Npol, 1, Na, Nf, Nt
-        Yimag = amp_smooth * np.sin(phase_dd)
-        Yreal = amp_smooth * np.cos(phase_dd)
+        Yimag = amp_smooth[:, solve_dir:solve_dir+1, ...] * np.sin(phase_dd)
+        Yreal = amp_smooth[:, solve_dir:solve_dir+1, ...] * np.cos(phase_dd)
         Yimag = Yimag.reshape((-1, Nf, Nt))
         Yreal = Yreal.reshape((-1, Nf, Nt))
 
