@@ -5,7 +5,7 @@ function usage()
 {
    cat << HEREDOC
 
-   Usage: $progname --obs_num [--archive_dir --root_working_dir --script_dir --region_file]
+   Usage: $progname --obs_num [--archive_dir --root_working_dir --script_dir --region_file --mount_dirs --ncpu]
 
    optional arguments:
      -h, --help           show this help message and exit
@@ -13,21 +13,66 @@ function usage()
 HEREDOC
 }
 
-# initialize variables
+# initialize variables and defaults
 progname=$(basename $0)
-obs_num=
+obs_num=562061
 archive_dir=${HOME}/store/P126+65
-root_working_dir=${HOME}/store/root_chap3
+root_working_dir=${HOME}/store/root
 script_dir=${HOME}/store/scripts
 region_file=None
 mount_dirs=/beegfs/lofar
 ncpu=24
-#${HOME}/store/lockman/LHdeepbright.reg
 
-# use getopt and store the output into $OPTS
-# note the use of -o for the short options, --long for the long name options
-# and a : for any option that takes a parameter
-OPTS=$(getopt -o "h" --long "help,obs_num:,archive_dir:,root_working_dir:,script_dir:,region_file:,mount_dirs:" -n "$progname" -- "$@")
+###
+# calibration steps
+
+do_choose_calibrators=2
+do_subtract=2
+do_solve_dds4=2
+do_smooth_dds4=2
+do_slow_dds4=2
+do_tec_inference=2
+do_infer_screen=2
+do_merge_slow=2
+
+###
+# imaging steps
+do_image_smooth=0
+do_image_dds4=0
+do_image_smooth_slow=2
+do_image_screen_slow=2
+do_image_screen=0
+
+###
+# all args
+L=(obs_num \
+    archive_dir \
+    root_working_dir \
+    script_dir \
+    region_file \
+    mount_dirs \
+    ncpu \
+    do_image_smooth \
+    do_image_dds4 \
+    do_image_smooth_slow \
+    do_image_screen_slow \
+    do_image_screen \
+    do_choose_calibrators \
+    do_subtract \
+    do_solve_dds4 \
+    do_smooth_dds4 \
+    do_slow_dds4 \
+    do_tec_inference \
+    do_infer_screen \
+    do_merge_slow)
+
+arg_parse_str="help"
+for arg in ${L[@]}; do
+    arg_parse_str=${arg_parse_str},${arg}:
+done
+echo $arg_parse_str
+
+OPTS=$(getopt -o "h" --long ${arg_parse_str} -n "$progname" -- "$@")
 if [ $? != 0 ] ; then echo "Error in command line arguments." >&2 ; usage; exit 1 ; fi
 eval set -- "$OPTS"
 
@@ -36,15 +81,14 @@ while true; do
   # echo "\$1:\"$1\" \$2:\"$2\""
   case "$1" in
     -h | --help ) usage; exit; ;;
-    --obs_num ) obs_num="$2"; shift 2 ;;
-    --archive_dir ) archive_dir="$2"; shift 2 ;;
-    --root_working_dir ) root_working_dir="$2"; shift 2 ;;
-    --script_dir ) script_dir="$2"; shift 2 ;;
-    --region_file ) region_file="$2"; shift 2 ;;
-    --mount_dirs ) mount_dirs="$2"; shift 2 ;;
-    --ncpu ) ncpu="$2"; shift 2 ;;
     -- ) shift; break ;;
-    * ) break ;;
+    * )
+        for arg in ${L[@]}; do
+            if [ "$1" == "--$arg" ]; then
+                declare ${arg}="$2";
+            fi
+        done
+        shift 2; break ;;
   esac
 done
 
@@ -53,23 +97,6 @@ then
     usage;
     exit;
 fi
-
-#if [ -z "$PBS_O_WORKDIR" ] || [ -z "$PBS_JOBNAME" ] || [ -z "$PBS_JOBID" ]
-#then
-#    if [ -z "$SLURM_SUBMIT_DIR" ] || [ -z "$SLURM_JOB_NAME" ] || [ -z "$SLURM_JOB_ID" ]
-#    then
-#        # using unknown queue system
-#        log=./job_unnamed.log
-#    else
-#        # using slurm system
-#        log="$SLURM_SUBMIT_DIR"/job_"$SLURM_JOB_NAME"_"$SLURM_JOB_ID".log
-#    fi
-#else
-#    # using pbs system
-#    log="$PBS_O_WORKDIR"/job_"$PBS_JOBNAME"_"$PBS_JOBID".log
-#fi
-
-
 
 source ~/.bashrc
 #ddf_singularity
@@ -85,17 +112,17 @@ singularity exec -B /tmp,/dev/shm,${HOME},${mount_dirs} ${HOME}/store/lofar_sksp
         --region_file="$region_file" \
         --ref_dir=0 \
         --ncpu="$ncpu" \
-        --block_size=50 \
+        --block_size=20 \
         --deployment_type=directional \
         --no_subtract=False \
-        --do_choose_calibrators=0 \
-        --do_subtract=0 \
-        --do_solve_dds4=0 \
-        --do_smooth_dds4=2 \
-        --do_slow_dds4=0 \
-        --do_tec_inference=2 \
-        --do_infer_screen=2 \
-        --do_merge_slow=0 \
+        --do_choose_calibrators="$do_choose_calibrators" \
+        --do_subtract="$do_subtract" \
+        --do_solve_dds4="$do_solve_dds4" \
+        --do_smooth_dds4="$do_smooth_dds4" \
+        --do_slow_dds4="$do_slow_dds4" \
+        --do_tec_inference="$do_tec_inference" \
+        --do_infer_screen="$do_infer_screen" \
+        --do_merge_slow="$do_merge_slow" \
         --obs_num="$obs_num"
 #         &>> "$log"
 
@@ -112,10 +139,10 @@ singularity exec -B /tmp,/dev/shm,${HOME},${mount_dirs} ${HOME}/store/lofar_sksp
         --ncpu="$ncpu" \
         --block_size=10 \
         --deployment_type=directional \
-        --do_image_smooth=0 \
-        --do_image_dds4=0 \
-        --do_image_smooth_slow=0 \
-        --do_image_screen_slow=0 \
-        --do_image_screen=0 \
+        --do_image_smooth="$do_image_smooth" \
+        --do_image_dds4="$do_image_dds4" \
+        --do_image_smooth_slow="$do_image_smooth_slow" \
+        --do_image_screen_slow="$do_image_screen_slow" \
+        --do_image_screen="$do_image_screen" \
         --obs_num="$obs_num"
 #        &>> "$log"
