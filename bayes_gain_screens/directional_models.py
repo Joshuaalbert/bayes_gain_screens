@@ -37,11 +37,11 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
 
     # h*l = hpd -> l = hpd / h
     dir_kernels = [
-        gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
-        gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
-        gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
-        gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
-        gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=1.*np.pi/180., alpha=10.),
+        # gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
+        # gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
+        # gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
+        # gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=1.*np.pi/180.),
+        # gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=1.*np.pi/180., alpha=10.),
         gpflow_kernel('ThinLayerRBF', dims=3, variance=1. ** 2, hpd=15., height=200.),
         gpflow_kernel('ThinLayerM52', dims=3, variance=1. ** 2, hpd=15., height=200.),
         gpflow_kernel('ThinLayerM32', dims=3, variance=1. ** 2, hpd=15., height=200.),
@@ -60,11 +60,11 @@ def generate_models(X, Y, Y_var, ref_direction, reg_param=1., parallel_iteration
 
     if use_vec_kernels:
         dir_kernels = [
-            gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
-            gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
-            gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
-            gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
-            gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180., alpha=10.),
+            # gpflow_kernel('GreatCircleRBF', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
+            # gpflow_kernel('GreatCircleM52', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
+            # gpflow_kernel('GreatCircleM32', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
+            # gpflow_kernel('GreatCircleM12', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180.),
+            # gpflow_kernel('GreatCircleRQ', dims=3, variance=1. ** 2, hpd=1. * np.pi / 180., alpha=10.),
             gpflow_kernel('ThinLayerRBF', dims=3, variance=1. ** 2, hpd=15., height=200.),
             gpflow_kernel('ThinLayerM52', dims=3, variance=1. ** 2, hpd=15., height=200.),
             gpflow_kernel('ThinLayerM32', dims=3, variance=1. ** 2, hpd=15., height=200.),
