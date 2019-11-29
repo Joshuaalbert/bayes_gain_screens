@@ -3,10 +3,13 @@ float_type = tf.float64
 from bayes_gain_screens.misc import diagonal_jitter
 import tensorflow as tf
 from scipy.linalg import solve_triangular
+from .model import AverageModel
+from . import logging
 from scipy.optimize import minimize, brute
 import numpy as np
 from scipy.stats import multivariate_normal
 import tensorflow_probability as tfp
+from .coord_transforms import ITRSToENUWithReferences_v2
 
 
 def constrain(v, a, b):
@@ -206,53 +209,58 @@ class SolveLossVI(object):
         return loss
 
 
-def update_step(prior_mu, prior_Gamma, Y, Sigma, freqs, tec_min=-300., tec_max = 300., spacing=10.):
+
+
+
+class UpdateGainsToTec(object):
     """
-    Perform a single VI optimisation (update step).
-
-    :param prior_mu: [2]
-    :param prior_Gamma: [2,2]
-    :param Y: [N] complex
-    :param Sigma: [N,N]
-    :param freqs: [N]
-    :return: [2], [2,2]
+    Uses variational inference to condition TEC on Gains.
     """
-    Nf = freqs.shape[0]
-
-    try:
-        L_Sigma = np.linalg.cholesky(Sigma + 1e-4 * np.eye(2 * Nf))
-    except:
-        L_Sigma = np.diag(np.sqrt(np.diag(Sigma + 1e-4 * np.eye(2 * Nf))))
-    gains = Y[:Nf] + 1j * Y[Nf:]
-
-    s = SolveLossVI(gains.real, gains.imag, freqs,
-                    tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
-                    S=20, L_Sigma=L_Sigma)
-
-    sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
-                 (slice(tec_min, tec_max, spacing),))
-
-    sol3 = minimize(s.loss_func,
-                    np.array([sol1[0], deconstrain_tec(5.)]),
-                    method='BFGS').x
-
-    tec_mean = sol3[0]
-    tec_uncert = constrain_tec(sol3[1])
-
-    post_mu = np.array([tec_mean, 0], np.float64)
-    post_cov = np.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
-
-    return [post_mu, post_cov]
-
-
-class Update(object):
     def __init__(self, freqs, tec_scale=300., spacing=10., S=200):
         self.freqs = freqs
         self.S = S
         self.tec_scale = tec_scale
         self.spacing = spacing
 
-    def __call__(self, prior_mu, prior_Gamma, y, Sigma):
+    def update_step(self, prior_mu, prior_Gamma, Y, Sigma, freqs, tec_min=-300., tec_max=300., spacing=10.):
+        """
+        Perform a single VI optimisation (update step).
+
+        :param prior_mu: [2]
+        :param prior_Gamma: [2,2]
+        :param Y: [N] complex
+        :param Sigma: [N,N]
+        :param freqs: [N]
+        :return: [2], [2,2]
+        """
+        Nf = freqs.shape[0]
+
+        try:
+            L_Sigma = np.linalg.cholesky(Sigma + 1e-4 * np.eye(2 * Nf))
+        except:
+            L_Sigma = np.diag(np.sqrt(np.diag(Sigma + 1e-4 * np.eye(2 * Nf))))
+        gains = Y[:Nf] + 1j * Y[Nf:]
+
+        s = SolveLossVI(gains.real, gains.imag, freqs,
+                        tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
+                        S=20, L_Sigma=L_Sigma)
+
+        sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
+                     (slice(tec_min, tec_max, spacing),))
+
+        sol3 = minimize(s.loss_func,
+                        np.array([sol1[0], deconstrain_tec(5.)]),
+                        method='BFGS').x
+
+        tec_mean = sol3[0]
+        tec_uncert = constrain_tec(sol3[1])
+
+        post_mu = np.array([tec_mean, 0], np.float64)
+        post_cov = np.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
+
+        return [post_mu, post_cov]
+
+    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma):
         """
         Get the variational posterior.
 
@@ -268,13 +276,13 @@ class Update(object):
             [K], [K,K]
         """
 
-        def _call(prior_mu, prior_Gamma, y, Sigma):
+        def _call(t, prior_mu, prior_Gamma, y, Sigma):
             prior_mu, prior_Gamma, y, Sigma = prior_mu.numpy(), prior_Gamma.numpy(), y.numpy(), Sigma.numpy()
-            post_mu, post_Gamma = update_step(prior_mu, prior_Gamma, y, Sigma, self.freqs,
+            post_mu, post_Gamma = self.update_step(prior_mu, prior_Gamma, y, Sigma, self.freqs,
                                               -self.tec_scale, self.tec_scale, self.spacing)
             return [post_mu.astype(np.float64), post_Gamma.astype(np.float64)]
 
-        return tf.py_function(_call, [prior_mu, prior_Gamma, y, Sigma], [float_type, float_type], name='updater')
+        return tf.py_function(_call, [t, prior_mu, prior_Gamma, y, Sigma], [float_type, float_type], name='updater')
 
     def get_params(self, y, post_mu_b, post_Gamma_b):
         """
@@ -297,8 +305,131 @@ class Update(object):
                                      sample_axis=[0, 1], event_axis=2)
         return R_new, Q_new
 
+
+class UpdateTecScreenToTecScreen(object):
+    """
+    Uses variational inference to approximate a mixutre of Gaussians with a single Gaussian,
+    in order to perform FED kernel hypothesis marginalisation to condition a TEC screen on an observed TEC screen.
+    """
+    def __init__(self, Xd_data, Xd_model, Xa, Xt, model_generator, ref_dir, ref_ant, S=200):
+        self.model_generator = model_generator
+        self.ref_dir = ref_dir
+        self.Xd_data = Xd_data
+        self.Xd_model = Xd_model
+        self.Xa = Xa
+        self.Xt = Xt
+        self.S = S
+        self.init_hyperparams = None
+
+        with tf.Session(graph=tf.Graph()) as self.tf_session:
+            coord_transform = ITRSToENUWithReferences_v2(ref_ant, ref_dir, ref_ant)
+            self.Xt_pl = tf.placeholder(float_type, shape=[1, 1])
+            self.Xd_data_pl = tf.placeholder(float_type, shape=self.Xd_data.shape)
+            self.Xd_model_pl = tf.placeholder(float_type, shape=self.Xd_model.shape)
+            self.Xa_pl = tf.placeholder(float_type, shape=self.Xa.shape)
+            self.tf_X_data, self.tf_ref_ant, self.tf_ref_dir = coord_transform(self.Xt_pl, self.Xd_data_pl, self.Xa_pl)
+            self.tf_X_model, _, _ = coord_transform(self.Xt_pl, self.Xd_model_pl, self.Xa_pl)
+
+            # Nd, 3
+            self.tf_X_data = self.tf_X_data[0, :, 0, :3]
+            # Nd_screen, 3
+            self.tf_X_model = self.tf_X_model[0, :, 0, :3]
+
+    def get_coords(self, t):
+        feed_dict = {}
+        # T*Na, N
+        feed_dict[self.Xa_pl] = self.Xa
+        feed_dict[self.Xd_data_pl] = self.Xd_data
+        feed_dict[self.Xd_model_pl] = self.Xd_model
+        feed_dict[self.Xt_pl] = self.Xt[t:t + 1, :]
+
+        X_data, X_model, ref_direction, ref_location = self.tf_session.run([self.tf_X_data, self.tf_X_model, self.tf_ref_dir, self.tf_ref_ant],
+                                                                  feed_dict)
+        return X_data, X_model, ref_direction, ref_location
+
+    def update_step(self, t, prior_mu, prior_Gamma, Y, Sigma):
+        """
+        Perform a single VI optimisation (update step).
+
+        :param prior_mu: [N]
+        :param prior_Gamma: [N, N]
+        :param Y: [M] complex
+        :param Sigma: [M,M]
+        :return: [N], [N,N]
+        """
+
+        X_data, X_model, ref_direction, ref_location = self.get_coords(t)
+        if t == 0:
+            self.init_hyperparams = None
+
+        with tf.Session(graph=tf.Graph()) as gp_session:
+
+            models = self.model_generator(X_data, Y[None, :], Sigma, ref_direction, ref_location, reg_param=1.,
+                                          parallel_iterations=10)
+
+            model = AverageModel(models)
+            if self.init_hyperparams is not None:
+                logging.info("Transferring last hyperparams")
+                model.set_hyperparams(self.init_hyperparams)
+            logging.info("Optimising models")
+            model.optimise()
+            self.init_hyperparams = model.get_hyperparams()
+            logging.info("Predicting posteriors and averaging")
+            # batch_size, N
+            (weights, log_marginal_likelihoods), post_mu, post_cov = model.predict_f(X_model, only_mean=False)
+
+        return [post_mu, post_cov]
+
+    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma):
+        """
+        Get the variational posterior.
+
+        :param prior_mu:
+            [K]
+        :param prior_Gamma:
+            [K,K]
+        :param y:
+            [N]
+        :param Sigma:
+            [N,N]
+        :return:
+            [K], [K,K]
+        """
+
+
+
+        def _call(t, prior_mu, prior_Gamma, y, Sigma):
+            prior_mu, prior_Gamma, y, Sigma = prior_mu.numpy(), prior_Gamma.numpy(), y.numpy(), Sigma.numpy()
+            post_mu, post_Gamma = self.update_step(t, prior_mu, prior_Gamma, y, Sigma)
+            return [post_mu.astype(np.float64), post_Gamma.astype(np.float64)]
+
+        return tf.py_function(_call, [t, prior_mu, prior_Gamma, y, Sigma], [float_type, float_type], name='updater')
+
+    def get_params(self, y, post_mu_b, post_Gamma_b):
+        """
+        :param y: [B, N]
+        :param post_mu_b: [B, K]
+        :param post_Gamma_b: [B, K, K]
+
+        :return: [S, B, N]
+        """
+        # S, B, K
+        samples = tfp.distributions.MultivariateNormalFullCovariance(loc=post_mu_b,
+                                                                     covariance_matrix=post_Gamma_b).sample(self.S)
+        Q_new = tfp.stats.covariance(samples[:, 1:, :] - samples[:, :-1, :], sample_axis=[0, 1], event_axis=2)
+
+        tec_conv = tf.constant(-8.4479745e6 / self.freqs, float_type)
+
+        # S, B, Nf
+        phase = samples[:, :, 0:1] * tec_conv
+        R_new = tfp.stats.covariance(y - tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1),
+                                     sample_axis=[0, 1], event_axis=2)
+        return R_new, Q_new
+
+
+
 class NLDSSmoother(object):
-    def __init__(self, num_latent, num_observables, sequence_length, update, get_params=None, momentum=0.5):
+    def __init__(self, num_latent, num_observables, sequence_length, update, momentum=0.5):
         """
         Perform non-linear dynamics smoothing.
         """
@@ -306,7 +437,6 @@ class NLDSSmoother(object):
         B = sequence_length
         K = num_latent
         self._update = update
-        self._get_params = get_params
 
         graph = tf.Graph()
 
@@ -533,7 +663,7 @@ class NLDSSmoother(object):
             # K,K
             prior_Gamma_n = post_Gamma_n1 + Omega
 
-            post_mu_n, post_Gamma_n = self._update(prior_mu_n, prior_Gamma_n, y[n, :], Sigma)
+            post_mu_n, post_Gamma_n = self._update(n, prior_mu_n, prior_Gamma_n, y[n, :], Sigma)
             post_mu_n.set_shape(post_mu_n1.shape)
             post_Gamma_n.set_shape(post_Gamma_n1.shape)
             return [n + 1, post_mu_n, post_Gamma_n, prior_Gamma_ta.write(n, prior_Gamma_n),

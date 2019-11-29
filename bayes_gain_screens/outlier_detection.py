@@ -115,7 +115,10 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     """
     if init_y_uncert is None:
         init_y_uncert = 1.*np.ones_like(y)
-    time_flag = np.abs(smooth(y, axis=-1) - y) > 10.
+    time_flag = np.tile(np.abs(np.mean(y, axis=-1 ,keepdims=True)) > 16., [1, 1, y.shape[-1]])
+    time_flag = np.logical_or(time_flag,
+                              np.concatenate([np.zeros(y.shape[:-1], dtype=np.bool),
+                                              np.abs(np.diff(y, axis=-1)) > 40.], axis=-1))
     # Nd, 2
     X = directions
     X -= np.mean(X, axis=0)
@@ -127,6 +130,8 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     for t in range(Nt):
         for a in range(Na):
             keep = np.logical_not(time_flag[:,a,t])#np.ones(Nd, dtype=np.bool)
+            if t > 0:
+                keep = np.logical_or(keep, ~final_flags[:, a, t-1])
             for i in range(maxiter):
                 if keep.sum() < Nd//2:
                     keep = np.ones(Nd, dtype=np.bool)
@@ -137,15 +142,16 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
                 max_dy = np.max(dy[keep])
                 if max_dy < min_res:
                     break
-                print(max_dy)
+                # print(max_dy)
                 keep = dy < max_dy
 
             final_flags[:, a, t] = ~keep
             # print('CONF', np.interp(dy[~keep], np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
 
-            if keep.sum() < Nd:
-                print(t, a, np.where(final_flags[:, a, t]), 'from', Nd)
-
+            # if keep.sum() < Nd:
+            #     logging.info("Time {} ant {} flagged {}".format(t, a, np.where(final_flags[:, a, t])))
+    final_flags = np.logical_or(final_flags, time_flag)
+    logging.info("Flagged {} from {} ({:.2f}%)".format(final_flags.sum(), final_flags.size, 100. * final_flags.sum() / final_flags.size))
     final_y_uncert = np.where(final_flags, np.inf, init_y_uncert)
     return final_y_uncert, final_flags
 
