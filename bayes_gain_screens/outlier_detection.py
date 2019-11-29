@@ -125,7 +125,7 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     X = directions
     X -= np.mean(X, axis=0)
     X /= np.std(X, axis=0)
-    final_flags = np.zeros_like(y)
+    final_flags = np.zeros_like(y, dtype=np.bool)
     x_list0 = list(X.T)
     Nd, Na, Nt = y.shape
     maxiter = Nd
@@ -133,7 +133,7 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
         for a in range(Na):
             keep = np.logical_not(time_flag[:,a,t])#np.ones(Nd, dtype=np.bool)
             if t > 0:
-                keep = np.logical_or(keep, ~final_flags[:, a, t-1])
+                keep = np.logical_or(keep, np.logical_not(final_flags[:, a, t-1]))
             for i in range(maxiter):
                 if keep.sum() < Nd//2:
                     keep = np.ones(Nd, dtype=np.bool)
