@@ -115,9 +115,11 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     """
     if init_y_uncert is None:
         init_y_uncert = 1.*np.ones_like(y)
+
+    Nd, Na, Nt = y.shape
     time_flag = np.tile(np.abs(np.mean(y, axis=-1 ,keepdims=True)) > 16., [1, 1, y.shape[-1]])
     time_flag = np.logical_or(time_flag,
-                              np.concatenate([np.zeros(y.shape[:-1], dtype=np.bool),
+                              np.concatenate([np.zeros([Nd, Na, 1], dtype=np.bool),
                                               np.abs(np.diff(y, axis=-1)) > 40.], axis=-1))
     # Nd, 2
     X = directions
