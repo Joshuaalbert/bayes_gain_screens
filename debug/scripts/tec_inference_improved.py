@@ -2,16 +2,13 @@ import os
 os.environ['OMP_NUM_THREADS'] = "1"
 import numpy as np
 import pylab as plt
-from scipy.interpolate import griddata
-from scipy.optimize import brute, minimize
 from scipy.ndimage import median_filter
 from bayes_gain_screens import logging
 from bayes_gain_screens.datapack import DataPack
 from bayes_gain_screens.misc import make_soltab, great_circle_sep
 from bayes_gain_screens.plotting import animate_datapack
-from bayes_gain_screens.nlds_smoother import Update, NLDSSmoother, update_step
+from bayes_gain_screens.nlds_smoother import UpdateGainsToTec, NLDSSmoother
 from dask.multiprocessing import get
-from scipy.optimize import least_squares
 import argparse
 from timeit import default_timer
 import networkx as nx
@@ -39,7 +36,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
 
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
-    update = Update(freqs, S=200)
+    update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10.)
     for d in range(D):
         t0 = default_timer()
         Sigma_0 = 1 ** 2 * np.eye(2 * Nf)
@@ -55,22 +52,16 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
                                                                       Gamma_0, 10)
         Sigma_0 = res['Sigma']
         Omega_0 = res['Omega']
-
-        for t in range(0, N, 50):
-            start = t
-            stop = min(t + 50, N)
-            # N, Nf
-            Y = np.transpose(Yreal[d, :, start:stop] + 1j * Yimag[d, :, start:stop])
-            res = NLDSSmoother(2, Nf, N, update=update, momentum=0.1).run(Y, Sigma_0, Omega_0,
-                                                                          mu_0,
-                                                                          Gamma_0, 1)
-            Sigma_0 = res['Sigma']
-            Omega_0 = res['Omega']
-            mu_0 = res['post_mu'][-1,:]
-            Gamma_0 = res['post_Gamma'][-1,:,:] + np.diag([200., 2 * np.pi]) ** 2
-            tec_mean_array[d, start:stop] = res['post_mu'][:, 0]
-            tec_uncert_array[d, start:stop] = np.sqrt(res['post_Gamma'][:, 0, 0])
-        logging.info("Timing {:.2f} timesteps / second".format(N/(default_timer() - t0)))
+        mu_0 = res['mu_0']
+        Gamma_0 = res['Gamma_0']
+        logging.info("On {}: Full chain".format(d))
+        Y = np.transpose(Yreal[d, :, :] + 1j * Yimag[d, :, :])
+        res = NLDSSmoother(2, Nf, N, update=update, momentum=0.1).run(Y, Sigma_0, Omega_0,
+                                                                      mu_0,
+                                                                      Gamma_0, 2)
+        tec_mean_array[d, :] = res['post_mu'][:, 0]
+        tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
+        logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
 
 
     return tec_mean_array, tec_uncert_array
