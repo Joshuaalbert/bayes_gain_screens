@@ -245,7 +245,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('region_file', region_file)
         cmd.add('ref_image_fits', ref_image_fits)
         cmd.add('working_dir', choose_calibrators_working_dir)
-        cmd.add('flux_limit', 0.15)
+        cmd.add('flux_limit', 0.20)
         cmd.add('min_spacing_arcmin', 6.)
         # cmd.add('fill_in_distance', 1.5*60.)
         # cmd.add('fill_in_flux_limit', 0.05)
@@ -481,18 +481,18 @@ def test_main():
          ref_image_fits=None,  # '/home/albert/store/lockman/lotss_archive_deep_image.app.restored.fits',
          ncpu=32,
          ref_dir=0,
-         block_size=10,
+         block_size=50,
          deployment_type='directional',
          no_subtract=False,
          do_choose_calibrators=0,
          do_subtract=0,
          do_image_subtract_dirty=0,
          do_solve_dds4=0,
-         do_smooth_dds4=2,
-         do_slow_dds4=0,
-         do_tec_inference=2,
-         do_merge_slow=0,
-         do_infer_screen=2,
+         do_smooth_dds4=0,
+         do_slow_dds4=2,
+         do_tec_inference=0,
+         do_merge_slow=2,
+         do_infer_screen=0,
          do_image_dds4=0,
          do_image_smooth=0,
          do_image_smooth_slow=0,
