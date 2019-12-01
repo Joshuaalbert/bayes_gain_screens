@@ -165,6 +165,12 @@ class DataPack(object):
         self._current_solset = solset
         logging.info("Set current solset to: {}".format(self._current_solset))
 
+    def set_current_solset(self, solset):
+        if solset not in self.solsets:
+            raise ValueError("Solset {} does not exist.".format(solset))
+        self._current_solset = solset
+        logging.info("Set current solset to: {}".format(self._current_solset))
+
     @property
     def solsets(self):
         with self:
