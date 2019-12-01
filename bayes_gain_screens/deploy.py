@@ -306,7 +306,7 @@ class Deployment(object):
                         model.set_hyperparams(init_hyperparams)
                     logging.info("Optimising models")
                     model.optimise()
-                    init_hyperparams = model.get_hyperparams()
+                    # init_hyperparams = model.get_hyperparams()
                     logging.info("Predicting posteriors and averaging")
                     # batch_size, N
                     (weights, log_marginal_likelihoods), post_mean, post_var = model.predict_f(X_screen,
