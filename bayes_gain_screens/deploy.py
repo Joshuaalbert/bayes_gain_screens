@@ -363,11 +363,11 @@ class Deployment(object):
             logging.info("Getting NN indices")
             dir_idx = [np.argmin(
                 great_circle_sep(self.Xd[:, 0], self.Xd[:, 1], ra, dec) for (ra, dec) in zip(self.Xd_screen[:, 0], self.Xd_screen[:, 1]))]
-            logging.info("Getting NN const")
-            #Nd_screen, Na, Nt
-            const_NN = const_mean[dir_idx, :, :]
-            logging.info("Storing const")
-            self.datapack.const = const_NN[None,...]
+            # logging.info("Getting NN const")
+            # #Nd_screen, Na, Nt
+            # const_NN = const_mean[dir_idx, :, :]
+            # logging.info("Storing const")
+            # self.datapack.const = const_NN[None,...]
 
             logging.info("Computing screen phase")
             axes = self.datapack.axes_phase
