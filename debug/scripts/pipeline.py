@@ -43,7 +43,7 @@ class CondaEnv(Env):
         super(CondaEnv, self).__init__()
         self.conda_env = conda_env
     def compose(self, cmd):
-        exec_cmd = "bash -c 'source $HOME/.bashrc; conda activate {conda_env}; {cmd}'".format(conda_env=self.conda_env, cmd=cmd)
+        exec_cmd = "bash -c 'source $HOME/.bashrc; conda activate {conda_env}; export PYTHONPATH=; {cmd}'".format(conda_env=self.conda_env, cmd=cmd)
         return exec_cmd
 
 class CMD(object):
@@ -361,9 +361,22 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['smooth_dds4'] = (lambda *x: None, 'solve_dds4')
 
+    # if do_tec_inference:
+    #     cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference.sh', 'bash',exec_env=bayes_gain_screens_env)
+    #     cmd.add('conda_env', 'tf_py')
+    #     cmd.add('script_dir', script_dir)
+    #     cmd.add('obs_num', obs_num)
+    #     cmd.add('ncpu', ncpu)
+    #     cmd.add('data_dir', subtract_working_dir)
+    #     cmd.add('working_dir', tec_inference_working_dir)
+    #     cmd.add('ref_dir', ref_dir)
+    #     dsk['tec_inference'] = (cmd, 'smooth_dds4', 'solve_dds4')
+    # else:
+    #     dsk['tec_inference'] = (lambda *x: None, 'smooth_dds4', 'solve_dds4')
+
+
     if do_tec_inference:
-        cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference.sh', 'bash',exec_env=bayes_gain_screens_env)
-        cmd.add('conda_env', 'tf_py')
+        cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference_improved.py',exec_env=bayes_gain_screens_env)
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
         cmd.add('ncpu', ncpu)
@@ -373,6 +386,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['tec_inference'] = (cmd, 'smooth_dds4', 'solve_dds4')
     else:
         dsk['tec_inference'] = (lambda *x: None, 'smooth_dds4', 'solve_dds4')
+
 
     if do_slow_dds4:
         cmd = CMD(slow_dds4_working_dir, script_dir, 'slow_solve_on_subtracted.py',exec_env=lofar_sksp_env)
@@ -411,8 +425,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_dds4'] = (lambda *x: None, 'solve_dds4')
 
     if do_infer_screen:
-        cmd = CMD(infer_screen_working_dir, script_dir, 'infer_screen.sh', 'bash',exec_env=bayes_gain_screens_env)
-        cmd.add('conda_env', 'tf_py')
+        cmd = CMD(infer_screen_working_dir, script_dir, 'infer_screen.py',exec_env=bayes_gain_screens_env)
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
@@ -420,6 +433,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('ref_image_fits', ref_image_fits)
         cmd.add('block_size', block_size)
         cmd.add('max_N', 250)
+        cmd.add('ncpu', ncpu)
+        cmd.add('ref_dir', ref_dir)
         cmd.add('deployment_type', deployment_type)
         dsk['infer_screen'] = (cmd, 'tec_inference', 'smooth_dds4')
     else:
@@ -439,8 +454,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_screen'] = (lambda *x: None, 'infer_screen')
 
     if do_merge_slow:
-        cmd = CMD(merge_slow_working_dir, script_dir, 'merge_slow.sh', 'bash',exec_env=bayes_gain_screens_env)
-        cmd.add('conda_env', 'tf_py')
+        cmd = CMD(merge_slow_working_dir, script_dir, 'merge_slow.py',exec_env=bayes_gain_screens_env)
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
