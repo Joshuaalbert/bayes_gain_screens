@@ -47,7 +47,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
     obs_cov_array = np.zeros((D, 2*Nf, 2*Nf))
-    update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10.)
+    update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10., force_diag_Sigma=True)
     for d in range(D):
         t0 = default_timer()
         Sigma_0 = 1 ** 2 * np.eye(2 * Nf)
@@ -56,7 +56,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         Gamma_0 = np.diag([200., 2 * np.pi]) ** 2
         ###
         # warm-up
-        logging.info("On {}: Warming up".format(d))
+        # logging.info("On {}: Warming up".format(d))
         # B, Nf
         Y_warmup = np.transpose(Yreal[d, :, : 50] + 1j * Yimag[d, :, :50])
         res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.9).run(stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0,
@@ -65,7 +65,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         Omega_0 = res['Omega']
         mu_0 = res['mu_0']
         Gamma_0 = res['Gamma_0']
-        logging.info("On {}: Full chain".format(d))
+        # logging.info("On {}: Full chain".format(d))
         Y = np.transpose(Yreal[d, :, :] + 1j * Yimag[d, :, :])
         res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.1).run(stack_complex(Y), Sigma_0, Omega_0,
                                                                       mu_0,
@@ -83,6 +83,13 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         plt.xlabel('time')
         plt.ylabel('freq [Hz]')
         plt.savefig(os.path.join(debug_dir, 'phase_diff_{:04d}.png'.format(d)))
+        plt.close('all')
+
+        plt.imshow(res['Sigma'], origin='lower',
+                   cmap='bone', aspect='auto')
+        plt.colorbar()
+        plt.savefig(os.path.join(debug_dir, 'obs_cov_{:04d}.png'.format(d)))
+
         plt.close('all')
 
 
@@ -263,8 +270,10 @@ def plot_results(Na, Nd, antenna_labels, working_dir, phase_model,
             axs[1][0].set_title("TEC")
             axs[1][0].set_xlabel('Time')
             axs[1][0].set_ylabel('TEC [mTECU]')
-            axs[1][1].imshow(obs_cov_array[0,j,i,:,:],origin='lower', aspect='auto', cmap='bone')
-            axs[1][1].set_title("Obs. cov. est.")
+            vmin = np.min(obs_cov_array[0,j,i,:,:])
+            vmax = np.max(obs_cov_array[0,j,i,:,:])
+            axs[1][1].imshow(obs_cov_array[0,j,i,:,:],origin='lower', vmin=vmin, vmax=vmax, aspect='auto', cmap='bone')
+            axs[1][1].set_title("Obs. cov. est. [{:.2f}, {:.2f}]".format(vmin, vmax))
             plt.tight_layout()
             plt.savefig(os.path.join(summary_dir, 'summary_{}_dir{:02d}.png'.format(antenna_labels[i].decode(), j)))
             plt.close('all')
