@@ -141,7 +141,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     h = nx.minimum_spanning_tree(g)
     # walk_order = [(0,0)]+list(nx.bfs_edges(h, 0))
     walk_order = list(nx.bfs_edges(h, ref_dir))
-
+    proc_idx = 0
     for (next_ref_dir, solve_dir) in walk_order:
         logging.info("Solving dir: {}".format(solve_dir))
         phase_di = phase_raw[:, next_ref_dir:next_ref_dir+1, ...]
@@ -162,7 +162,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
         for c,i in enumerate(range(0, D, D // num_processes)):
             start = i
             stop = min(i + (D // num_processes), D)
-            dsk[str(c)] = (sequential_solve, Yreal[start:stop, :, :], Yimag[start:stop, :, :], freqs, os.path.join(working_dir,'proc_{:04d}'.format(c)))
+            dsk[str(c)] = (sequential_solve, Yreal[start:stop, :, :], Yimag[start:stop, :, :], freqs, os.path.join(working_dir,'proc_{:04d}'.format(proc_idx)))
+            proc_idx += 1
             keys.append(str(c))
         logging.info("Running dask on {} processes".format(num_processes))
         results = get(dsk, keys, num_workers=num_processes)
