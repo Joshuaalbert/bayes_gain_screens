@@ -277,27 +277,40 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
     print("Constructing run environments")
     if lofar_sksp_simg is not None:
-        if bind_dirs is None:
-            bind_dirs = './'#redundant placeholder
-        lofar_sksp_env = SingularityEnv(lofar_sksp_simg, bind_dirs=bind_dirs)
+        if not os.path.isfile(lofar_sksp_simg):
+            print("Singularity image {} doesn't exist. Better have lofar tools sourced for ddf-pipeline work.".format(lofar_sksp_simg))
+            lofar_sksp_env = Env()
+        else:
+            if bind_dirs is None:
+                bind_dirs = './'#redundant placeholder
+            lofar_sksp_env = SingularityEnv(lofar_sksp_simg, bind_dirs=bind_dirs)
     else:
         print("Not using SKSP image, so lofar software better be sourced already that can do ddf pipeline work.")
         lofar_sksp_env = Env()
 
     if lofar_gain_screens_simg is not None:
-        if bind_dirs is None:
-            bind_dirs = './'#redundant placeholder
-        lofar_gain_screens_env = SingularityEnv(lofar_gain_screens_simg, bind_dirs=bind_dirs)
+        if not os.path.isfile(lofar_gain_screens_simg):
+            print("Singularity image {} doesn't exist. Better have lofar tools sourced for screen imaging.".format(lofar_gain_screens_simg))
+            lofar_gain_screens_env = Env()
+        else:
+            if bind_dirs is None:
+                bind_dirs = './'  # redundant placeholder
+            lofar_gain_screens_env = SingularityEnv(lofar_gain_screens_simg, bind_dirs=bind_dirs)
     else:
         print("Not using lofar gain screens image, so lofar software better be sourced already that can image screens.")
         lofar_gain_screens_env = Env()
 
     if bayes_gain_screens_simg is not None:
-        if bind_dirs is None:
-            bind_dirs = './'#redundant placeholder
-        bayes_gain_screens_env = SingularityEnv(bayes_gain_screens_simg, bind_dirs=bind_dirs)
+        if not os.path.isfile(bayes_gain_screens_simg):
+            print(
+                "Singularity image {} doesn't exist. Better have bayes gain screens sourced.".format(bayes_gain_screens_simg))
+            bayes_gain_screens_env = Env()
+        else:
+            if bind_dirs is None:
+                bind_dirs = './'  # redundant placeholder
+            bayes_gain_screens_env = SingularityEnv(bayes_gain_screens_simg, bind_dirs=bind_dirs)
     else:
-        print("Not using bayes gain screen image, so bayes_gain_screens better be installed in a conda env.")
+        print("Not using bayes gain screen image, so bayes_gain_screens better be installed in conda env: {}".format(bayes_gain_screens_conda_env))
         bayes_gain_screens_env = CondaEnv(bayes_gain_screens_conda_env)
 
     dsk = {}
@@ -327,18 +340,6 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['subtract'] = (lambda *x: None, 'choose_calibrators')
 
-    if do_image_subtract_dirty:
-        cmd = CMD(image_subtract_dirty_working_dir, script_dir, 'image.py',exec_env=lofar_sksp_env)
-        cmd.add('image_type', 'image_subtract_dirty')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', subtract_working_dir)
-        cmd.add('working_dir', image_subtract_dirty_working_dir)
-        cmd.add('script_dir', script_dir)
-        dsk['image_subtract_dirty'] = (cmd, 'subtract')
-    else:
-        dsk['image_subtract_dirty'] = (lambda *x: None, 'subtract')
-
     if do_solve_dds4:
         cmd = CMD(solve_dds4_working_dir, script_dir, 'solve_on_subtracted.py',exec_env=lofar_sksp_env)
         cmd.add('region_file', region_file)
@@ -350,10 +351,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['solve_dds4'] = (lambda *x: None, 'subtract')
 
+
     if do_smooth_dds4:
-        cmd = CMD(smooth_dds4_working_dir, script_dir, 'smooth_dds4.sh', 'bash',exec_env=bayes_gain_screens_env)
-        cmd.add('conda_env', 'tf_py')
-        cmd.add('script_dir', script_dir)
+        cmd = CMD(smooth_dds4_working_dir, script_dir, 'smooth_dds4_simple.py',exec_env=bayes_gain_screens_env)
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', smooth_dds4_working_dir)
@@ -361,23 +361,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['smooth_dds4'] = (lambda *x: None, 'solve_dds4')
 
-    # if do_tec_inference:
-    #     cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference.sh', 'bash',exec_env=bayes_gain_screens_env)
-    #     cmd.add('conda_env', 'tf_py')
-    #     cmd.add('script_dir', script_dir)
-    #     cmd.add('obs_num', obs_num)
-    #     cmd.add('ncpu', ncpu)
-    #     cmd.add('data_dir', subtract_working_dir)
-    #     cmd.add('working_dir', tec_inference_working_dir)
-    #     cmd.add('ref_dir', ref_dir)
-    #     dsk['tec_inference'] = (cmd, 'smooth_dds4', 'solve_dds4')
-    # else:
-    #     dsk['tec_inference'] = (lambda *x: None, 'smooth_dds4', 'solve_dds4')
-
-
     if do_tec_inference:
         cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference_improved.py',exec_env=bayes_gain_screens_env)
-        cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
         cmd.add('ncpu', ncpu)
         cmd.add('data_dir', subtract_working_dir)
@@ -398,18 +383,41 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['slow_solve_dds4'] = (lambda *x: None, 'smooth_dds4')
 
-    if do_image_smooth:
-        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
-        cmd.add('image_type', 'image_smoothed')
+    if do_infer_screen:
+        cmd = CMD(infer_screen_working_dir, script_dir, 'infer_screen.py',exec_env=bayes_gain_screens_env)
+        cmd.add('obs_num', obs_num)
+        cmd.add('data_dir', subtract_working_dir)
+        cmd.add('working_dir', infer_screen_working_dir)
+        cmd.add('ref_image_fits', ref_image_fits)
+        cmd.add('block_size', block_size)
+        cmd.add('max_N', 250)
+        cmd.add('ncpu', ncpu)
+        cmd.add('ref_dir', ref_dir)
+        cmd.add('deployment_type', deployment_type)
+        dsk['infer_screen'] = (cmd, 'tec_inference', 'smooth_dds4')
+    else:
+        dsk['infer_screen'] = (lambda *x: None, 'tec_inference', 'smooth_dds4')
+
+    if do_merge_slow:
+        cmd = CMD(merge_slow_working_dir, script_dir, 'merge_slow.py',exec_env=bayes_gain_screens_env)
+        cmd.add('obs_num', obs_num)
+        cmd.add('data_dir', subtract_working_dir)
+        cmd.add('working_dir', merge_slow_working_dir)
+        dsk['merge_slow'] = (cmd, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
+    else:
+        dsk['merge_slow'] = (lambda *x: None, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
+
+    if do_image_subtract_dirty:
+        cmd = CMD(image_subtract_dirty_working_dir, script_dir, 'image.py',exec_env=lofar_sksp_env)
+        cmd.add('image_type', 'image_subtract_dirty')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
-        cmd.add('working_dir', image_smooth_working_dir)
+        cmd.add('working_dir', image_subtract_dirty_working_dir)
         cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', True)
-        dsk['image_smooth'] = (cmd, 'tec_inference')
+        dsk['image_subtract_dirty'] = (cmd, 'subtract')
     else:
-        dsk['image_smooth'] = (lambda *x: None, 'tec_inference')
+        dsk['image_subtract_dirty'] = (lambda *x: None, 'subtract')
 
     if do_image_dds4:
         cmd = CMD(image_smooth_working_dir, script_dir, 'image.py',exec_env=lofar_sksp_env)
@@ -424,57 +432,18 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['image_dds4'] = (lambda *x: None, 'solve_dds4')
 
-    if do_infer_screen:
-        cmd = CMD(infer_screen_working_dir, script_dir, 'infer_screen.py',exec_env=bayes_gain_screens_env)
-        cmd.add('script_dir', script_dir)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', subtract_working_dir)
-        cmd.add('working_dir', infer_screen_working_dir)
-        cmd.add('ref_image_fits', ref_image_fits)
-        cmd.add('block_size', block_size)
-        cmd.add('max_N', 250)
-        cmd.add('ncpu', ncpu)
-        cmd.add('ref_dir', ref_dir)
-        cmd.add('deployment_type', deployment_type)
-        dsk['infer_screen'] = (cmd, 'tec_inference', 'smooth_dds4')
-    else:
-        dsk['infer_screen'] = (lambda *x: None, 'tec_inference', 'smooth_dds4')
-
-    if do_image_screen:
-        cmd = CMD(image_screen_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
-        cmd.add('image_type', 'image_screen')
+    if do_image_smooth:
+        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
+        cmd.add('image_type', 'image_smoothed')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
-        cmd.add('working_dir', image_screen_working_dir)
+        cmd.add('working_dir', image_smooth_working_dir)
         cmd.add('script_dir', script_dir)
         cmd.add('use_init_dico', True)
-        dsk['image_screen'] = (cmd, 'infer_screen')
+        dsk['image_smooth'] = (cmd, 'tec_inference')
     else:
-        dsk['image_screen'] = (lambda *x: None, 'infer_screen')
-
-    if do_merge_slow:
-        cmd = CMD(merge_slow_working_dir, script_dir, 'merge_slow.py',exec_env=bayes_gain_screens_env)
-        cmd.add('script_dir', script_dir)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', subtract_working_dir)
-        cmd.add('working_dir', merge_slow_working_dir)
-        dsk['merge_slow'] = (cmd, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
-    else:
-        dsk['merge_slow'] = (lambda *x: None, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
-
-    if do_image_screen_slow:
-        cmd = CMD(image_screen_slow_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
-        cmd.add('image_type', 'image_screen_slow')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', subtract_working_dir)
-        cmd.add('working_dir', image_screen_slow_working_dir)
-        cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', True)
-        dsk['image_screen_slow'] = (cmd, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
-    else:
-        dsk['image_screen_slow'] = (lambda *x: None, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
+        dsk['image_smooth'] = (lambda *x: None, 'tec_inference')
 
     if do_image_smooth_slow:
         cmd = CMD(image_smooth_slow_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
@@ -489,8 +458,33 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['image_smooth_slow'] = (lambda *x: None, 'tec_inference', 'slow_solve_dds4', 'merge_slow')
 
+    if do_image_screen:
+        cmd = CMD(image_screen_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
+        cmd.add('image_type', 'image_screen')
+        cmd.add('ncpu', ncpu)
+        cmd.add('obs_num', obs_num)
+        cmd.add('data_dir', subtract_working_dir)
+        cmd.add('working_dir', image_screen_working_dir)
+        cmd.add('script_dir', script_dir)
+        cmd.add('use_init_dico', True)
+        dsk['image_screen'] = (cmd, 'infer_screen')
+    else:
+        dsk['image_screen'] = (lambda *x: None, 'infer_screen')
+
+    if do_image_screen_slow:
+        cmd = CMD(image_screen_slow_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
+        cmd.add('image_type', 'image_screen_slow')
+        cmd.add('ncpu', ncpu)
+        cmd.add('obs_num', obs_num)
+        cmd.add('data_dir', subtract_working_dir)
+        cmd.add('working_dir', image_screen_slow_working_dir)
+        cmd.add('script_dir', script_dir)
+        cmd.add('use_init_dico', True)
+        dsk['image_screen_slow'] = (cmd, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
+    else:
+        dsk['image_screen_slow'] = (lambda *x: None, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
+
     dsk['endpoint'] = (lambda *x: None,) + tuple([k for k in dsk.keys()])
-    # state_file = os.path.join(root_working_dir, 'STATE_{:03d}'.format(len(glob.glob(os.path.join(root_working_dir, 'STATE_*')))))
     state_file = os.path.join(root_working_dir, 'STATE')
     execute_dask(dsk, 'endpoint', timing_file=timing_file, state_file=state_file)
 
