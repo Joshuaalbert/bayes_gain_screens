@@ -216,6 +216,12 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
+    animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
+                     solset='directionally_referenced',
+                     observable='weights_tec', vmin=0., vmax=10., plot_facet_idx=True,
+                     labels_in_radec=True, plot_crosses=False, phase_wrap=False,
+                     flag_outliers=False)
+
     plot_results(Na, Nd, antenna_labels, working_dir, phase_model, phase_raw,
                  res_imag, res_real, tec_mean_array,obs_cov_array)
 
