@@ -5,7 +5,7 @@ function usage()
 {
    cat << HEREDOC
 
-   Usage: $progname --obs_num [--archive_dir --root_working_dir --script_dir --region_file --simg_dir --mount_dirs --ncpu]
+   Usage: $progname --obs_num [--archive_dir --root_working_dir --script_dir --region_file --simg_dir --bind_dirs --ncpu]
 
    optional arguments:
      -h, --help           show this help message and exit
@@ -76,7 +76,7 @@ arg_parse_str="help"
 for arg in ${L[@]}; do
     arg_parse_str=${arg_parse_str},${arg}:
 done
-echo $arg_parse_str
+#echo $arg_parse_str
 
 OPTS=$(getopt -o "h" --long ${arg_parse_str} -n "$progname" -- "$@")
 if [ $? != 0 ] ; then echo "Error in command line arguments." >&2 ; usage; exit 1 ; fi
@@ -88,14 +88,19 @@ while true; do
   case "$1" in
     -h | --help ) usage; exit; ;;
     -- ) shift; break ;;
-    * )
-        for arg in ${L[@]}; do
-            if [ "$1" == "--$arg" ]; then
-                declare ${arg}="$2";
-            fi
-        done
-        shift 2; break ;;
   esac
+  found=
+  for arg in ${L[@]}; do
+    if [ "$1" == "--$arg" ]; then
+        declare ${arg}="$2";
+        shift 2;
+        found=1
+        break
+    fi
+  done
+  if [ -z "$found" ]; then
+    break
+  fi
 done
 
 if [ -z "$obs_num" ]
@@ -104,7 +109,7 @@ then
     exit;
 fi
 
-source ~/.bashrc
+#source ~/.bashrc
 #ddf_singularity
 
 singularity exec -B /tmp,/dev/shm "$simg_dir"/lofar_sksp_ddf.simg CleanSHM.py
