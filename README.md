@@ -33,7 +33,7 @@ Or, a conda environment will the bayes_gain_screens (call it `tf_py` because it 
 
 ```
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh
-bash $HOME/miniconda.sh -b -p /opt/miniconda3
+bash $HOME/miniconda.sh -b -p $HOME/miniconda3
 . $HOME/miniconda3/etc/profile.d/conda.sh
 hash -r 
 conda config --set auto_activate_base false --set always_yes yes
