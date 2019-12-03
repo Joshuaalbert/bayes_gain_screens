@@ -14,8 +14,8 @@ class UpdateGaussianProcess(UpdatePy):
     Uses variational inference to condition TEC on Gains.
     """
 
-    def __init__(self, Na, Nd_model, S=200):
-        super(UpdateGaussianProcess, self).__init__(S=S)
+    def __init__(self, Na, Nd_model, **kwargs):
+        super(UpdateGaussianProcess, self).__init__(**kwargs)
         self.mu_0 = np.zeros([Na, Nd_model], dtype=np.float64).flatten()
         self.Gamma_0 = np.tile(np.eye(Nd_model, dtype=np.float64)[None, :, :], [Na, 1, 1]).flatten()
 
