@@ -7,7 +7,9 @@ class Update(object):
     """
     Class that performs conditioning of a prior on data, and observational/Levy covariances.
     """
-    def __init__(self, *args, S=200, **kwargs):
+    def __init__(self, *args, S=200, force_diag_Sigma=False, force_diag_Omega=False, **kwargs):
+        self.force_diag_Sigma = force_diag_Sigma
+        self.force_diag_Omega = force_diag_Omega
         self.S = S
 
     def __call__(self, t, prior_mu, prior_Gamma, y, Sigma):
@@ -48,15 +50,21 @@ class Update(object):
         # S, B, K
         samples = tfp.distributions.MultivariateNormalFullCovariance(loc=post_mu_b,
                                                                      covariance_matrix=post_Gamma_b).sample(self.S)
-        Q_new = tfp.stats.covariance(samples[:, 1:, :] - samples[:, :-1, :], sample_axis=[0, 1], event_axis=2)
+        Omega_new = tfp.stats.covariance(samples[:, 1:, :] - samples[:, :-1, :], sample_axis=[0, 1], event_axis=2)
 
         tec_conv = tf.constant(-8.4479745e6 / self.freqs, float_type)
 
         # S, B, Nf
         phase = samples[:, :, 0:1] * tec_conv
-        R_new = tfp.stats.covariance(y - tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1),
+        Sigma_new = tfp.stats.covariance(y - tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1),
                                      sample_axis=[0, 1], event_axis=2)
-        return R_new, Q_new
+
+        if self.force_diag_Sigma:
+            Sigma_new = tf.linalg.diag(tf.linalg.diag_part(Sigma_new))
+        if self.force_diag_Omega:
+            Omega_new = tf.linalg.diag(tf.linalg.diag_part(Omega_new))
+
+        return Sigma_new, Omega_new
 
 class UpdatePy(Update):
     def __init__(self, *args, **kwargs):

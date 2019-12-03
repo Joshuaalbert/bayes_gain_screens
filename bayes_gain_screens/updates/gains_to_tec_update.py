@@ -192,8 +192,8 @@ class UpdateGainsToTec(UpdatePy):
     Uses variational inference to condition TEC on Gains.
     """
 
-    def __init__(self, freqs, tec_scale=300., spacing=10., S=200):
-        super(UpdateGainsToTec, self).__init__(S=S)
+    def __init__(self, freqs, tec_scale=300., spacing=10., **kwargs):
+        super(UpdateGainsToTec, self).__init__(**kwargs)
         self.freqs = freqs
         self.tec_scale = tec_scale
         self.spacing = spacing

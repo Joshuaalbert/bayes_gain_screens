@@ -12,8 +12,8 @@ class UpdateLDS(Update):
     transforming of the state (Y(t)=C.X(t)). C must be specified.
     """
 
-    def __init__(self, C, S=200):
-        super(UpdateLDS, self).__init__(S=S)
+    def __init__(self, C, **kwargs):
+        super(UpdateLDS, self).__init__(**kwargs)
         self.C = C
 
     def __call__(self, t, prior_mu, prior_Gamma, y, Sigma):
@@ -63,7 +63,8 @@ class UpdateLDS(Update):
 
 
 class UpdateLDSPolynomial(UpdateLDS):
-    def __init__(self, x, deg=2, basis='jacobi', S=200):
+    def __init__(self, x, deg=2, basis='jacobi', **kwargs):
+
         K = deg + 1
         x = (x - x.min())
         x = x / x.max()
@@ -77,4 +78,4 @@ class UpdateLDSPolynomial(UpdateLDS):
             # N, K
             X = np.stack([x ** k for k in range(K)], axis=1)
         X /= np.sqrt(np.sum(X ** 2, axis=0))
-        super(UpdateLDSPolynomial, self).__init__(X, S=S)
+        super(UpdateLDSPolynomial, self).__init__(X, **kwargs)
