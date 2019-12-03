@@ -7,7 +7,8 @@ from bayes_gain_screens import logging
 from bayes_gain_screens.datapack import DataPack
 from bayes_gain_screens.misc import make_soltab, great_circle_sep
 from bayes_gain_screens.plotting import animate_datapack
-from bayes_gain_screens.nlds_smoother import UpdateGainsToTec, NLDSSmoother
+from bayes_gain_screens.nlds_smoother import NLDSSmoother
+from bayes_gain_screens.updates.gains_to_tec_update import UpdateGainsToTec
 from dask.multiprocessing import get
 import argparse
 from timeit import default_timer
@@ -25,7 +26,7 @@ def stack_complex(y):
     :return: [...,2N]
     real on top of imag
     """
-    return np.stack([y.real, y.imag], axis=-1)
+    return np.concatenate([y.real, y.imag], axis=-1)
 
 def sequential_solve(Yreal, Yimag, freqs, working_dir):
     """
@@ -45,7 +46,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
 
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
-    obs_cov_array = np.zeros((D, Nf, Nf))
+    obs_cov_array = np.zeros((D, 2*Nf, 2*Nf))
     update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10.)
     for d in range(D):
         t0 = default_timer()
@@ -72,11 +73,11 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         tec_mean_array[d, :] = res['post_mu'][:, 0]
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
         obs_cov_array[d, :, :] = res['Sigma']
-        logging.info("DDTEC Omega: {:.2f}".format(res['Omega']))
+        logging.info("DDTEC Levy uncert: {:.2f} mTECU".format(np.sqrt(res['Omega'][0,0])))
         logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
-        phase_model = tec_mean_array[d, :, None] * -8.448e6/freqs
-        phase_diff = wrap(wrap(phase_model) - np.arctan2(Yimag, Yreal))
-        plt.imshow(phase_diff.T,origin='lower', vmin=-0.2, vmax= 0.2,
+        phase_model = tec_mean_array[d, None, :] * -8.448e6/freqs[:, None]
+        phase_diff = wrap(wrap(phase_model) - np.arctan2(Yimag[d,:, :], Yreal[d, :, :]))
+        plt.imshow(phase_diff,origin='lower', vmin=-0.2, vmax= 0.2,
                    cmap='coolwarm', aspect='auto',
                    extent=(0, N, freqs.min(), freqs.max()))
         plt.xlabel('time')
@@ -133,7 +134,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     tec_conv = -8.4479745e6 / freqs
     tec_mean_array = np.zeros((Npol, Nd, Na, Nt))
     tec_uncert_array = np.zeros((Npol, Nd, Na, Nt))
-    obs_cov_array = np.zeros((Npol, Nd, Na, Nf, Nf))
+    obs_cov_array = np.zeros((Npol, Nd, Na, 2*Nf, 2*Nf))
     g = nx.complete_graph(radec.shape[0])
     for u, v in g.edges:
         g[u][v]['weight'] = great_circle_sep(*radec[u, :], *radec[v, :])
@@ -168,7 +169,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
         logging.info("Finished dask.")
         tec_mean = np.zeros((D, Nt))
         tec_uncert = np.zeros((D, Nt))
-        obs_cov = np.zeros((D, Nf, Nf))
+        obs_cov = np.zeros((D, 2*Nf, 2*Nf))
 
         for c, i in enumerate(range(0, D, D // num_processes)):
             start = i
@@ -178,7 +179,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
             obs_cov[start:stop, :, :] = results[c][2]
         tec_mean = tec_mean.reshape((Npol, 1, Na, Nt))
         tec_uncert = tec_uncert.reshape((Npol, 1, Na, Nt))
-        obs_cov = obs_cov.reshape((Npol, 1, Na, Nf, Nf))
+        obs_cov = obs_cov.reshape((Npol, 1, Na, 2*Nf, 2*Nf))
         logging.info("Re-referencing to {}".format(ref_dir))
         # phase_smooth[:, solve_dir:solve_dir+1, ...] = tec_mean[..., None, :] * tec_conv[:, None] + phase_di
         #Reference to ref_dir 0: tau_ij + tau_jk = tau_ik
@@ -215,13 +216,13 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
                      flag_outliers=False)
 
     plot_results(Na, Nd, antenna_labels, working_dir, phase_model, phase_raw,
-                 res_imag, res_real, tec_mean_array)
+                 res_imag, res_real, tec_mean_array,obs_cov_array)
 
 def wrap(p):
     return np.arctan2(np.sin(p), np.cos(p))
 
 def plot_results(Na, Nd, antenna_labels, working_dir, phase_model,
-                 phase_raw, res_imag, res_real, tec_mean_array):
+                 phase_raw, res_imag, res_real, tec_mean_array, obs_cov_array):
     logging.info("Plotting results.")
     summary_dir = os.path.join(working_dir, 'summaries')
     os.makedirs(summary_dir, exist_ok=True)
@@ -255,6 +256,8 @@ def plot_results(Na, Nd, antenna_labels, working_dir, phase_model,
             axs[1][0].set_title("TEC")
             axs[1][0].set_xlabel('Time')
             axs[1][0].set_ylabel('TEC [mTECU]')
+            axs[1][1].imshow(obs_cov_array[0,j,i,:,:],origin='lower', aspect='auto', cmap='bone')
+            axs[1][1].set_title("Obs. cov. est.")
             plt.tight_layout()
             plt.savefig(os.path.join(summary_dir, 'summary_{}_dir{:02d}.png'.format(antenna_labels[i].decode(), j)))
             plt.close('all')
