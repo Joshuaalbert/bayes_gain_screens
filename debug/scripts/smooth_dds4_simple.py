@@ -30,7 +30,7 @@ def smoothamps(amps):
     return ampssmoothed
 
 
-def smooth_gains(Yreal, Yimag, filter_size=3, deg=1):
+def smooth_gains(Yreal, Yimag, filter_size=1, deg=2):
     _Yreal, _Yimag = np.copy(Yreal), np.copy(Yimag)
     Nf, N = Yreal.shape
     _freqs = np.linspace(-1., 1., Nf)
@@ -109,7 +109,7 @@ def main(data_dir, working_dir, obs_num):
     Yreal_full = Yreal_full.transpose((3,0,1,2,4)).reshape((Nf, -1))
     logging.info("Smoothing gains.")
 
-    Yreal_full, Yimag_full = smooth_gains(Yreal_full, Yimag_full, 3, 2)
+    Yreal_full, Yimag_full = smooth_gains(Yreal_full, Yimag_full, 1, 2)
     # Npol, Nd, Na, Nf, Nt
     Yreal_full = Yreal_full.reshape((Nf, Npol, Nd, Na, Nt)).transpose((1,2,3,0,4))
     Yimag_full = Yimag_full.reshape((Nf, Npol, Nd, Na, Nt)).transpose((1,2,3,0,4))
