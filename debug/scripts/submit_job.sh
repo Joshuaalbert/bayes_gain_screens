@@ -5,7 +5,7 @@ function usage()
 {
    cat << HEREDOC
 
-   Usage: $progname --obs_num [--archive_dir --root_working_dir --script_dir --region_file --mount_dirs --ncpu]
+   Usage: $progname --obs_num [--archive_dir --root_working_dir --script_dir --region_file --simg_dir --mount_dirs --ncpu]
 
    optional arguments:
      -h, --help           show this help message and exit
@@ -22,8 +22,8 @@ archive_dir=${HOME}/store/P126+65
 root_working_dir=${HOME}/store/root
 script_dir=${HOME}/store/scripts
 region_file=None
-mount_dirs=/beegfs/lofar
-ncpu=24
+bind_dirs=/beegfs/lofar
+ncpu=$(grep -c ^processor /proc/cpuinfo)
 conda_env=tf_py
 
 ###
@@ -54,7 +54,7 @@ L=(obs_num \
     root_working_dir \
     script_dir \
     region_file \
-    mount_dirs \
+    bind_dirs \
     ncpu \
     do_image_smooth \
     do_image_dds4 \
@@ -133,7 +133,7 @@ python "$script_dir"/pipeline.py \
         --do_image_screen_slow="$do_image_screen_slow" \
         --do_image_screen="$do_image_screen" \
         --obs_num="$obs_num" \
-        --bind_dirs="$mount_dirs" \
+        --bind_dirs="$bind_dirs" \
         --lofar_sksp_simg="$simg_dir"/lofar_sksp_ddf.simg \
         --lofar_gain_screens_simg="$simg_dir"/lofar_sksp_ddf_gainscreens_premerge.simg \
         --bayes_gain_screens_simg="$simg_dir"/bayes_gain_screens.simg \

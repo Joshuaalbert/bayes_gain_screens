@@ -515,41 +515,53 @@ def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.register('type', 'str_or_none', string_or_none)
 
-    parser.add_argument('--no_subtract', help='Whether to skip subtract, useful for imaging only.',
+    # optional = parser._action_groups.pop()  # Edited this line
+    required = parser.add_argument_group('Required arguments')
+    optional = parser.add_argument_group('Optional arguments')
+    # parser._action_groups.append(optional)  # added this line
+    steps = parser.add_argument_group('Enable/Disable steps')
+
+
+
+    optional.add_argument('--no_subtract', help='Whether to skip subtract, useful for imaging only.',
                         default=False, type="bool", required=False)
-    parser.add_argument('--region_file', help='boxfile, required argument', required=False, type='str_or_none',
+    optional.add_argument('--region_file', help='ds9 region file defining calbrators. If not provided, they will be automatically determined.', required=False, type='str_or_none',
                         default=None)
-    parser.add_argument('--ref_dir', help='Which direction to reference from', required=False, type=int, default=0)
-    parser.add_argument('--ref_image_fits',
-                        help='Reference image from which to extract screen directions and auto select calibrators (if region file is None)',
+    optional.add_argument('--ref_dir', help='Which direction to reference from. If not provided, it is the first (usually brightest) direction.', required=False, type=int, default=0)
+    required.add_argument('--ref_image_fits',
+                        help='Reference image used to extract screen directions and auto select calibrators if region_file is None',
                         required=False, default=None, type='str_or_none')
-    parser.add_argument('--ncpu', help='number of cpu to use', default=32, type=int, required=False)
-    parser.add_argument('--obs_num', help='Obs number L*',
+    workers = os.cpu_count()
+    if 'sched_getaffinity' in dir(os):
+        workers = len(os.sched_getaffinity(0))
+
+    optional.add_argument('--ncpu', help='Number of processes to use at most. If not then set to number of available physical cores.', default=workers, type=int, required=False)
+    required.add_argument('--obs_num', help='Obs number L*',
                         default=None, type=int, required=True)
-    parser.add_argument('--archive_dir', help='Where are the archives stored.',
+    required.add_argument('--archive_dir', help='Where are the archives stored.',
                         default=None, type=str, required=True)
-    parser.add_argument('--root_working_dir', help='Where the root of all working dirs are.',
+    required.add_argument('--root_working_dir', help='Where the root of all working dirs are.',
                         default=None, type=str, required=True)
-    parser.add_argument('--script_dir', help='Where the scripts are located.',
+    required.add_argument('--script_dir', help='Where the scripts are located.',
                         default=None, type=str, required=True)
-    parser.add_argument('--block_size', help='Number of blocks to solve at a time for screen.',
+    optional.add_argument('--block_size', help='Number of blocks to infer screen at a time for screen. Large blocks give better S/N for inferred kernel hyper params, but then the ionosphere might change in this time.',
                         default=10, type=int, required=False)
-    parser.add_argument('--deployment_type', help='Which type of deployment [directional, non_integral, tomographic]',
+    optional.add_argument('--deployment_type', help='Which type of deployment [directional, non_integral, tomographic]. Currently only directional should be used.',
                         default='directional', type=str, required=False)
-    parser.add_argument('--bind_dirs', help='Which directories to bind to singularity.',
+    optional.add_argument('--bind_dirs', help='Which directories to bind to singularity.',
                         default=None, type=str, required=False)
-    parser.add_argument('--lofar_sksp_simg', help='Point to the lofar SKSP singularity image',
+    optional.add_argument('--lofar_sksp_simg', help='The lofar SKSP singularity image. If None or doesnt exist then uses local env.',
                         default=None, type=str, required=False)
-    parser.add_argument('--lofar_gain_screens_simg', help='Point to the lofar gain screens branch singularity image',
+    optional.add_argument('--lofar_gain_screens_simg', help='Point to the lofar gain screens branch singularity imageIf None or doesnt exist then uses local env.',
                         default=None, type=str, required=False)
-    parser.add_argument('--bayes_gain_screens_simg', help='Point to the bayes_gain_screens singularity image',
+    optional.add_argument('--bayes_gain_screens_simg', help='Point to the bayes_gain_screens singularity image. If None or doesnt exist then uses conda env.',
                         default=None, type=str, required=False)
-    parser.add_argument('--bayes_gain_screens_conda_env', help='The conda env to use if bayes_gain_screens_simg not provided.',
+    optional.add_argument('--bayes_gain_screens_conda_env', help='The conda env to use if bayes_gain_screens_simg not provided.',
                         default='tf_py', type=str, required=False)
 
     for s in steps:
-        parser.add_argument('--do_{}'.format(s),
-                            help='Do {}? (NO=0/YES_DELETE_PRIOR=1/YES_NEW_WORKING_DIRECTORY=2)'.format(s),
+        steps.add_argument('--do_{}'.format(s),
+                            help='Do {}? (NO=0/YES_CLOBBER=1/YES_NO_CLOBBER=2)'.format(s),
                             default=0, type=int, required=False)
 
 
