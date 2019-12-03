@@ -2,6 +2,7 @@ from .update import UpdatePy
 from scipy.linalg import solve_triangular
 from scipy.optimize import minimize, brute
 import numpy as np
+import tensorflow as tf
 from scipy.stats import multivariate_normal
 
 
@@ -197,6 +198,20 @@ class UpdateGainsToTec(UpdatePy):
         self.freqs = freqs
         self.tec_scale = tec_scale
         self.spacing = spacing
+
+    def _forward(self, samples):
+        """
+        Computes the data-domain samples by pushing forward.
+        :param samples: tf.Tensor
+            [S, B, K]
+        :return: tf.Tensor
+            [S, B, N]
+        """
+
+        tec_conv = tf.constant(-8.4479745e6 / self.freqs, samples.dtype)
+        # S, B, Nf
+        phase = samples[:, :, 0:1] * tec_conv
+        return tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1)
 
     def _update_function(self, t, prior_mu, prior_Gamma, Y, Sigma):
         """
