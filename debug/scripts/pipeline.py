@@ -22,22 +22,53 @@ def create_qsub_script(working_dir, name, cmd):
         f.write(cmd)
     return submit_script
 
+class Env(object):
+    def __init__(self,*args, **kwargs):
+        pass
+    def compose(self, cmd):
+        return "bash -c '{cmd}'".format(cmd=cmd)
+
+class SingularityEnv(Env):
+    def __init__(self, image, bind_dirs ):
+        super(SingularityEnv, self).__init__()
+        self.image = image
+        self.bind_dirs = bind_dirs
+    def compose(self, cmd):
+        exec_cmd = "singularity exec -B /tmp,/dev/shm,$HOME,{bind_dirs} {image} \\\n{cmd}".format(
+            bind_dirs=self.bind_dirs, image=self.image, cmd=cmd)
+        return exec_cmd
+
+class CondaEnv(Env):
+    def __init__(self, conda_env):
+        super(CondaEnv, self).__init__()
+        self.conda_env = conda_env
+    def compose(self, cmd):
+        exec_cmd = "bash -c 'source $HOME/.bashrc; conda activate {conda_env}; {cmd}'".format(conda_env=self.conda_env, cmd=cmd)
+        return exec_cmd
 
 class CMD(object):
-    def __init__(self, working_dir, script_dir, script_name, shell='python'):
+    def __init__(self, working_dir, script_dir, script_name, shell='python', exec_env=None):
         self.cmd = [shell, os.path.join(script_dir, script_name)]
         self.working_dir = working_dir
+        if exec_env is None:
+            exec_env = Env()
+        self.exec_env = exec_env
 
     def add(self, name, value):
         self.cmd.append("--{}={}".format(name, value))
 
     def __call__(self):
-        proc_log = os.path.join(self.working_dir, 'state.log')
-        bash_cmd = ' \\\n\t'.join(self.cmd + ['2>&1 | tee -a {}; exit ${{PIPESTATUS[0]}}'.format(proc_log)])
-        print("Running:\n{}".format(bash_cmd))
 
-        exit_status = subprocess.call("bash -c '{}'".format(bash_cmd), shell=True)
-        print("Finisihed:\n{}\nwith exit code {}".format(bash_cmd, exit_status))
+        proc_log = os.path.join(self.working_dir, 'state.log')
+        ###
+        # this is the main command that will be run.
+        run_cmd = ' \\\n\t'.join(self.cmd + ['2>&1 | tee -a {}; exit ${{PIPESTATUS[0]}}'.format(proc_log)])
+        # This is the command that will execute the above command in the correct bash env
+        exec_command = self.exec_env.compose(run_cmd)
+        print("Running:\n{}".format(exec_command))
+
+        exit_status = subprocess.call(exec_command, shell=True)
+        print("Finisihed:\n{}\nwith exit code {}".format(exec_command, exit_status))
         return exit_status
 
 
@@ -176,6 +207,11 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
          block_size,
          deployment_type,
          no_subtract,
+         bind_dirs,
+         lofar_sksp_simg,
+        lofar_gain_screens_simg,
+        bayes_gain_screens_simg,
+        bayes_gain_screens_conda_env,
          do_choose_calibrators,
          do_subtract,
          do_image_subtract_dirty,
@@ -239,10 +275,35 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     image_screen_working_dir = make_working_dir(root_working_dir, 'image_screen', do_image_screen)
     image_screen_slow_working_dir = make_working_dir(root_working_dir, 'image_screen_slow', do_image_screen_slow)
 
+    print("Constructing run environments")
+    if lofar_sksp_simg is not None:
+        if bind_dirs is None:
+            bind_dirs = './'#redundant placeholder
+        lofar_sksp_env = SingularityEnv(lofar_sksp_simg, bind_dirs=bind_dirs)
+    else:
+        print("Not using SKSP image, so lofar software better be sourced already that can do ddf pipeline work.")
+        lofar_sksp_env = Env()
+
+    if lofar_gain_screens_simg is not None:
+        if bind_dirs is None:
+            bind_dirs = './'#redundant placeholder
+        lofar_gain_screens_env = SingularityEnv(lofar_gain_screens_simg, bind_dirs=bind_dirs)
+    else:
+        print("Not using lofar gain screens image, so lofar software better be sourced already that can image screens.")
+        lofar_gain_screens_env = Env()
+
+    if bayes_gain_screens_simg is not None:
+        if bind_dirs is None:
+            bind_dirs = './'#redundant placeholder
+        bayes_gain_screens_env = SingularityEnv(bayes_gain_screens_simg, bind_dirs=bind_dirs)
+    else:
+        print("Not using bayes gain screen image, so bayes_gain_screens better be installed in a conda env.")
+        bayes_gain_screens_env = CondaEnv(bayes_gain_screens_conda_env)
+
     dsk = {}
 
     if do_choose_calibrators:
-        cmd = CMD(choose_calibrators_working_dir, script_dir, 'choose_calibrators.py')
+        cmd = CMD(choose_calibrators_working_dir, script_dir, 'choose_calibrators.py',exec_env=lofar_sksp_env)
         cmd.add('region_file', region_file)
         cmd.add('ref_image_fits', ref_image_fits)
         cmd.add('working_dir', choose_calibrators_working_dir)
@@ -255,7 +316,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['choose_calibrators'] = (lambda *x: None,)
 
     if do_subtract:
-        cmd = CMD(subtract_working_dir, script_dir, 'sub-sources-outside-region-mod.py')
+        cmd = CMD(subtract_working_dir, script_dir, 'sub-sources-outside-region-mod.py',exec_env=lofar_sksp_env)
         cmd.add('region_file', region_file)
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -267,7 +328,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['subtract'] = (lambda *x: None, 'choose_calibrators')
 
     if do_image_subtract_dirty:
-        cmd = CMD(image_subtract_dirty_working_dir, script_dir, 'image.py')
+        cmd = CMD(image_subtract_dirty_working_dir, script_dir, 'image.py',exec_env=lofar_sksp_env)
         cmd.add('image_type', 'image_subtract_dirty')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -279,7 +340,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_subtract_dirty'] = (lambda *x: None, 'subtract')
 
     if do_solve_dds4:
-        cmd = CMD(solve_dds4_working_dir, script_dir, 'solve_on_subtracted.py')
+        cmd = CMD(solve_dds4_working_dir, script_dir, 'solve_on_subtracted.py',exec_env=lofar_sksp_env)
         cmd.add('region_file', region_file)
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -290,7 +351,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['solve_dds4'] = (lambda *x: None, 'subtract')
 
     if do_smooth_dds4:
-        cmd = CMD(smooth_dds4_working_dir, script_dir, 'smooth_dds4.sh', 'bash')
+        cmd = CMD(smooth_dds4_working_dir, script_dir, 'smooth_dds4.sh', 'bash',exec_env=bayes_gain_screens_env)
         cmd.add('conda_env', 'tf_py')
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
@@ -301,7 +362,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['smooth_dds4'] = (lambda *x: None, 'solve_dds4')
 
     if do_tec_inference:
-        cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference.sh', 'bash')
+        cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference.sh', 'bash',exec_env=bayes_gain_screens_env)
         cmd.add('conda_env', 'tf_py')
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
@@ -314,7 +375,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['tec_inference'] = (lambda *x: None, 'smooth_dds4', 'solve_dds4')
 
     if do_slow_dds4:
-        cmd = CMD(slow_dds4_working_dir, script_dir, 'slow_solve_on_subtracted.py')
+        cmd = CMD(slow_dds4_working_dir, script_dir, 'slow_solve_on_subtracted.py',exec_env=lofar_sksp_env)
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
@@ -324,7 +385,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['slow_solve_dds4'] = (lambda *x: None, 'smooth_dds4')
 
     if do_image_smooth:
-        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py')
+        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
         cmd.add('image_type', 'image_smoothed')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -337,7 +398,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_smooth'] = (lambda *x: None, 'tec_inference')
 
     if do_image_dds4:
-        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py')
+        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py',exec_env=lofar_sksp_env)
         cmd.add('image_type', 'image_dds4')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -350,7 +411,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_dds4'] = (lambda *x: None, 'solve_dds4')
 
     if do_infer_screen:
-        cmd = CMD(infer_screen_working_dir, script_dir, 'infer_screen.sh', 'bash')
+        cmd = CMD(infer_screen_working_dir, script_dir, 'infer_screen.sh', 'bash',exec_env=bayes_gain_screens_env)
         cmd.add('conda_env', 'tf_py')
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
@@ -365,7 +426,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['infer_screen'] = (lambda *x: None, 'tec_inference', 'smooth_dds4')
 
     if do_image_screen:
-        cmd = CMD(image_screen_working_dir, script_dir, 'image.py')
+        cmd = CMD(image_screen_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
         cmd.add('image_type', 'image_screen')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -378,7 +439,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_screen'] = (lambda *x: None, 'infer_screen')
 
     if do_merge_slow:
-        cmd = CMD(merge_slow_working_dir, script_dir, 'merge_slow.sh', 'bash')
+        cmd = CMD(merge_slow_working_dir, script_dir, 'merge_slow.sh', 'bash',exec_env=bayes_gain_screens_env)
         cmd.add('conda_env', 'tf_py')
         cmd.add('script_dir', script_dir)
         cmd.add('obs_num', obs_num)
@@ -389,7 +450,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['merge_slow'] = (lambda *x: None, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
 
     if do_image_screen_slow:
-        cmd = CMD(image_screen_slow_working_dir, script_dir, 'image.py')
+        cmd = CMD(image_screen_slow_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
         cmd.add('image_type', 'image_screen_slow')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -402,7 +463,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk['image_screen_slow'] = (lambda *x: None, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
 
     if do_image_smooth_slow:
-        cmd = CMD(image_smooth_slow_working_dir, script_dir, 'image.py')
+        cmd = CMD(image_smooth_slow_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
         cmd.add('image_type', 'image_smoothed_slow')
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
@@ -467,6 +528,17 @@ def add_args(parser):
                         default=10, type=int, required=False)
     parser.add_argument('--deployment_type', help='Which type of deployment [directional, non_integral, tomographic]',
                         default='directional', type=str, required=False)
+    parser.add_argument('--bind_dirs', help='Which directories to bind to singularity.',
+                        default=None, type=str, required=False)
+    parser.add_argument('--lofar_sksp_simg', help='Point to the lofar SKSP singularity image',
+                        default=None, type=str, required=False)
+    parser.add_argument('--lofar_gain_screens_simg', help='Point to the lofar gain screens branch singularity image',
+                        default=None, type=str, required=False)
+    parser.add_argument('--bayes_gain_screens_simg', help='Point to the bayes_gain_screens singularity image',
+                        default=None, type=str, required=False)
+    parser.add_argument('--bayes_gain_screens_conda_env', help='The conda env to use if bayes_gain_screens_simg not provided.',
+                        default='tf_py', type=str, required=False)
+
     for s in steps:
         parser.add_argument('--do_{}'.format(s),
                             help='Do {}? (NO=0/YES_DELETE_PRIOR=1/YES_NEW_WORKING_DIRECTORY=2)'.format(s),
@@ -485,20 +557,25 @@ def test_main():
          block_size=50,
          deployment_type='directional',
          no_subtract=False,
+         bind_dirs='/beegfs/lofar',
+         lofar_sksp_simg='/home/albert/store/lofar_sksp_ddf.simg',
+         lofar_gain_screens_simg='/home/albert/store/lofar_sksp_ddf_gainscreens_premerge.simg',
+         bayes_gain_screens_simg=None,
+         bayes_gain_screens_conda_env='tf_py',
          do_choose_calibrators=0,
          do_subtract=0,
          do_image_subtract_dirty=0,
          do_solve_dds4=0,
          do_smooth_dds4=0,
          do_slow_dds4=0,
-         do_tec_inference=0,
+         do_tec_inference=2,
          do_merge_slow=0,
          do_infer_screen=0,
          do_image_dds4=0,
          do_image_smooth=0,
          do_image_smooth_slow=0,
          do_image_screen=0,
-         do_image_screen_slow=2)
+         do_image_screen_slow=0)
 
 
 if __name__ == '__main__':

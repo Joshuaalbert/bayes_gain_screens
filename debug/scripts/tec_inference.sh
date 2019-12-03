@@ -59,5 +59,6 @@ export PYTHONPATH=
 cmd="python $script_dir/tec_inference_improved.py --obs_num=$obs_num --data_dir=$data_dir --working_dir=$working_dir --ref_dir=$ref_dir --ncpu=$ncpu"
 echo $cmd
 eval $cmd
-EC=$?
-exit $?
+#echo Exit status is $?
+ES=$?
+exit $ES
