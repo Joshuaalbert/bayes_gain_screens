@@ -320,7 +320,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('region_file', region_file)
         cmd.add('ref_image_fits', ref_image_fits)
         cmd.add('working_dir', choose_calibrators_working_dir)
-        cmd.add('flux_limit', 0.20)
+        cmd.add('flux_limit', 0.30)
         cmd.add('min_spacing_arcmin', 6.)
         # cmd.add('fill_in_distance', 1.5*60.)
         # cmd.add('fill_in_flux_limit', 0.05)
@@ -517,19 +517,20 @@ def add_args(parser):
 
     # optional = parser._action_groups.pop()  # Edited this line
     required = parser.add_argument_group('Required arguments')
+    env_args = parser.add_argument_group('Execution environment arguments')
     optional = parser.add_argument_group('Optional arguments')
     # parser._action_groups.append(optional)  # added this line
-    steps = parser.add_argument_group('Enable/Disable steps')
+    step_args = parser.add_argument_group('Enable/Disable steps')
 
 
 
-    optional.add_argument('--no_subtract', help='Whether to skip subtract, useful for imaging only.',
+    optional.add_argument('--no_subtract', help='Whether to copy archive but skip subtract, useful for imaging only supposing all other required things are in place.',
                         default=False, type="bool", required=False)
     optional.add_argument('--region_file', help='ds9 region file defining calbrators. If not provided, they will be automatically determined.', required=False, type='str_or_none',
                         default=None)
     optional.add_argument('--ref_dir', help='Which direction to reference from. If not provided, it is the first (usually brightest) direction.', required=False, type=int, default=0)
-    required.add_argument('--ref_image_fits',
-                        help='Reference image used to extract screen directions and auto select calibrators if region_file is None',
+    optional.add_argument('--ref_image_fits',
+                        help='Reference image used to extract screen directions and auto select calibrators if region_file is None. If not provided, it will use the one in the archive directory.',
                         required=False, default=None, type='str_or_none')
     workers = os.cpu_count()
     if 'sched_getaffinity' in dir(os):
@@ -548,19 +549,19 @@ def add_args(parser):
                         default=10, type=int, required=False)
     optional.add_argument('--deployment_type', help='Which type of deployment [directional, non_integral, tomographic]. Currently only directional should be used.',
                         default='directional', type=str, required=False)
-    optional.add_argument('--bind_dirs', help='Which directories to bind to singularity.',
+    env_args.add_argument('--bind_dirs', help='Which directories to bind to singularity.',
                         default=None, type=str, required=False)
-    optional.add_argument('--lofar_sksp_simg', help='The lofar SKSP singularity image. If None or doesnt exist then uses local env.',
+    env_args.add_argument('--lofar_sksp_simg', help='The lofar SKSP singularity image. If None or doesnt exist then uses local env.',
                         default=None, type=str, required=False)
-    optional.add_argument('--lofar_gain_screens_simg', help='Point to the lofar gain screens branch singularity imageIf None or doesnt exist then uses local env.',
+    env_args.add_argument('--lofar_gain_screens_simg', help='Point to the lofar gain screens branch singularity image. If None or doesnt exist then uses local env.',
                         default=None, type=str, required=False)
-    optional.add_argument('--bayes_gain_screens_simg', help='Point to the bayes_gain_screens singularity image. If None or doesnt exist then uses conda env.',
+    env_args.add_argument('--bayes_gain_screens_simg', help='Point to the bayes_gain_screens singularity image. If None or doesnt exist then uses conda env.',
                         default=None, type=str, required=False)
-    optional.add_argument('--bayes_gain_screens_conda_env', help='The conda env to use if bayes_gain_screens_simg not provided.',
+    env_args.add_argument('--bayes_gain_screens_conda_env', help='The conda env to use if bayes_gain_screens_simg not provided.',
                         default='tf_py', type=str, required=False)
 
     for s in steps:
-        steps.add_argument('--do_{}'.format(s),
+        step_args.add_argument('--do_{}'.format(s),
                             help='Do {}? (NO=0/YES_CLOBBER=1/YES_NO_CLOBBER=2)'.format(s),
                             default=0, type=int, required=False)
 
