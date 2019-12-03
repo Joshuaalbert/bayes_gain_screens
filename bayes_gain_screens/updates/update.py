@@ -34,10 +34,21 @@ class Update(object):
 
         raise NotImplementedError()
 
+    def _forward(self, samples):
+        """
+        Computes the data-domain samples by pushing forward.
+        :param samples: tf.Tensor
+            [S, B, K]
+        :return: tf.Tensor
+            [S, B, N]
+        """
+        raise NotImplementedError()
+
     def get_params(self, y, post_mu_b, post_Gamma_b):
         """
         If p(X | y, Sigma) = N[post_mu_b, post_Gamma_b]
         then this returns an estimate of the observational covariance, Sigma, and the Levy step covariance.
+        Assumes the transfer function is identity (zero-drift).
         :param y: tf.Tensor
             [B, N]
         :param post_mu_b: tf.Tensor
@@ -50,14 +61,16 @@ class Update(object):
         # S, B, K
         samples = tfp.distributions.MultivariateNormalFullCovariance(loc=post_mu_b,
                                                                      covariance_matrix=post_Gamma_b).sample(self.S)
-        Omega_new = tfp.stats.covariance(samples[:, 1:, :] - samples[:, :-1, :], sample_axis=[0, 1], event_axis=2)
+        # Omega_new = tfp.stats.covariance(samples[:, 1:, :] - samples[:, :-1, :], sample_axis=[0, 1], event_axis=2)
+        d_samples = samples[:, 1:, :] - samples[:, :-1, :]
+        # [K, K]
+        Omega_new = tf.reduce_mean(d_samples[:, :, :, None]*d_samples[:, :, None, :], axis=[0,1])
+        # S, B, N
+        y_pred = self._forward(samples)
 
-        tec_conv = tf.constant(-8.4479745e6 / self.freqs, float_type)
-
-        # S, B, Nf
-        phase = samples[:, :, 0:1] * tec_conv
-        Sigma_new = tfp.stats.covariance(y - tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1),
-                                     sample_axis=[0, 1], event_axis=2)
+        residuals = y - y_pred
+        Sigma_new = tf.reduce_mean(residuals[:, :, :, None]*residuals[:, :, None, :], axis=[0,1])
+        # Sigma_new = tfp.stats.covariance(y - y_pred, sample_axis=[0, 1], event_axis=2)
 
         if self.force_diag_Sigma:
             Sigma_new = tf.linalg.diag(tf.linalg.diag_part(Sigma_new))
