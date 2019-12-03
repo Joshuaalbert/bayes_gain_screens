@@ -18,6 +18,15 @@ This script is still being debugged/tested.
 Get's TEC from gains.
 """
 
+def stack_complex(y):
+    """
+    Stacks complex real and imaginary parts
+    :param y: [..., N]
+    :return: [...,2N]
+    real on top of imag
+    """
+    return np.stack([y.real, y.imag], axis=-1)
+
 def sequential_solve(Yreal, Yimag, freqs, working_dir):
     """
     Run on blocks of time.
@@ -48,7 +57,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         logging.info("On {}: Warming up".format(d))
         # B, Nf
         Y_warmup = np.transpose(Yreal[d, :, : 50] + 1j * Yimag[d, :, :50])
-        res = NLDSSmoother(2, Nf, N, update=update, momentum=0.9).run(Y_warmup, Sigma_0, Omega_0, mu_0,
+        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.9).run(stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0,
                                                                       Gamma_0, 10)
         Sigma_0 = res['Sigma']
         Omega_0 = res['Omega']
@@ -56,7 +65,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         Gamma_0 = res['Gamma_0']
         logging.info("On {}: Full chain".format(d))
         Y = np.transpose(Yreal[d, :, :] + 1j * Yimag[d, :, :])
-        res = NLDSSmoother(2, Nf, N, update=update, momentum=0.1).run(Y, Sigma_0, Omega_0,
+        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.1).run(stack_complex(Y), Sigma_0, Omega_0,
                                                                       mu_0,
                                                                       Gamma_0, 2)
         tec_mean_array[d, :] = res['post_mu'][:, 0]
@@ -82,13 +91,13 @@ def smoothamps(amps):
 def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     os.chdir(working_dir)
     logging.info("Performing TEC and constant variational inference.")
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
+    merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
     select = dict(pol=slice(0, 1, 1))
     datapack = DataPack(merged_h5parm, readonly=False)
     logging.info("Creating directionally_referenced/tec000+const000")
     make_soltab(datapack, from_solset='sol000', to_solset='directionally_referenced', from_soltab='phase000',
-                to_soltab=['tec000', 'const000'])
-    logging.info("Getting raw phase")
+                to_soltab=['tec000'])
+    logging.info("Getting raw phases")
     datapack.current_solset = 'sol000'
     datapack.select(**select)
     axes = datapack.axes_phase
@@ -100,6 +109,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     pol_labels, pols = datapack.get_pols(axes['pol'])
     Npol, Nd, Na, Nf, Nt = len(pols), len(directions), len(antennas), len(freqs), len(times)
     phase_raw, axes = datapack.phase
+    amp_raw, axes = datapack.amplitude
     logging.info("Getting smooth phase and amplitude data")
     datapack.current_solset = 'smoothed000'
     datapack.select(**select)
@@ -113,12 +123,13 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     for u, v in g.edges:
         g[u][v]['weight'] = great_circle_sep(*radec[u, :], *radec[v, :])
     h = nx.minimum_spanning_tree(g)
-    walk_order = [(0,0)]+list(nx.bfs_edges(h, 0))
+    # walk_order = [(0,0)]+list(nx.bfs_edges(h, 0))
+    walk_order = list(nx.bfs_edges(h, ref_dir))
 
-    for (ref_dir, solve_dir) in walk_order:
+    for (next_ref_dir, solve_dir) in walk_order:
         logging.info("Solving dir: {}".format(solve_dir))
-        phase_di = phase_smooth[:, ref_dir:ref_dir+1, ...]
-        logging.info("Referencing dir: {}".format(ref_dir))
+        phase_di = phase_raw[:, next_ref_dir:next_ref_dir+1, ...]
+        logging.info("Referencing dir: {}".format(next_ref_dir))
         phase_dd = phase_raw[:, solve_dir:solve_dir+1, ...] - phase_di
 
         # Npol, 1, Na, Nf, Nt
@@ -149,24 +160,24 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
             tec_uncert[start:stop, :] = results[c][1]
         tec_mean = tec_mean.reshape((Npol, 1, Na, Nt))
         tec_uncert = tec_uncert.reshape((Npol, 1, Na, Nt))
-        logging.info("Re-referencing to 0")
-        phase_smooth[:, solve_dir:solve_dir+1, ...] = tec_mean[..., None, :] * tec_conv[:, None] + phase_di
-        #Reference to ref_dir 0
-        tec_mean_array[:, solve_dir:solve_dir+1,...] = tec_mean + tec_mean_array[:,ref_dir:ref_dir+1,...]
-        tec_uncert_array[:, solve_dir:solve_dir+1, ...] = tec_uncert
+        logging.info("Re-referencing to {}".format(ref_dir))
+        # phase_smooth[:, solve_dir:solve_dir+1, ...] = tec_mean[..., None, :] * tec_conv[:, None] + phase_di
+        #Reference to ref_dir 0: tau_ij + tau_jk = tau_ik
+        tec_mean_array[:, solve_dir:solve_dir+1,...] = tec_mean + tec_mean_array[:,next_ref_dir:next_ref_dir+1,...]
+        tec_uncert_array[:, solve_dir:solve_dir+1, ...] = np.sqrt(tec_uncert**2 + tec_uncert_array[:, next_ref_dir:next_ref_dir+1, ...]**2)
     
     
 
-    phase_smooth_uncert = np.abs(tec_conv[:, None] * tec_uncert_array[..., None, :])
+    # phase_smooth_uncert = np.abs(tec_conv[:, None] * tec_uncert_array[..., None, :])
+    phase_model = tec_mean_array[..., None, :]*tec_conv[:, None] + phase_smooth[:, ref_dir:ref_dir+1, ...]
+    res_real = amp_smooth * (np.cos(phase_model) - np.cos(phase_raw))
+    res_imag = amp_smooth * (np.sin(phase_model) - np.sin(phase_raw))
 
-    res_real = amp_smooth * (np.cos(phase_smooth) - np.cos(phase_raw))
-    res_imag = amp_smooth * (np.sin(phase_smooth) - np.sin(phase_raw))
-
-    logging.info("Updating smoothed phase")
-    datapack.current_solset = 'smoothed000'
-    datapack.select(**select)
-    datapack.phase = phase_smooth
-    datapack.weights_phase = phase_smooth_uncert
+    # logging.info("Updating smoothed phase")
+    # datapack.current_solset = 'smoothed000'
+    # datapack.select(**select)
+    # datapack.phase = phase_smooth
+    # datapack.weights_phase = phase_smooth_uncert
     logging.info("Storing TEC and const")
     datapack.current_solset = 'directionally_referenced'
     # Npol, Nd, Na, Nf, Nt
@@ -181,7 +192,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
-    plot_results(Na, Nd, antenna_labels, working_dir, phase_smooth, phase_raw,
+    plot_results(Na, Nd, antenna_labels, working_dir, phase_model, phase_raw,
                  res_imag, res_real, tec_mean_array)
 
 def wrap(p):

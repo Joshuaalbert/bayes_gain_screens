@@ -1,8 +1,6 @@
 import os
 import glob
-import pyregion
 import numpy as np
-import sys
 import tables
 import argparse
 
