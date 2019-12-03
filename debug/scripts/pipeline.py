@@ -33,10 +33,11 @@ class CMD(object):
 
     def __call__(self):
         proc_log = os.path.join(self.working_dir, 'state.log')
-        cmd = ' \\\n\t'.join(self.cmd + ['2>&1 | tee -a {}'.format(proc_log)])
-        print("Running:\n{}".format(cmd))
-        exit_status = subprocess.call(cmd, shell=True)
-        print("Finisihed:\n{}\nwith exit code {}".format(cmd, exit_status))
+        bash_cmd = ' \\\n\t'.join(self.cmd + ['2>&1 | tee -a {}; exit ${{PIPESTATUS[0]}}'.format(proc_log)])
+        print("Running:\n{}".format(bash_cmd))
+
+        exit_status = subprocess.call("bash -c '{}'".format(bash_cmd), shell=True)
+        print("Finisihed:\n{}\nwith exit code {}".format(bash_cmd, exit_status))
         return exit_status
 
 
@@ -318,9 +319,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', slow_dds4_working_dir)
-        dsk['slow_solve_dds4'] = (cmd, 'tec_inference')
+        dsk['slow_solve_dds4'] = (cmd, 'smooth_dds4')
     else:
-        dsk['slow_solve_dds4'] = (lambda *x: None, 'tec_inference')
+        dsk['slow_solve_dds4'] = (lambda *x: None, 'smooth_dds4')
 
     if do_image_smooth:
         cmd = CMD(image_smooth_working_dir, script_dir, 'image.py')
@@ -489,15 +490,15 @@ def test_main():
          do_image_subtract_dirty=0,
          do_solve_dds4=0,
          do_smooth_dds4=0,
-         do_slow_dds4=2,
+         do_slow_dds4=0,
          do_tec_inference=0,
-         do_merge_slow=2,
+         do_merge_slow=0,
          do_infer_screen=0,
          do_image_dds4=0,
          do_image_smooth=0,
          do_image_smooth_slow=0,
          do_image_screen=0,
-         do_image_screen_slow=0)
+         do_image_screen_slow=2)
 
 
 if __name__ == '__main__':
