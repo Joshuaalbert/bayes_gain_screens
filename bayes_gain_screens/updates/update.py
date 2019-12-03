@@ -105,7 +105,7 @@ class UpdatePy(Update):
 
         def _call(t, prior_mu, prior_Gamma, y, Sigma):
             prior_mu, prior_Gamma, y, Sigma = prior_mu.numpy(), prior_Gamma.numpy(), y.numpy(), Sigma.numpy()
-            post_mu, post_Gamma = self._update_function(prior_mu, prior_Gamma, y, Sigma)
+            post_mu, post_Gamma = self._update_function(t, prior_mu, prior_Gamma, y, Sigma)
 
             return [post_mu.astype(np.float64), post_Gamma.astype(np.float64)]
 
