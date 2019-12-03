@@ -32,9 +32,9 @@ sudo singularity build bayes_gain_screens.simg bayes_gain_screens.singularity
 Or, a conda environment will the bayes_gain_screens (call it `tf_py` because it has tensorflow):
 
 ```
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh
-bash ~/miniconda.sh -b -p /opt/miniconda3
-. /opt/miniconda3/etc/profile.d/conda.sh
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh
+bash $HOME/miniconda.sh -b -p /opt/miniconda3
+. $HOME/miniconda3/etc/profile.d/conda.sh
 hash -r 
 conda config --set auto_activate_base false --set always_yes yes
 conda update -q conda
