@@ -71,5 +71,5 @@ cmd="python $script_dir/infer_screen.py --obs_num=$obs_num --data_dir=$data_dir 
 --ref_image_fits=$ref_image_fits --max_N=$max_N"
 echo $cmd
 eval $cmd
-EC=$?
-exit $?
+ES=$?
+exit $ES

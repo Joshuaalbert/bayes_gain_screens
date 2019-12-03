@@ -38,13 +38,14 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
     :return:
         [D, Nt], [D, Nt]
     """
-    loss_dir = os.path.join(working_dir, 'losses')
-    os.makedirs(loss_dir, exist_ok=True)
+    debug_dir = os.path.join(working_dir, 'phase_residuals')
+    os.makedirs(debug_dir, exist_ok=True)
 
     D, Nf, N = Yreal.shape
 
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
+    obs_cov_array = np.zeros((D, Nf, Nf))
     update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10.)
     for d in range(D):
         t0 = default_timer()
@@ -70,11 +71,24 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
                                                                       Gamma_0, 2)
         tec_mean_array[d, :] = res['post_mu'][:, 0]
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
+        obs_cov_array[d, :, :] = res['Sigma']
+        logging.info("DDTEC Omega: {:.2f}".format(res['Omega']))
         logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
+        phase_model = tec_mean_array[d, :, None] * -8.448e6/freqs
+        phase_diff = wrap(wrap(phase_model) - np.arctan2(Yimag, Yreal))
+        plt.imshow(phase_diff.T,origin='lower', vmin=-0.2, vmax= 0.2,
+                   cmap='coolwarm', aspect='auto',
+                   extent=(0, N, freqs.min(), freqs.max()))
+        plt.xlabel('time')
+        plt.ylabel('freq [Hz]')
+        plt.savefig(os.path.join(debug_dir, 'phase_diff_{:04d}.png'.format(d)))
+        plt.close('all')
 
 
-    return tec_mean_array, tec_uncert_array
+    return tec_mean_array, tec_uncert_array, obs_cov_array
 
+def wrap(p):
+    return np.arctan2(np.sin(p), np.cos(p))
 
 def smoothamps(amps):
     freqkernel = 3
@@ -119,6 +133,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     tec_conv = -8.4479745e6 / freqs
     tec_mean_array = np.zeros((Npol, Nd, Na, Nt))
     tec_uncert_array = np.zeros((Npol, Nd, Na, Nt))
+    obs_cov_array = np.zeros((Npol, Nd, Na, Nf, Nf))
     g = nx.complete_graph(radec.shape[0])
     for u, v in g.edges:
         g[u][v]['weight'] = great_circle_sep(*radec[u, :], *radec[v, :])
@@ -146,25 +161,30 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
         for c,i in enumerate(range(0, D, D // num_processes)):
             start = i
             stop = min(i + (D // num_processes), D)
-            dsk[str(c)] = (sequential_solve, Yreal[start:stop, :, :], Yimag[start:stop, :, :], freqs, working_dir)
+            dsk[str(c)] = (sequential_solve, Yreal[start:stop, :, :], Yimag[start:stop, :, :], freqs, os.path.join(working_dir,'proc_{:04d}'.format(c)))
             keys.append(str(c))
         logging.info("Running dask on {} processes".format(num_processes))
         results = get(dsk, keys, num_workers=num_processes)
         logging.info("Finished dask.")
         tec_mean = np.zeros((D, Nt))
         tec_uncert = np.zeros((D, Nt))
+        obs_cov = np.zeros((D, Nf, Nf))
+
         for c, i in enumerate(range(0, D, D // num_processes)):
             start = i
             stop = min(i + (D // num_processes), D)
             tec_mean[start:stop, :] = results[c][0]
             tec_uncert[start:stop, :] = results[c][1]
+            obs_cov[start:stop, :, :] = results[c][2]
         tec_mean = tec_mean.reshape((Npol, 1, Na, Nt))
         tec_uncert = tec_uncert.reshape((Npol, 1, Na, Nt))
+        obs_cov = obs_cov.reshape((Npol, 1, Na, Nf, Nf))
         logging.info("Re-referencing to {}".format(ref_dir))
         # phase_smooth[:, solve_dir:solve_dir+1, ...] = tec_mean[..., None, :] * tec_conv[:, None] + phase_di
         #Reference to ref_dir 0: tau_ij + tau_jk = tau_ik
         tec_mean_array[:, solve_dir:solve_dir+1,...] = tec_mean + tec_mean_array[:,next_ref_dir:next_ref_dir+1,...]
         tec_uncert_array[:, solve_dir:solve_dir+1, ...] = np.sqrt(tec_uncert**2 + tec_uncert_array[:, next_ref_dir:next_ref_dir+1, ...]**2)
+        obs_cov_array[:, solve_dir:solve_dir+1, ...] = obs_cov
     
     
 
@@ -184,6 +204,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     datapack.select(**select)
     datapack.tec = tec_mean_array
     datapack.weights_tec = tec_uncert_array
+    logging.info("Storing obs. cov.")
+    np.save(os.path.join(working_dir, "observational_covariance.npy"), obs_cov_array)
     logging.info("Done ddtec VI.")
 
     animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
