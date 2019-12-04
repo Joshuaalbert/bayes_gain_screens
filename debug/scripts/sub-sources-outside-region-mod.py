@@ -1,14 +1,19 @@
 #!/usr/bin/env python
 import casacore.tables as pt
+import subprocess
 import os, sys
 import numpy as np
 import argparse
 import pyregion
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.io import ascii
 import glob
 
+def cmd_call(cmd):
+    print("{}".format(cmd))
+    exit_status = subprocess.call(cmd, shell=True)
+    if exit_status:
+        raise ValueError("Failed to  run: {}".format(cmd))
 
 def getimsize(image):
     imsizeddf = None
@@ -171,9 +176,10 @@ def copy_archives(archive_dir, working_dir, obs_num):
     fullmask = os.path.join(working_dir, os.path.basename(archive_fullmask))
     indico = os.path.join(working_dir, os.path.basename(archive_indico))
     clustercat = os.path.join(working_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
-    os.system('rsync -auvP {} {}'.format(archive_fullmask, fullmask))
-    os.system('rsync -auvP {} {}'.format(archive_indico, indico))
-    os.system('rsync -auvP {} {}'.format(archive_clustercat, clustercat))
+    
+    cmd_call('rsync -auvP {} {}'.format(archive_fullmask, fullmask))
+    cmd_call('rsync -auvP {} {}'.format(archive_indico, indico))
+    cmd_call('rsync -auvP {} {}'.format(archive_clustercat, clustercat))
     mslist = sorted(glob.glob(os.path.join(archive_dir, 'L{obs_num}*_SB*.ms.archive'.format(obs_num=obs_num))))
     print('Found archives files:\n{}'.format(mslist))
     outms = []
@@ -181,7 +187,7 @@ def copy_archives(archive_dir, working_dir, obs_num):
         outname = os.path.join(working_dir, os.path.basename(ms.rstrip('.archive')))
         cmd = 'rsync -auvP --delete {}/ {}/'.format(ms, outname)
         print(cmd)
-        os.system(cmd)
+        cmd_call(cmd)
         outms.append(outname)
     mslist_file = os.path.join(working_dir, 'mslist.txt')
     with open(mslist_file, 'w') as f:
@@ -235,13 +241,13 @@ def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines
     print("Masking region with {}.".format(region_file))
     mask_region(fullmask, region_file, outmask)
     print("Masking dico model.")
-    os.system("MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(outmask, indico, outdico))
+    cmd_call("MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(outmask, indico, outdico))
     args = dict(chunkhours=chunkhours, mslist_file=mslist_file, data_colname=data_colname, ncpu=ncpu,
                 clustercat=clustercat,
                 robust=robust, imagenpix=imagenpix, imagecell=imagecell, outmask=outmask, outdico=outdico, uvsel=uvsel,
                 solsdir=solsdir)
     print("Predicting...")
-    os.system("DDF.py --Output-Name=image_full_ampphase_di_m.NS_SUB --Data-ChunkHours={chunkhours} --Data-MS={mslist_file} \
+    cmd_call("DDF.py --Output-Name=image_full_ampphase_di_m.NS_SUB --Data-ChunkHours={chunkhours} --Data-MS={mslist_file} \
     --Deconv-PeakFactor=0.001000 --Data-ColName={data_colname} --Parallel-NCPU={ncpu} --Facets-CatNodes={clustercat} \
     --Beam-CenterNorm=1 --Deconv-Mode=SSD --Beam-Model=LOFAR --Beam-LOFARBeamMode=A --Weight-Robust={robust} \
     --Image-NPix={imagenpix} --CF-wmax=50000 --CF-Nw=100 --Output-Also=onNeds --Image-Cell={imagecell} \
