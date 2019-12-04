@@ -25,6 +25,7 @@ region_file=None
 bind_dirs=/beegfs/lofar
 ncpu=$(grep -c ^processor /proc/cpuinfo)
 conda_env=tf_py
+force_conda=
 
 ###
 # calibration steps
@@ -70,7 +71,8 @@ L=(obs_num \
     do_infer_screen \
     do_merge_slow \
     simg_dir \
-    conda_env)
+    conda_env \
+    force_conda)
 
 arg_parse_str="help"
 for arg in ${L[@]}; do
@@ -109,6 +111,12 @@ then
     exit;
 fi
 
+if [ -z "$force_conda" ]; then
+bayes_gain_screens_simg="$simg_dir"/bayes_gain_screens.simg
+else
+bayes_gain_screens_simg=None
+fi
+
 #source ~/.bashrc
 #ddf_singularity
 
@@ -141,6 +149,6 @@ python "$script_dir"/pipeline.py \
         --bind_dirs="$bind_dirs" \
         --lofar_sksp_simg="$simg_dir"/lofar_sksp_ddf.simg \
         --lofar_gain_screens_simg="$simg_dir"/lofar_sksp_ddf_gainscreens_premerge.simg \
-        --bayes_gain_screens_simg="$simg_dir"/bayes_gain_screens.simg \
+        --bayes_gain_screens_simg="$bayes_gain_screens_simg" \
         --bayes_gain_screens_conda_env="$conda_env"
 
