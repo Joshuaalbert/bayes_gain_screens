@@ -532,6 +532,9 @@ def add_args(parser):
     optional.add_argument('--no_subtract',
                           help='Whether to copy archive but skip subtract, useful for imaging only supposing all other required things are in place.',
                           default=False, type="bool", required=False)
+    optional.add_argument('--no_download',
+                          help='Whether to move instead of copy the archive dir.',
+                          default=False, type="bool", required=False)
     optional.add_argument('--region_file',
                           help='ds9 region file defining calbrators. If not provided, they will be automatically determined.',
                           required=False, type='str_or_none',
@@ -542,9 +545,14 @@ def add_args(parser):
     optional.add_argument('--ref_image_fits',
                           help='Reference image used to extract screen directions and auto select calibrators if region_file is None. If not provided, it will use the one in the archive directory.',
                           required=False, default=None, type='str_or_none')
-    workers = os.cpu_count()
-    if 'sched_getaffinity' in dir(os):
-        workers = len(os.sched_getaffinity(0))
+
+    try:
+        workers = os.cpu_count()
+        if 'sched_getaffinity' in dir(os):
+            workers = len(os.sched_getaffinity(0))
+    except:
+        import multiprocessing
+        workers = multiprocessing.cpu_count()
 
     optional.add_argument('--ncpu',
                           help='Number of processes to use at most. If not then set to number of available physical cores.',
@@ -564,16 +572,16 @@ def add_args(parser):
                           help='Which type of deployment [directional, non_integral, tomographic]. Currently only directional should be used.',
                           default='directional', type=str, required=False)
     env_args.add_argument('--bind_dirs', help='Which directories to bind to singularity.',
-                          default=None, type=str, required=False)
+                          default=None, type='str_or_none', required=False)
     env_args.add_argument('--lofar_sksp_simg',
                           help='The lofar SKSP singularity image. If None or doesnt exist then uses local env.',
-                          default=None, type=str, required=False)
+                          default=None, type='str_or_none', required=False)
     env_args.add_argument('--lofar_gain_screens_simg',
                           help='Point to the lofar gain screens branch singularity image. If None or doesnt exist then uses local env.',
-                          default=None, type=str, required=False)
+                          default=None, type='str_or_none', required=False)
     env_args.add_argument('--bayes_gain_screens_simg',
                           help='Point to the bayes_gain_screens singularity image. If None or doesnt exist then uses conda env.',
-                          default=None, type=str, required=False)
+                          default=None, type='str_or_none', required=False)
     env_args.add_argument('--bayes_gain_screens_conda_env',
                           help='The conda env to use if bayes_gain_screens_simg not provided.',
                           default='tf_py', type=str, required=False)
