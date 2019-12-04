@@ -9,6 +9,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 import glob
 
+
 def cmd_call(cmd):
     print("{}".format(cmd))
     exit_status = subprocess.call(cmd, shell=True)
@@ -32,40 +33,6 @@ def getimsize(image):
     hdul.close()
     return imsizeddf
 
-
-def get_solutions_timerange(sols):
-    t = np.load(sols)['BeamTimes']
-    return np.min(t), np.max(t)
-
-
-def fixsymlinks(archive_dir, working_dir, obs_num):
-    # Code from Tim for fixing symbolic links for DDS3_
-    # dds3smoothed = glob.glob('SOLSDIR/*/*killMS.DDS3_full_smoothed*npz')
-    print("Fixing symbolic links")
-    dds3 = glob.glob(os.path.join(archive_dir, 'SOLSDIR/L{obs_num}*.ms/killMS.DDS3_full.sols.npz'.format(obs_num=obs_num)))
-    for f in dds3:
-        ms = os.path.basename(os.path.dirname(f))
-        to_folder = os.path.join(working_dir, 'SOLSDIR', ms)
-        try:
-            os.makedirs(to_folder)
-        except:
-            pass
-        for g in glob.glob(os.path.join(os.path.dirname(f), '*')):
-            src = os.path.abspath(g)
-            dst = os.path.join(to_folder, os.path.basename(g))
-            if os.path.islink(dst):
-                os.unlink(dst)
-            print("Linking {} -> {}".format(src,dst))
-            os.symlink(src,dst)
-        start_time, _ = get_solutions_timerange(f)
-        start_time = os.path.basename(
-            glob.glob(os.path.join(archive_dir, 'DDS3_full_{}*_smoothed.npz'.format(int(start_time))))[0]).split('_')[2]
-        src = os.path.join(archive_dir, 'DDS3_full_{}_smoothed.npz'.format(start_time))
-        dst = os.path.join(to_folder, 'killMS.DDS3_full_smoothed.sols.npz')
-        if os.path.islink(dst):
-            os.unlink(dst)
-        print("Linking {} -> {}".format(src, dst))
-        os.symlink(src, dst)
 
 def columnchecker(mslist, colname):
     for ms in mslist:
@@ -168,26 +135,19 @@ def add_args(parser):
                         default=None, type=str, required=True)
 
 
-def copy_archives(archive_dir, working_dir, obs_num):
+def get_filenames(archive_dir, working_dir, obs_num):
     print("Copying archives.")
     archive_fullmask = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
     archive_indico = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.DicoModel')
     archive_clustercat = os.path.join(archive_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
     fullmask = os.path.join(working_dir, os.path.basename(archive_fullmask))
     indico = os.path.join(working_dir, os.path.basename(archive_indico))
-    clustercat = os.path.join(working_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
-    
-    cmd_call('rsync -auvP {} {}'.format(archive_fullmask, fullmask))
-    cmd_call('rsync -auvP {} {}'.format(archive_indico, indico))
-    cmd_call('rsync -auvP {} {}'.format(archive_clustercat, clustercat))
+    clustercat = os.path.join(working_dir, os.path.basename(archive_clustercat))
     mslist = sorted(glob.glob(os.path.join(archive_dir, 'L{obs_num}*_SB*.ms.archive'.format(obs_num=obs_num))))
     print('Found archives files:\n{}'.format(mslist))
     outms = []
     for ms in mslist:
         outname = os.path.join(working_dir, os.path.basename(ms.rstrip('.archive')))
-        cmd = 'rsync -auvP --delete {}/ {}/'.format(ms, outname)
-        print(cmd)
-        cmd_call(cmd)
         outms.append(outname)
     mslist_file = os.path.join(working_dir, 'mslist.txt')
     with open(mslist_file, 'w') as f:
@@ -210,7 +170,7 @@ def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines
         pass
     os.chdir(working_dir)
     solsdir = os.path.join(working_dir, 'SOLSDIR')
-    mslist_file, mslist, fullmask, indico, clustercat = copy_archives(archive_dir, working_dir, obs_num)
+    mslist_file, mslist, fullmask, indico, clustercat = get_filenames(archive_dir, working_dir, obs_num)
     outdico = os.path.join(working_dir, 'image_full_ampphase_di_m_SUB.NS.DicoModel')
     outmask = os.path.join(working_dir, 'cutoutmask.fits')  # just a name, can be anything
     if not os.path.isfile(fullmask):
@@ -219,7 +179,6 @@ def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines
         raise IOError("Missing dico model {}".format(indico))
     if not os.path.isfile(clustercat):
         raise IOError("Missing clustercat {}".format(clustercat))
-    fixsymlinks(archive_dir, working_dir, obs_num)
     if keeplongbaselines:
         uvsel = "[0.100000,5000.000000]"
     else:

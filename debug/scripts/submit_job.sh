@@ -30,6 +30,7 @@ force_conda=
 ###
 # calibration steps
 
+do_download_archive=2
 do_choose_calibrators=2
 do_subtract=2
 do_solve_dds4=2
@@ -62,6 +63,7 @@ L=(obs_num \
     do_image_smooth_slow \
     do_image_screen_slow \
     do_image_screen \
+    do_download_archive \
     do_choose_calibrators \
     do_subtract \
     do_solve_dds4 \

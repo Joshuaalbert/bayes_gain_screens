@@ -219,6 +219,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
          lofar_gain_screens_simg,
          bayes_gain_screens_simg,
          bayes_gain_screens_conda_env,
+         do_download_archive,
          do_choose_calibrators,
          do_subtract,
          do_image_subtract_dirty,
@@ -267,6 +268,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     print("Changing to {}".format(root_working_dir))
     os.chdir(root_working_dir)
 
+    download_archive_working_dir = make_working_dir(root_working_dir, 'download_archive', do_download_archive)
     choose_calibrators_working_dir = make_working_dir(root_working_dir, 'choose_calibrators', do_choose_calibrators)
     subtract_working_dir = make_working_dir(root_working_dir, 'subtract', do_subtract)
     image_subtract_dirty_working_dir = make_working_dir(root_working_dir, 'image_subtract', do_image_subtract_dirty)
@@ -326,6 +328,15 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
     dsk = {}
 
+    if do_download_archive:
+        cmd = CMD(download_archive_working_dir, script_dir, 'download_archive.py', exec_env=lofar_sksp_env)
+        cmd.add('obs_num', obs_num)
+        cmd.add('archive_dir', archive_dir)
+        cmd.add('working_dir', subtract_working_dir)
+        dsk['download_archive'] = (cmd,)
+    else:
+        dsk['download_archive'] = (lambda *x: None,)
+
     if do_choose_calibrators:
         cmd = CMD(choose_calibrators_working_dir, script_dir, 'choose_calibrators.py', exec_env=lofar_sksp_env)
         cmd.add('region_file', region_file)
@@ -333,9 +344,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('working_dir', choose_calibrators_working_dir)
         cmd.add('flux_limit', 0.30)
         cmd.add('min_spacing_arcmin', 6.)
-        dsk['choose_calibrators'] = (cmd,)
+        dsk['choose_calibrators'] = (cmd,'download_archive')
     else:
-        dsk['choose_calibrators'] = (lambda *x: None,)
+        dsk['choose_calibrators'] = (lambda *x: None,'download_archive')
 
     if do_subtract:
         cmd = CMD(subtract_working_dir, script_dir, 'sub-sources-outside-region-mod.py', exec_env=lofar_sksp_env)
@@ -345,9 +356,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         cmd.add('archive_dir', archive_dir)
         cmd.add('working_dir', subtract_working_dir)
         cmd.add('only_setup', no_subtract)
-        dsk['subtract'] = (cmd, 'choose_calibrators')
+        dsk['subtract'] = (cmd, 'choose_calibrators','download_archive')
     else:
-        dsk['subtract'] = (lambda *x: None, 'choose_calibrators')
+        dsk['subtract'] = (lambda *x: None, 'choose_calibrators','download_archive')
 
     if do_solve_dds4:
         cmd = CMD(solve_dds4_working_dir, script_dir, 'solve_on_subtracted.py', exec_env=lofar_sksp_env)
@@ -498,6 +509,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
 def add_args(parser):
     steps = [
+        "download_archive",
         "choose_calibrators",
         "subtract",
         "image_subtract_dirty",
@@ -610,6 +622,7 @@ def test_main():
          bayes_gain_screens_simg=None,
          bayes_gain_screens_conda_env='tf_py',
          do_choose_calibrators=0,
+         do_download_archive=0,
          do_subtract=0,
          do_image_subtract_dirty=0,
          do_solve_dds4=0,
