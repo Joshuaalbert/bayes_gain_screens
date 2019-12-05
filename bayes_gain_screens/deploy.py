@@ -52,7 +52,7 @@ class Deployment(object):
             datapack = datapack.filename
         datapack = DataPack(datapack, readonly=False)
 
-        logging.info("Getting TEC, const, and reference phase data from datapack.")
+        logging.info("Getting TEC, and reference phase data from datapack.")
         self.select = dict(ant=ant, dir=dir, time=time, freq=freq, pol=pol)
         datapack.current_solset = phase_solset
         datapack.select(**self.select)
@@ -64,12 +64,7 @@ class Deployment(object):
         tec = tec.astype(np.float64)
         tec_uncert, _ = datapack.weights_tec
         tec_uncert = tec_uncert.astype(np.float64)
-        # const, axes = datapack.const
-        # const = const.astype(np.float64)
-        # const_uncert, _ = datapack.weights_const
-        # const_uncert = const_uncert.astype(np.float64)
 
-        # const = median_filter(const, size=(1, 1, 1, 31))
         
         _, data_directions = datapack.get_directions(axes['dir'])
         data_directions = np.stack([data_directions.ra.rad, data_directions.dec.rad],
@@ -80,7 +75,6 @@ class Deployment(object):
         logging.info("Fraction flagged: {:.3f}".format(np.sum(tec_uncert==np.inf)/tec_uncert.size))
         if flag_directions is not None:
             tec_uncert[:, flag_directions, ...] = np.inf
-            # const_uncert[:, flag_directions, ...] = np.inf
 
         logging.info("Number flagged: {} from {}".format(np.sum(np.isinf(tec_uncert)), tec_uncert.size))
         logging.info("Transposing data")
@@ -91,12 +85,7 @@ class Deployment(object):
             tec_uncert = tec_uncert[0, ...].transpose((2, 1, 0))
             if self.debug:
                 logging.info("tec shape: {} should be (Nt, Na, Nd)".format(tec.shape))
-            # # Nd, Na, Nt -> Nt, Na, Nd
-            # const = const[0, ...].transpose((2, 1, 0))
-            # self.Nt, self.Na, self.Nd = const.shape
-            # const_uncert = const_uncert[0, ...].transpose((2, 1, 0))
-            # if self.debug:
-            #     logging.info("const shape: {} should be (Nt, Na, Nd)".format(const.shape))
+
         else:
             # Nt, Nd, Na
             tec = tec[0, ...].transpose((2, 0, 1))
@@ -104,35 +93,19 @@ class Deployment(object):
             tec_uncert = tec_uncert[0, ...].transpose((2, 0, 1))
             if self.debug:
                 logging.info("tec shape: {} should be (Nt, Nd, Na)".format(tec.shape))
-            # # Nt, Nd, Na
-            # const = const[0, ...].transpose((2, 0, 1))
-            # self.Nt, self.Nd, self.Na = const.shape
-            # const_uncert = const_uncert[0, ...].transpose((2, 0, 1))
-            # if self.debug:
-            #     logging.info("const shape: {} should be (Nt, Nd, Na)".format(const.shape))
-        if constant_tec_uncert is not None:
-            logging.info("Setting all non-flagged TEC uncert to {}".format(constant_tec_uncert))
-            tec_uncert = np.where(tec_uncert == np.inf, np.inf, constant_tec_uncert)
+
         logging.info("Setting minimum tec uncertainty to 0.5 mTECU")
         tec_uncert = np.maximum(tec_uncert, 0.5, tec_uncert)
-        # if constant_const_uncert is not None:
-        #     logging.info("Setting all non-flagged const uncert to {}".format(constant_const_uncert))
-        #     const_uncert = np.where(const_uncert == np.inf, np.inf, constant_const_uncert)
-        # logging.info("Setting minimum const uncertainty to 0.5 mTECU")
-        # const_uncert = np.maximum(const_uncert, 0.01, const_uncert)
+
         logging.info("Checking finiteness")
         if np.any(np.logical_not(np.isfinite(tec))):
             raise ValueError("Some tec are not finite.\n{}".format(
                 np.where(np.logical_not(np.isfinite(tec)))))
-        # if np.any(np.logical_not(np.isfinite(const))):
-        #     raise ValueError("Some const are not finite.\n{}".format(
-        #         np.where(np.logical_not(np.isfinite(const)))))
+
         if np.any(np.isnan(tec_uncert)):
             raise ValueError("Some TEC uncerts are nan.\n{}".format(
                 np.where(np.isnan(tec_uncert))))
-        # if np.any(np.isnan(const_uncert)):
-        #     raise ValueError("Some const uncerts are nan.\n{}".format(
-        #         np.where(np.isnan(const_uncert))))
+
         if np.any(np.logical_not(np.isfinite(phase))):
             raise ValueError("Some phases are not finite.\n{}".format(
                 np.where(np.logical_not(np.isfinite(phase)))))
@@ -187,8 +160,7 @@ class Deployment(object):
         self.Xt = Xt
         self.tec = tec
         self.tec_uncert = tec_uncert
-        # self.const = const
-        # self.const_uncert = const_uncert
+
         self.block_size = block_size
         self.names = None
         self.models = None
@@ -344,13 +316,6 @@ class Deployment(object):
                 weights_array = np.concatenate(weights_array, axis=1)
                 log_marginal_likelihood_array = np.concatenate(log_marginal_likelihood_array, axis=1)
 
-            if self.directional_deploy:
-                #Nt, Na, Nd -> Nd, Na, Nt
-                const_mean = self.const.transpose((2,1,0))
-            else:
-                #Nt, Nd, Na -> Nd, Na, Nt
-                const_mean = self.const.transpose((1,2,0))
-
             # Nt, Nd, Na -> Nd_screen, Na, Nt
             post_mean_array = np.concatenate(post_mean_array, axis=0).transpose((1, 2, 0))
             post_std_array = np.concatenate(post_std_array, axis=0).transpose((1, 2, 0))
@@ -362,11 +327,7 @@ class Deployment(object):
             logging.info("Getting NN indices")
             dir_idx = [np.argmin(
                 great_circle_sep(self.Xd[:, 0], self.Xd[:, 1], ra, dec) for (ra, dec) in zip(self.Xd_screen[:, 0], self.Xd_screen[:, 1]))]
-            # logging.info("Getting NN const")
-            # #Nd_screen, Na, Nt
-            # const_NN = const_mean[dir_idx, :, :]
-            # logging.info("Storing const")
-            # self.datapack.const = const_NN[None,...]
+
 
             logging.info("Computing screen phase")
             axes = self.datapack.axes_phase
