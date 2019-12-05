@@ -383,7 +383,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     if do_tec_inference:
         cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference_improved.py', exec_env=bayes_gain_screens_env)
         cmd.add('obs_num', obs_num)
-        cmd.add('ncpu', ncpu)
+        cmd.add('ncpu', ncpu//2)
         cmd.add('data_dir', subtract_working_dir)
         cmd.add('working_dir', tec_inference_working_dir)
         cmd.add('ref_dir', ref_dir)
