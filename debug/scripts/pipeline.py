@@ -544,9 +544,9 @@ def add_args(parser):
     optional.add_argument('--no_subtract',
                           help='Whether to copy archive but skip subtract, useful for imaging only supposing all other required things are in place.',
                           default=False, type="bool", required=False)
-    optional.add_argument('--no_download',
-                          help='Whether to move instead of copy the archive dir.',
-                          default=False, type="bool", required=False)
+    # optional.add_argument('--no_download',
+    #                       help='Whether to move instead of copy the archive dir.',
+    #                       default=False, type="bool", required=False)
     optional.add_argument('--region_file',
                           help='ds9 region file defining calbrators. If not provided, they will be automatically determined.',
                           required=False, type='str_or_none',

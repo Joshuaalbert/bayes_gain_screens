@@ -134,6 +134,7 @@ python "$script_dir"/pipeline.py \
         --block_size=20 \
         --deployment_type=directional \
         --no_subtract=False \
+        --do_download_archive="$do_download_archive" \
         --do_choose_calibrators="$do_choose_calibrators" \
         --do_subtract="$do_subtract" \
         --do_solve_dds4="$do_solve_dds4" \
