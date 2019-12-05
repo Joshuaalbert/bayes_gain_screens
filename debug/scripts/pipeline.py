@@ -519,7 +519,6 @@ def add_args(parser):
         "solve_dds4",
         "slow_solve_dds4",
         "smooth_dds4",
-        "slow_dds4",
         "tec_inference",
         "merge_slow",
         "image_subtract_dirty",
