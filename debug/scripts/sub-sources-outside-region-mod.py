@@ -129,35 +129,31 @@ def add_args(parser):
     parser.add_argument('--obs_num', help='Obs number L*',
                         default=None, type=int, required=True)
 
-    parser.add_argument('--archive_dir', help='Where are the archives stored.',
-                        default=None, type=str, required=True)
     parser.add_argument('--working_dir', help='Where to perform the subtract.',
                         default=None, type=str, required=True)
+    parser.add_argument('--data_dir', help='Where data is.',
+                        default=None, type=str, required=True)
 
 
-def get_filenames(archive_dir, working_dir, obs_num):
+def get_filenames(data_dir, working_dir, obs_num):
     print("Copying archives.")
-    archive_fullmask = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
-    archive_indico = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.DicoModel')
-    archive_clustercat = os.path.join(archive_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
+    archive_fullmask = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
+    archive_indico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
+    archive_clustercat = os.path.join(data_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
     fullmask = os.path.join(working_dir, os.path.basename(archive_fullmask))
     indico = os.path.join(working_dir, os.path.basename(archive_indico))
     clustercat = os.path.join(working_dir, os.path.basename(archive_clustercat))
-    mslist = sorted(glob.glob(os.path.join(archive_dir, 'L{obs_num}*_SB*.ms.archive'.format(obs_num=obs_num))))
-    print('Found archives files:\n{}'.format(mslist))
-    outms = []
-    for ms in mslist:
-        outname = os.path.join(working_dir, os.path.basename(ms.rstrip('.archive')))
-        outms.append(outname)
-    mslist_file = os.path.join(working_dir, 'mslist.txt')
-    with open(mslist_file, 'w') as f:
-        for ms in outms:
-            f.write('{}\n'.format(ms))
-    return mslist_file, outms, fullmask, indico, clustercat
+    mslist_file = os.path.join(data_dir, 'mslist.txt')
+    mslist = []
+    print('Reading {}'.format(mslist_file))
+    with open(mslist_file, 'r') as f:
+        for line in f.readlines():
+            mslist.append(line.strip())
+    return mslist_file, mslist, fullmask, indico, clustercat
 
 
-def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours, only_setup):
-    archive_dir = os.path.abspath(archive_dir)
+def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours, only_setup):
+    data_dir = os.path.abspath(data_dir)
     working_dir = os.path.abspath(working_dir)
     region_file = os.path.abspath(region_file)
     try:
@@ -170,7 +166,7 @@ def main(archive_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines
         pass
     os.chdir(working_dir)
     solsdir = os.path.join(working_dir, 'SOLSDIR')
-    mslist_file, mslist, fullmask, indico, clustercat = get_filenames(archive_dir, working_dir, obs_num)
+    mslist_file, mslist, fullmask, indico, clustercat = get_filenames(data_dir, working_dir, obs_num)
     outdico = os.path.join(working_dir, 'image_full_ampphase_di_m_SUB.NS.DicoModel')
     outmask = os.path.join(working_dir, 'cutoutmask.fits')  # just a name, can be anything
     if not os.path.isfile(fullmask):
