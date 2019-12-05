@@ -159,6 +159,9 @@ def execute_dask(dsk, key, timing_file=None, state_file=None):
     """
     graph = {k: v[1:] for k, v in dsk.items()}
     topo_order = iterative_topological_sort(graph, key)[::-1]
+    print("Execution order shall be:")
+    for k in topo_order:
+        print("\t{}".format(k))
     res = {}
     with open(state_file, 'w') as state:
         state.write("{} | START_PIPELINE\n".format(now()))
