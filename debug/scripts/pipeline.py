@@ -225,7 +225,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
          do_image_subtract_dirty,
          do_solve_dds4,
          do_smooth_dds4,
-         do_slow_dds4,
+         do_slow_solve_dds4,
          do_image_dds4,
          do_image_smooth,
          do_image_smooth_slow,
@@ -251,8 +251,31 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     if ref_image_fits is None:
         ref_image_fits = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.app.restored.fits')
     timing_file = os.path.join(root_working_dir, 'timing.txt')
+
+    print("Changing to {}".format(root_working_dir))
+    os.chdir(root_working_dir)
+
+    download_archive_working_dir = make_working_dir(root_working_dir, 'download_archive', do_download_archive)
+    choose_calibrators_working_dir = make_working_dir(root_working_dir, 'choose_calibrators', do_choose_calibrators)
+    subtract_working_dir = make_working_dir(root_working_dir, 'subtract', do_subtract)
+    image_subtract_dirty_working_dir = make_working_dir(root_working_dir, 'image_subtract', do_image_subtract_dirty)
+    solve_dds4_working_dir = make_working_dir(root_working_dir, 'solve_dds4', do_solve_dds4)
+    smooth_dds4_working_dir = make_working_dir(root_working_dir, 'smooth_dds4', do_smooth_dds4)
+    slow_solve_dds4_working_dir = make_working_dir(root_working_dir, 'slow_solve_dds4', do_slow_solve_dds4)
+    image_smooth_working_dir = make_working_dir(root_working_dir, 'image_smooth', do_image_smooth)
+    image_dds4_working_dir = make_working_dir(root_working_dir, 'image_dds4', do_image_dds4)
+    image_smooth_slow_working_dir = make_working_dir(root_working_dir, 'image_smooth_slow', do_image_smooth_slow)
+    tec_inference_working_dir = make_working_dir(root_working_dir, 'tec_inference', do_tec_inference)
+    merge_slow_working_dir = make_working_dir(root_working_dir, 'merge_slow', do_merge_slow)
+    infer_screen_working_dir = make_working_dir(root_working_dir, 'infer_screen', do_infer_screen)
+    image_screen_working_dir = make_working_dir(root_working_dir, 'image_screen', do_image_screen)
+    image_screen_slow_working_dir = make_working_dir(root_working_dir, 'image_screen_slow', do_image_screen_slow)
+
+    data_dir = download_archive_working_dir
+
     if region_file is None:
         region_file = os.path.join(root_working_dir, 'bright_calibrators.reg')
+        print("Region file is None, thus assuming region file is {}".format(region_file))
     else:
         do_choose_calibrators = 0
         region_file = os.path.abspath(region_file)
@@ -264,25 +287,6 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         if not os.path.isfile(os.path.join(root_working_dir, 'bright_calibrators.reg')):
             os.system("rsync -avP {} {}".format(region_file, os.path.join(root_working_dir, 'bright_calibrators.reg')))
         region_file = os.path.join(root_working_dir, 'bright_calibrators.reg')
-
-    print("Changing to {}".format(root_working_dir))
-    os.chdir(root_working_dir)
-
-    download_archive_working_dir = make_working_dir(root_working_dir, 'download_archive', do_download_archive)
-    choose_calibrators_working_dir = make_working_dir(root_working_dir, 'choose_calibrators', do_choose_calibrators)
-    subtract_working_dir = make_working_dir(root_working_dir, 'subtract', do_subtract)
-    image_subtract_dirty_working_dir = make_working_dir(root_working_dir, 'image_subtract', do_image_subtract_dirty)
-    solve_dds4_working_dir = make_working_dir(root_working_dir, 'solve_dds4', do_solve_dds4)
-    smooth_dds4_working_dir = make_working_dir(root_working_dir, 'smooth_dds4', do_smooth_dds4)
-    slow_dds4_working_dir = make_working_dir(root_working_dir, 'slow_dds4', do_slow_dds4)
-    image_smooth_working_dir = make_working_dir(root_working_dir, 'image_smooth', do_image_smooth)
-    image_dds4_working_dir = make_working_dir(root_working_dir, 'image_dds4', do_image_dds4)
-    image_smooth_slow_working_dir = make_working_dir(root_working_dir, 'image_smooth_slow', do_image_smooth_slow)
-    tec_inference_working_dir = make_working_dir(root_working_dir, 'tec_inference', do_tec_inference)
-    merge_slow_working_dir = make_working_dir(root_working_dir, 'merge_slow', do_merge_slow)
-    infer_screen_working_dir = make_working_dir(root_working_dir, 'infer_screen', do_infer_screen)
-    image_screen_working_dir = make_working_dir(root_working_dir, 'image_screen', do_image_screen)
-    image_screen_slow_working_dir = make_working_dir(root_working_dir, 'image_screen_slow', do_image_screen_slow)
 
     print("Constructing run environments")
     if lofar_sksp_simg is not None:
@@ -391,12 +395,12 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     else:
         dsk['tec_inference'] = (lambda *x: None, 'smooth_dds4', 'solve_dds4')
 
-    if do_slow_dds4:
-        cmd = CMD(slow_dds4_working_dir, script_dir, 'slow_solve_on_subtracted.py', exec_env=lofar_sksp_env)
+    if do_slow_solve_dds4:
+        cmd = CMD(slow_solve_dds4_working_dir, script_dir, 'slow_solve_on_subtracted.py', exec_env=lofar_sksp_env)
         cmd.add('ncpu', ncpu)
         cmd.add('obs_num', obs_num)
         cmd.add('data_dir', subtract_working_dir)
-        cmd.add('working_dir', slow_dds4_working_dir)
+        cmd.add('working_dir', slow_solve_dds4_working_dir)
         dsk['slow_solve_dds4'] = (cmd, 'smooth_dds4')
     else:
         dsk['slow_solve_dds4'] = (lambda *x: None, 'smooth_dds4')
@@ -512,15 +516,16 @@ def add_args(parser):
         "download_archive",
         "choose_calibrators",
         "subtract",
-        "image_subtract_dirty",
         "solve_dds4",
+        "slow_solve_dds4",
         "smooth_dds4",
         "slow_dds4",
+        "tec_inference",
+        "merge_slow",
+        "image_subtract_dirty",
         "image_smooth",
         "image_dds4",
         "image_smooth_slow",
-        "tec_inference",
-        "merge_slow",
         "infer_screen",
         "image_screen",
         "image_screen_slow"]
@@ -627,7 +632,7 @@ def test_main():
          do_image_subtract_dirty=0,
          do_solve_dds4=0,
          do_smooth_dds4=0,
-         do_slow_dds4=0,
+         do_slow_solve_dds4=0,
          do_tec_inference=2,
          do_merge_slow=0,
          do_infer_screen=0,

@@ -35,7 +35,7 @@ do_choose_calibrators=2
 do_subtract=2
 do_solve_dds4=2
 do_smooth_dds4=2
-do_slow_dds4=2
+do_slow_solve_dds4=2
 do_tec_inference=2
 do_infer_screen=2
 do_merge_slow=2
@@ -68,7 +68,7 @@ L=(obs_num \
     do_subtract \
     do_solve_dds4 \
     do_smooth_dds4 \
-    do_slow_dds4 \
+    do_slow_solve_dds4 \
     do_tec_inference \
     do_infer_screen \
     do_merge_slow \
@@ -139,7 +139,7 @@ python "$script_dir"/pipeline.py \
         --do_subtract="$do_subtract" \
         --do_solve_dds4="$do_solve_dds4" \
         --do_smooth_dds4="$do_smooth_dds4" \
-        --do_slow_dds4="$do_slow_dds4" \
+        --do_slow_solve_dds4="$do_slow_solve_dds4" \
         --do_tec_inference="$do_tec_inference" \
         --do_infer_screen="$do_infer_screen" \
         --do_merge_slow="$do_merge_slow" \
