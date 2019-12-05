@@ -1,5 +1,6 @@
 import os
 os.environ['OMP_NUM_THREADS'] = "1"
+os.environ['NUMEXPR_MAX_THREADS'] = "1"
 import numpy as np
 import pylab as plt
 from scipy.ndimage import median_filter
