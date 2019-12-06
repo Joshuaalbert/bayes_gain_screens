@@ -79,6 +79,8 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu, s
 
 
 def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
+    merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, sol_name))
+    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     sol_folders = sorted(glob.glob(os.path.join(solsdir, "L{}*.ms".format(obs_num))))
     if len(sol_folders) == 0:
@@ -90,9 +92,8 @@ def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
             print("Can't find {} in {}".format(sol_name, f))
             continue
         sols.append(os.path.abspath(sol[0]))
-    solsfile = os.path.join(working_dir, 'solslist.txt')
-    merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, sol_name))
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
+    solsfile = os.path.join(working_dir, 'solslist_dds4.txt')
+
     with open(solsfile, 'w') as f:
         for s in sols:
             f.write("{}\n".format(s))

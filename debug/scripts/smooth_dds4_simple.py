@@ -125,16 +125,16 @@ def main(data_dir, working_dir, obs_num):
     logging.info("Plotting some residuals.")
     diff_phase = wrap(phase_smooth - wrap(phase_raw))
     diff_amp = np.log(amp_smooth) - np.log(amp_raw)
-    worst_ants = np.argsort(np.square(diff_phase).mean(0).mean(0).mean(-1).mean(-1))[-5:]
-    worst_dirs = np.argsort(np.square(diff_phase).mean(0).mean(-1).mean(-1).mean(-1))[-5:]
-    worst_times = np.argsort(np.square(diff_phase).mean(0).mean(0).mean(0).mean(0))[-5:]
+    worst_ants = np.argsort(np.square(diff_phase).mean(0).mean(0).mean(-1).mean(-1))[-10:]
+    worst_dirs = np.argsort(np.square(diff_phase).mean(0).mean(-1).mean(-1).mean(-1))[-10:]
+    worst_times = np.argsort(np.square(diff_phase).mean(0).mean(0).mean(0).mean(0))[-10:]
 
     for d in worst_dirs:
         for a in worst_ants:
             plt.imshow(diff_phase[0,d,a,:,:], origin='lower',aspect='auto',vmin=-0.1, vmax=0.1,cmap='coolwarm')
+            plt.colorbar()
             plt.xlabel('time')
             plt.ylabel('freq')
-            plt.colorbar()
             plt.savefig(os.path.join(working_dir, 'phase_diff_dir{:02d}_ant{:02d}.png'.format(d,a)))
             plt.close('all')
             plt.imshow(diff_amp[0, d, a, :, :], origin='lower', cmap='coolwarm', aspect='auto',vmin=np.percentile(diff_amp[0, d, a, :, :], 5), vmax=np.percentile(diff_amp[0, d, a, :, :], 95))

@@ -74,8 +74,9 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
         os.system(cmd)
 
 def make_merged_h5parm(obs_num, data_dir, working_dir):
-    sol_name='DDS4_full'
-    slow_sol = '{}_slow'.format(sol_name)
+    slow_sol = 'DDS4_full_slow'
+    merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, slow_sol))
+    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, slow_sol))
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     sol_folders = sorted(glob.glob(os.path.join(solsdir, "L{}*.ms".format(obs_num))))
     if len(sol_folders) == 0:
@@ -87,9 +88,7 @@ def make_merged_h5parm(obs_num, data_dir, working_dir):
             print("Can't find {} in {}".format(slow_sol, f))
             continue
         sols.append(os.path.abspath(sol[0]))
-    solsfile = os.path.join(working_dir, 'solslist.txt')
-    merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, slow_sol))
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, slow_sol))
+    solsfile = os.path.join(working_dir, 'solslist_dds4_slow.txt')
     with open(solsfile, 'w') as f:
         for s in sols:
             f.write("{}\n".format(s))
@@ -98,14 +97,13 @@ def make_merged_h5parm(obs_num, data_dir, working_dir):
                                                                             h5_file=merged_h5parm))
 
 def make_symlinks(data_dir, obs_num):
-    sol_name='DDS4_full'
     print("Creating symbolic links")
-    smooth_merged_sol = os.path.join(data_dir, 'L{}_{}_smoothed_merged.sols.npz'.format(obs_num, sol_name))
+    smooth_merged_sol = os.path.join(data_dir, 'L{}_DDS4_full_smoothed_merged.sols.npz'.format(obs_num))
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     sol_folders = glob.glob(os.path.join(solsdir, 'L{obs_num}*.ms'.format(obs_num=obs_num)))
     for f in sol_folders:
         src = smooth_merged_sol
-        dst = os.path.join(f, 'killMS.{}_smoothed.sols.npz'.format(sol_name))
+        dst = os.path.join(f, 'killMS.DDS4_full_smoothed.sols.npz')
         if os.path.islink(dst):
             os.unlink(dst)
         print("Linking {} -> {}".format(src,dst))
