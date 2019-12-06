@@ -259,7 +259,7 @@ class Step(object):
 def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, ref_dir, ref_image_fits,
          block_size,
          deployment_type,
-         no_subtract,
+         no_download,
          bind_dirs,
          lofar_sksp_simg,
          lofar_gain_screens_simg,

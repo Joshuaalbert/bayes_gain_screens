@@ -26,6 +26,7 @@ bind_dirs=/beegfs/lofar
 ncpu=$(grep -c ^processor /proc/cpuinfo)
 conda_env=tf_py
 force_conda=
+no_download=False
 
 ###
 # calibration steps
@@ -74,7 +75,8 @@ L=(obs_num \
     do_merge_slow \
     simg_dir \
     conda_env \
-    force_conda)
+    force_conda \
+    no_download)
 
 arg_parse_str="help"
 for arg in ${L[@]}; do
@@ -133,7 +135,7 @@ python "$script_dir"/pipeline.py \
         --ncpu="$ncpu" \
         --block_size=20 \
         --deployment_type=directional \
-        --no_subtract=False \
+        --no_download="$no_download" \
         --do_download_archive="$do_download_archive" \
         --do_choose_calibrators="$do_choose_calibrators" \
         --do_subtract="$do_subtract" \
