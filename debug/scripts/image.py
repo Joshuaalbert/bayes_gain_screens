@@ -1,5 +1,4 @@
 import os
-import sys
 import glob
 import argparse
 import pylab as plt
@@ -7,7 +6,13 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 import pyregion
+import subprocess
 
+def cmd_call(cmd):
+    print("{}".format(cmd))
+    exit_status = subprocess.call(cmd, shell=True)
+    if exit_status:
+        raise ValueError("Failed to  run: {}".format(cmd))
 
 
 def flatten(f):
@@ -72,64 +77,65 @@ def plot_image(filename, save_name=None, PPD=5, fig_size=20., background_mean=No
     :param ds9_regions: str
         File with regions to plot
     """
-    print("Plotting {}".format(filename))
-    with fits.open(filename) as f:
-        hdu = flatten(f)
-        data = hdu.data
-        npix = np.max(data.shape)
-
-        dpi = (npix / PPD) / fig_size
-
-        if background_mean is None or noise is None:
-            ###
-            # cheap noise floor
-            data0 = np.copy(data)
-            for _ in range(5):
-                data0 = np.where(data - np.nanmean(data0) < 3. * np.nanstd(data0), data, np.nan)
-            noise = np.nanstd(data0)
-            background_mean = np.nanmean(data0)
-            print("Found backgroud mean: {:.2f}muJy/beam, and background std: {:.2f}muJy/beam".format(
-                background_mean * 1e6, noise * 1e6))
-        else:
-            background_mean = background_mean / 1e6
-            noise = noise / 1e6
-            print("Using backgroud mean: {:.2f}muJy/beam, and background std: {:.2f}muJy/beam".format(
-                background_mean * 1e6, noise * 1e6))
-
-        vmin = background_mean - 5. * noise  # np.percentile(data, 20.)
-        vmax = background_mean + 50. * noise  # np.percentile(data, 80.)*10.
-
-        wcs = WCS(hdu.header)
-        fig = plt.figure(figsize=(fig_size, fig_size))
-        ax = plt.subplot(projection=wcs)
-        ax.imshow(np.sign(data) * np.sqrt(np.sign(data) * data),
-                  vmin=np.sign(vmin) * np.sqrt(np.sign(vmin) * vmin),
-                  vmax=np.sign(vmax) * np.sqrt(np.sign(vmax) * vmax),
-                  origin='lower', cmap='bone_r')
-        if radec_pix_center is not None:
-            print("Centering on {} to radius {}".format(radec_pix_center, radius_pix))
-            ax.set_xlim(radec_pix_center[0] - radius_pix, radec_pix_center[0] + radius_pix)
-            ax.set_ylim(radec_pix_center[1] - radius_pix, radec_pix_center[1] + radius_pix)
-        ax.coords.grid(True, color='black', ls='solid')
-        ax.coords[0].set_axislabel('Right Ascension (J2000)')
-        ax.coords[1].set_axislabel('Declination (J2000)')
-        if ds9_regions is not None:
-            print("Adding ds9 regions: {}".format(ds9_regions))
-            r = pyregion.open(ds9_regions).as_imagecoord(hdu.header)
-            patch_list, text_list = r.get_mpl_patches_texts()
-            for p in patch_list:
-                ax.add_patch(p)
-            for t in text_list:
-                ax.add_artist(t)
-        if save_name is not None:
-            if isinstance(save_name, (tuple, list)):
-                for s in save_name:
-                    plt.savefig(s, dpi=dpi, bbox_inches='tight', pad_inches=0)
-                    print("Saved to {}".format(s))
-            else:
-                plt.savefig(save_name, dpi=dpi, bbox_inches='tight', pad_inches=0)
-                print("Saved to {}".format(save_name))
-            plt.close('all')
+    return
+    # print("Plotting {}".format(filename))
+    # with fits.open(filename) as f:
+    #     hdu = flatten(f)
+    #     data = hdu.data
+    #     npix = np.max(data.shape)
+    #
+    #     dpi = (npix / PPD) / fig_size
+    #
+    #     if background_mean is None or noise is None:
+    #         ###
+    #         # cheap noise floor
+    #         data0 = np.copy(data)
+    #         for _ in range(5):
+    #             data0 = np.where(data - np.nanmean(data0) < 3. * np.nanstd(data0), data, np.nan)
+    #         noise = np.nanstd(data0)
+    #         background_mean = np.nanmean(data0)
+    #         print("Found backgroud mean: {:.2f}muJy/beam, and background std: {:.2f}muJy/beam".format(
+    #             background_mean * 1e6, noise * 1e6))
+    #     else:
+    #         background_mean = background_mean / 1e6
+    #         noise = noise / 1e6
+    #         print("Using backgroud mean: {:.2f}muJy/beam, and background std: {:.2f}muJy/beam".format(
+    #             background_mean * 1e6, noise * 1e6))
+    #
+    #     vmin = background_mean - 5. * noise  # np.percentile(data, 20.)
+    #     vmax = background_mean + 50. * noise  # np.percentile(data, 80.)*10.
+    #
+    #     wcs = WCS(hdu.header)
+    #     fig = plt.figure(figsize=(fig_size, fig_size))
+    #     ax = plt.subplot(projection=wcs)
+    #     ax.imshow(np.sign(data) * np.sqrt(np.sign(data) * data),
+    #               vmin=np.sign(vmin) * np.sqrt(np.sign(vmin) * vmin),
+    #               vmax=np.sign(vmax) * np.sqrt(np.sign(vmax) * vmax),
+    #               origin='lower', cmap='bone_r')
+    #     if radec_pix_center is not None:
+    #         print("Centering on {} to radius {}".format(radec_pix_center, radius_pix))
+    #         ax.set_xlim(radec_pix_center[0] - radius_pix, radec_pix_center[0] + radius_pix)
+    #         ax.set_ylim(radec_pix_center[1] - radius_pix, radec_pix_center[1] + radius_pix)
+    #     ax.coords.grid(True, color='black', ls='solid')
+    #     ax.coords[0].set_axislabel('Right Ascension (J2000)')
+    #     ax.coords[1].set_axislabel('Declination (J2000)')
+    #     if ds9_regions is not None:
+    #         print("Adding ds9 regions: {}".format(ds9_regions))
+    #         r = pyregion.open(ds9_regions).as_imagecoord(hdu.header)
+    #         patch_list, text_list = r.get_mpl_patches_texts()
+    #         for p in patch_list:
+    #             ax.add_patch(p)
+    #         for t in text_list:
+    #             ax.add_artist(t)
+    #     if save_name is not None:
+    #         if isinstance(save_name, (tuple, list)):
+    #             for s in save_name:
+    #                 plt.savefig(s, dpi=dpi, bbox_inches='tight', pad_inches=0)
+    #                 print("Saved to {}".format(s))
+    #         else:
+    #             plt.savefig(save_name, dpi=dpi, bbox_inches='tight', pad_inches=0)
+    #             print("Saved to {}".format(save_name))
+    #         plt.close('all')
 
 
 def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
@@ -143,7 +149,7 @@ def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['fluxthreshold'] = 100e-6
     kwargs['major_iters'] = 0
     cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_dirty_template'), **kwargs)
-    os.system(cmd)
+    cmd_call(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
     if len(images) == 0:
@@ -170,7 +176,7 @@ def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
                               **kwargs)
     else:
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_kms_sols_template'), **kwargs)
-    os.system(cmd)
+    cmd_call(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
     if len(images) == 0:
@@ -196,7 +202,7 @@ def image_smoothed(obs_num, data_dir, working_dir, script_dir, **kwargs):
                               **kwargs)
     else:
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
-    os.system(cmd)
+    cmd_call(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
     if len(images) == 0:
@@ -222,7 +228,7 @@ def image_smoothed_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
                               **kwargs)
     else:
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
-    os.system(cmd)
+    cmd_call(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
     if len(images) == 0:
@@ -249,7 +255,7 @@ def image_screen(obs_num, data_dir, working_dir, script_dir, **kwargs):
                               **kwargs)
     else:
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
-    os.system(cmd)
+    cmd_call(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
     if len(images) == 0:
@@ -276,7 +282,7 @@ def image_screen_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'), **kwargs)
     else:
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_template'), **kwargs)
-    os.system(cmd)
+    cmd_call(cmd)
 
     images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
     if len(images) == 0:

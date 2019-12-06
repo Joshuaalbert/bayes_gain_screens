@@ -46,7 +46,7 @@ def fixsymlinks(archive_dir, working_dir, obs_num):
         print("Linking {} -> {}".format(src, dst))
         os.symlink(src, dst)
 
-def copy_archives(archive_dir, working_dir, obs_num):
+def copy_archives(archive_dir, working_dir, obs_num, no_download):
     print("Copying archives.")
     archive_fullmask = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
     archive_indico = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.DicoModel')
@@ -55,16 +55,23 @@ def copy_archives(archive_dir, working_dir, obs_num):
     indico = os.path.join(working_dir, os.path.basename(archive_indico))
     clustercat = os.path.join(working_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
 
-    cmd_call('rsync -auvP {} {}'.format(archive_fullmask, fullmask))
-    cmd_call('rsync -auvP {} {}'.format(archive_indico, indico))
-    cmd_call('rsync -auvP {} {}'.format(archive_clustercat, clustercat))
+    if no_download:
+        cmd_call('mv {} {}'.format(archive_fullmask, fullmask))
+        cmd_call('mv {} {}'.format(archive_indico, indico))
+        cmd_call('mv {} {}'.format(archive_clustercat, clustercat))
+    else:
+        cmd_call('rsync -auvP {} {}'.format(archive_fullmask, fullmask))
+        cmd_call('rsync -auvP {} {}'.format(archive_indico, indico))
+        cmd_call('rsync -auvP {} {}'.format(archive_clustercat, clustercat))
     mslist = sorted(glob.glob(os.path.join(archive_dir, 'L{obs_num}*_SB*.ms.archive'.format(obs_num=obs_num))))
     print('Found archives files:\n{}'.format(mslist))
     outms = []
     for ms in mslist:
         outname = os.path.join(working_dir, os.path.basename(ms.rstrip('.archive')))
-        cmd = 'rsync -auvP --delete {}/ {}/'.format(ms, outname)
-        cmd_call(cmd)
+        if no_download:
+            cmd_call('mv {}/ {}/'.format(ms, outname))
+        else:
+            cmd_call('rsync -auvP --delete {}/ {}/'.format(ms, outname))
         outms.append(outname)
     mslist_file = os.path.join(working_dir, 'mslist.txt')
     with open(mslist_file, 'w') as f:
@@ -76,12 +83,21 @@ def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.add_argument('--obs_num', help='Obs number L*',
                         default=None, type=int, required=True)
-    parser.add_argument('--archive_dir', help='Where are the archives stored.',
+    parser.add_argument('--archive_dir', help='Where are the archives stored, may also be networked, e.g. <user>@<host>:<path>.',
                         default=None, type=str, required=True)
     parser.add_argument('--working_dir', help='Where to perform the subtract.',
                         default=None, type=str, required=True)
+    parser.add_argument('--no_download', help='Whether to move instead of copy.',
+                        default=False, type="bool", required=False)
 
-def main(archive_dir, working_dir, obs_num):
+def main(archive_dir, working_dir, obs_num, no_download):
+    if no_download:
+        if "SP_AUTH" in os.environ.keys():
+            if os.environ['SP_AUTH'] != '1':
+                raise ValueError("Trying to mv archive directory without authentication.")
+        else:
+            raise ValueError("Trying to mv archive directory without authentication.")
+        print("Will use 'mv' instead of 'rsync'. Archive dir must be local then.")
     archive_dir = os.path.abspath(archive_dir)
     working_dir = os.path.abspath(working_dir)
     try:
@@ -93,7 +109,7 @@ def main(archive_dir, working_dir, obs_num):
     except:
         pass
     os.chdir(working_dir)
-    mslist_file, mslist, fullmask, indico, clustercat = copy_archives(archive_dir, working_dir, obs_num)
+    mslist_file, mslist, fullmask, indico, clustercat = copy_archives(archive_dir, working_dir, obs_num,no_download)
     if not os.path.isfile(fullmask):
         raise IOError("Missing mask {}".format(fullmask))
     if not os.path.isfile(indico):

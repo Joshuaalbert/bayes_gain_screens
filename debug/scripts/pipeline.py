@@ -8,6 +8,25 @@ import datetime
 from timeit import default_timer
 
 
+def cmd_call(cmd):
+    print("{}".format(cmd))
+    exit_status = subprocess.call(cmd, shell=True)
+    if exit_status:
+        raise ValueError("Failed to  run: {}".format(cmd))
+
+
+def str_(s):
+    """
+    In python 3 turns bytes to string. In python 2 just passes string.
+    :param s:
+    :return:
+    """
+    try:
+        return s.decode()
+    except:
+        return s
+
+
 def create_qsub_script(working_dir, name, cmd):
     submit_script = os.path.join(working_dir, 'submit_script.sh')
     print("Creating qsub submit script: {}".format(submit_script))
@@ -64,6 +83,7 @@ class CMD(object):
 
     def add(self, name, value):
         self.cmd.append("--{}={}".format(name, value))
+        return self
 
     def __call__(self):
         proc_log = os.path.join(self.working_dir, 'state.log')
@@ -93,7 +113,7 @@ def make_working_dir(root_working_dir, name, do_flag):
         return most_recent
     if do_flag == 1:
         for dir in previous_working_dirs:
-            if os.path.isdir(most_recent):
+            if os.path.isdir(dir):
                 print("Removing old working dir: {}".format(dir))
                 shutil.rmtree(dir)
         working_dir = os.path.join(root_working_dir, name)
@@ -168,7 +188,7 @@ def execute_dask(dsk, key, timing_file=None, state_file=None):
         state.flush()
         for k in topo_order:
             print("{} | Executing task {}".format(now(), k))
-            state.write("{} | START {}\n".format(now(), k))
+            state.write("{} | START | {}\n".format(now(), k))
             state.flush()
             t0 = default_timer()
             res[k] = dsk[k][0]()
@@ -176,12 +196,12 @@ def execute_dask(dsk, key, timing_file=None, state_file=None):
             if res[k] is not None:
                 print("Task {} took {:.2f} hours".format(k, time_to_run / 3600.))
                 if res[k] == 0:
-                    state.write("{} | END {}\n".format(now(), k))
+                    state.write("{} | END | {}\n".format(now(), k))
                     state.flush()
                     if timing_file is not None:
                         update_timing(timing_file, k, time_to_run)
                 else:
-                    state.write("{} | FAIL {}\n".format(now(), k))
+                    state.write("{} | FAIL | {}\n".format(now(), k))
                     state.flush()
                     print("FAILURE at: {}".format(k))
                     state.write("{} | PIPELINE_FAILURE\n".format(now()))
@@ -213,6 +233,29 @@ def update_timing(timing_file, name, time):
             f.write("{},{}\n".format(k, ",".join(t)))
 
 
+class Step(object):
+    def __init__(self, name, deps, **cmd_kwargs):
+        self.name = name
+        self.deps = list(deps)
+        self.cmd_kwargs = cmd_kwargs
+        self.working_dir = None
+        self.flag = None
+
+    def build_cmd(self):
+        if self.flag > 0:
+            self.cmd = CMD(self.name, **self.cmd_kwargs)
+        else:
+            self.cmd = lambda *x: None
+
+    def get_dask_task(self):
+        if self.cmd is None:
+            raise ValueError("Cmd is not built for step {}".format(self.name))
+        return (self.cmd,) + tuple(self.deps)
+
+    def build_working_dir(self, root_working_dir):
+        self.working_dir = make_working_dir(root_working_dir, self.name, self.flag)
+
+
 def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, ref_dir, ref_image_fits,
          block_size,
          deployment_type,
@@ -222,21 +265,12 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
          lofar_gain_screens_simg,
          bayes_gain_screens_simg,
          bayes_gain_screens_conda_env,
-         do_download_archive,
-         do_choose_calibrators,
-         do_subtract,
-         do_image_subtract_dirty,
-         do_solve_dds4,
-         do_smooth_dds4,
-         do_slow_solve_dds4,
-         do_image_dds4,
-         do_image_smooth,
-         do_image_smooth_slow,
-         do_tec_inference,
-         do_merge_slow,
-         do_infer_screen,
-         do_image_screen,
-         do_image_screen_slow):
+         auto_resume,
+         **do_kwargs):
+    for key in do_kwargs.keys():
+        if not key.startswith('do_'):
+            raise KeyError("One of the 'do_<step_name>' args is invalid {}".format(key))
+
     root_working_dir = os.path.abspath(root_working_dir)
     script_dir = os.path.abspath(script_dir)
     try:
@@ -258,37 +292,23 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     print("Changing to {}".format(root_working_dir))
     os.chdir(root_working_dir)
 
-    download_archive_working_dir = make_working_dir(root_working_dir, 'download_archive', do_download_archive)
-    choose_calibrators_working_dir = make_working_dir(root_working_dir, 'choose_calibrators', do_choose_calibrators)
-    subtract_working_dir = make_working_dir(root_working_dir, 'subtract', do_subtract)
-    image_subtract_dirty_working_dir = make_working_dir(root_working_dir, 'image_subtract', do_image_subtract_dirty)
-    solve_dds4_working_dir = make_working_dir(root_working_dir, 'solve_dds4', do_solve_dds4)
-    smooth_dds4_working_dir = make_working_dir(root_working_dir, 'smooth_dds4', do_smooth_dds4)
-    slow_solve_dds4_working_dir = make_working_dir(root_working_dir, 'slow_solve_dds4', do_slow_solve_dds4)
-    image_smooth_working_dir = make_working_dir(root_working_dir, 'image_smooth', do_image_smooth)
-    image_dds4_working_dir = make_working_dir(root_working_dir, 'image_dds4', do_image_dds4)
-    image_smooth_slow_working_dir = make_working_dir(root_working_dir, 'image_smooth_slow', do_image_smooth_slow)
-    tec_inference_working_dir = make_working_dir(root_working_dir, 'tec_inference', do_tec_inference)
-    merge_slow_working_dir = make_working_dir(root_working_dir, 'merge_slow', do_merge_slow)
-    infer_screen_working_dir = make_working_dir(root_working_dir, 'infer_screen', do_infer_screen)
-    image_screen_working_dir = make_working_dir(root_working_dir, 'image_screen', do_image_screen)
-    image_screen_slow_working_dir = make_working_dir(root_working_dir, 'image_screen_slow', do_image_screen_slow)
-
-    data_dir = download_archive_working_dir
+    state_file = os.path.join(root_working_dir, 'STATE')
 
     if region_file is None:
         region_file = os.path.join(root_working_dir, 'bright_calibrators.reg')
         print("Region file is None, thus assuming region file is {}".format(region_file))
     else:
-        do_choose_calibrators = 0
         region_file = os.path.abspath(region_file)
         if not os.path.isfile(region_file):
             raise IOError(
                 "Region file {} doesn't exist, should leave as None if you want to auto select calibrators.".format(
                     region_file))
+        do_kwargs['do_choose_calibrators'] = 0
         print("Using supplied region file for calibrators {}".format(region_file))
         if not os.path.isfile(os.path.join(root_working_dir, 'bright_calibrators.reg')):
-            os.system("rsync -avP {} {}".format(region_file, os.path.join(root_working_dir, 'bright_calibrators.reg')))
+            cmd_call("rsync -avP {} {}".format(region_file, os.path.join(root_working_dir, 'bright_calibrators.reg')))
+        else:
+            raise IOError("Region file already found. Not copying provided one.")
         region_file = os.path.join(root_working_dir, 'bright_calibrators.reg')
 
     print("Constructing run environments")
@@ -333,205 +353,204 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
             bayes_gain_screens_conda_env))
         bayes_gain_screens_env = CondaEnv(bayes_gain_screens_conda_env)
 
+    step_list = [
+        Step('download_archive', [], script_dir=script_dir, script_name='download_archive.py', exec_env=lofar_sksp_env),
+        Step('choose_calibrators', ['choose_calibrators'], script_dir=script_dir, script_name='choose_calibrators.py',
+             exec_env=lofar_sksp_env),
+        Step('subtract', ['choose_calibrators', 'download_archive'], script_dir=script_dir,
+             script_name='sub-sources-outside-region-mod.py', exec_env=lofar_sksp_env),
+        Step('solve_dds4', ['subtract'], script_dir=script_dir, script_name='solve_on_subtracted.py',
+             exec_env=lofar_sksp_env),
+        Step('slow_solve_dds4', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
+             script_name='slow_solve_on_subtracted.py', exec_env=lofar_sksp_env),
+        Step('smooth_dds4', ['solve_dds4'], script_dir=script_dir, script_name='smooth_dds4_simple.py',
+             exec_env=bayes_gain_screens_env),
+        Step('tec_inference', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
+             script_name='tec_inference_improved.py', exec_env=bayes_gain_screens_env),
+        Step('infer_screen', ['smooth_dds4', 'tec_inference'], script_dir=script_dir, script_name='infer_screen.py',
+             exec_env=bayes_gain_screens_env),
+        Step('merge_slow', ['slow_solve_dds4', 'smooth_dds4', 'infer_screen'], script_dir=script_dir,
+             script_name='merge_slow.py', exec_env=bayes_gain_screens_env),
+        Step('image_subtract_dirty', ['subtract'], script_dir=script_dir, script_name='image.py',
+             exec_env=lofar_sksp_env),
+        Step('image_dds4', ['solve_dds4'], script_dir=script_dir, script_name='image.py', exec_env=lofar_sksp_env),
+        Step('image_smooth', ['smooth_dds4'], script_dir=script_dir, script_name='image.py',
+             exec_env=lofar_gain_screens_env),
+        Step('image_smooth_slow', ['smooth_dds4', 'merge_slow'], script_dir=script_dir, script_name='image.py',
+             exec_env=lofar_gain_screens_env),
+        Step('image_screen', ['infer_screen'], script_dir=script_dir, script_name='image.py',
+             exec_env=lofar_gain_screens_env),
+        Step('image_screen_slow', ['infer_screen', 'merge_slow'], script_dir=script_dir, script_name='image.py',
+             exec_env=lofar_gain_screens_env),
+    ]
+
+    # building step map
+    steps = {}
+    for step in step_list:
+        if step.name not in STEPS:
+            raise KeyError("Step.name {} not a valid step.".format(step.name))
+        for dep in step.deps:
+            if dep not in STEPS:
+                raise ValueError("Step {} dep {} invalid.".format(step.name, dep))
+        for do_arg in do_kwargs.keys():
+            if do_arg == "do_{}".format(step.name):
+                step.flag = do_kwargs[do_arg]
+                print("User requested step do_{}={}".format(step.name, step.flag))
+                break
+        steps[step.name] = step
+    # possibly auto resuming by setting flag
+    if auto_resume:
+        print("Attempting auto resume")
+        if not os.path.isfile(state_file):
+            print("No state file: {}".format(state_file))
+            print("Resume not possible. Trusting your user requested pipeline steps.")
+        else:
+            with open(state_file, 'r') as f:
+                for line in f.readlines():
+                    split = line.split("|")
+                    if len(split) == 3:
+                        name = split[1].strip()
+                        status = split[2].strip()
+                    else:
+                        continue
+                    if name not in steps.keys():
+                        raise ValueError("Could not find step {}".format(name))
+                    if "END" in status:
+                        print("Auto-resume infers {} should be skipped.".format(name))
+                        steps[name].flag = 0
+    # make required working directories (no deleting
+    for k, step in steps.items():
+        step.build_working_dir(root_working_dir)
+        step.build_cmd()
+        step.cmd.add('working_dir', step.working_dir)
+
+    data_dir = steps['download_archive'].working_dir
+
+    steps['download_archive'].cmd \
+        .add('obs_num', obs_num) \
+        .add('archive_dir', archive_dir) \
+
+    steps['choose_calibrators'].cmd \
+        .add('region_file', region_file) \
+        .add('ref_image_fits', ref_image_fits) \
+        .add('flux_limit', 0.30) \
+        .add('min_spacing_arcmin', 6.)
+
+    steps['subtract'].cmd \
+        .add('region_file', region_file) \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir)
+
+    steps['solve_dds4'].cmd \
+        .add('region_file', region_file) \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+
+    steps['smooth_dds4'].cmd \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+
+    steps['tec_inference'].cmd \
+        .add('obs_num', obs_num) \
+        .add('ncpu', ncpu // 2) \
+        .add('data_dir', data_dir) \
+        .add('ref_dir', ref_dir)
+
+    steps['slow_solve_dds4'].cmd \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+
+    steps['infer_screen'].cmd \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('ref_image_fits', ref_image_fits) \
+        .add('block_size', block_size) \
+        .add('max_N', 250) \
+        .add('ncpu', ncpu) \
+        .add('ref_dir', ref_dir) \
+        .add('deployment_type', deployment_type)
+
+    steps['merge_slow'].cmd \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+
+    steps['image_subtract_dirty'].cmd \
+        .add('image_type', 'image_subtract_dirty') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir)
+
+    steps['image_dds4'].cmd \
+        .add('image_type', 'image_dds4') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True)
+
+    steps['image_smooth'].cmd \
+        .add('image_type', 'image_smoothed') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True)
+
+    steps['image_smooth_slow'].cmd \
+        .add('image_type', 'image_smoothed_slow') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True)
+
+    steps['image_screen'].cmd \
+        .add('image_type', 'image_screen') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True)
+
+    steps['image_screen_slow'].cmd \
+        .add('image_type', 'image_screen_slow') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True)
+
     dsk = {}
-
-    if do_download_archive:
-        cmd = CMD(download_archive_working_dir, script_dir, 'download_archive.py', exec_env=lofar_sksp_env)
-        cmd.add('obs_num', obs_num)
-        cmd.add('archive_dir', archive_dir)
-        cmd.add('working_dir', subtract_working_dir)
-        dsk['download_archive'] = (cmd,)
-    else:
-        dsk['download_archive'] = (lambda *x: None,)
-
-    if do_choose_calibrators:
-        cmd = CMD(choose_calibrators_working_dir, script_dir, 'choose_calibrators.py', exec_env=lofar_sksp_env)
-        cmd.add('region_file', region_file)
-        cmd.add('ref_image_fits', ref_image_fits)
-        cmd.add('working_dir', choose_calibrators_working_dir)
-        cmd.add('flux_limit', 0.30)
-        cmd.add('min_spacing_arcmin', 6.)
-        dsk['choose_calibrators'] = (cmd,'download_archive')
-    else:
-        dsk['choose_calibrators'] = (lambda *x: None,'download_archive')
-
-    if do_subtract:
-        cmd = CMD(subtract_working_dir, script_dir, 'sub-sources-outside-region-mod.py', exec_env=lofar_sksp_env)
-        cmd.add('region_file', region_file)
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', subtract_working_dir)
-        cmd.add('only_setup', no_subtract)
-        dsk['subtract'] = (cmd, 'choose_calibrators','download_archive')
-    else:
-        dsk['subtract'] = (lambda *x: None, 'choose_calibrators','download_archive')
-
-    if do_solve_dds4:
-        cmd = CMD(solve_dds4_working_dir, script_dir, 'solve_on_subtracted.py', exec_env=lofar_sksp_env)
-        cmd.add('region_file', region_file)
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', solve_dds4_working_dir)
-        dsk['solve_dds4'] = (cmd, 'subtract')
-    else:
-        dsk['solve_dds4'] = (lambda *x: None, 'subtract')
-
-    if do_smooth_dds4:
-        cmd = CMD(smooth_dds4_working_dir, script_dir, 'smooth_dds4_simple.py', exec_env=bayes_gain_screens_env)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', smooth_dds4_working_dir)
-        dsk['smooth_dds4'] = (cmd, 'solve_dds4')
-    else:
-        dsk['smooth_dds4'] = (lambda *x: None, 'solve_dds4')
-
-    if do_tec_inference:
-        cmd = CMD(tec_inference_working_dir, script_dir, 'tec_inference_improved.py', exec_env=bayes_gain_screens_env)
-        cmd.add('obs_num', obs_num)
-        cmd.add('ncpu', ncpu//2)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', tec_inference_working_dir)
-        cmd.add('ref_dir', ref_dir)
-        dsk['tec_inference'] = (cmd, 'smooth_dds4', 'solve_dds4')
-    else:
-        dsk['tec_inference'] = (lambda *x: None, 'smooth_dds4', 'solve_dds4')
-
-    if do_slow_solve_dds4:
-        cmd = CMD(slow_solve_dds4_working_dir, script_dir, 'slow_solve_on_subtracted.py', exec_env=lofar_sksp_env)
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', slow_solve_dds4_working_dir)
-        dsk['slow_solve_dds4'] = (cmd, 'smooth_dds4')
-    else:
-        dsk['slow_solve_dds4'] = (lambda *x: None, 'smooth_dds4')
-
-    if do_infer_screen:
-        cmd = CMD(infer_screen_working_dir, script_dir, 'infer_screen.py', exec_env=bayes_gain_screens_env)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', infer_screen_working_dir)
-        cmd.add('ref_image_fits', ref_image_fits)
-        cmd.add('block_size', block_size)
-        cmd.add('max_N', 250)
-        cmd.add('ncpu', ncpu)
-        cmd.add('ref_dir', ref_dir)
-        cmd.add('deployment_type', deployment_type)
-        dsk['infer_screen'] = (cmd, 'tec_inference', 'smooth_dds4')
-    else:
-        dsk['infer_screen'] = (lambda *x: None, 'tec_inference', 'smooth_dds4')
-
-    if do_merge_slow:
-        cmd = CMD(merge_slow_working_dir, script_dir, 'merge_slow.py', exec_env=bayes_gain_screens_env)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', merge_slow_working_dir)
-        dsk['merge_slow'] = (cmd, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
-    else:
-        dsk['merge_slow'] = (lambda *x: None, 'infer_screen', 'smooth_dds4', 'slow_solve_dds4')
-
-    if do_image_subtract_dirty:
-        cmd = CMD(image_subtract_dirty_working_dir, script_dir, 'image.py', exec_env=lofar_sksp_env)
-        cmd.add('image_type', 'image_subtract_dirty')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', image_subtract_dirty_working_dir)
-        cmd.add('script_dir', script_dir)
-        dsk['image_subtract_dirty'] = (cmd, 'subtract')
-    else:
-        dsk['image_subtract_dirty'] = (lambda *x: None, 'subtract')
-
-    if do_image_dds4:
-        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py', exec_env=lofar_sksp_env)
-        cmd.add('image_type', 'image_dds4')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', image_dds4_working_dir)
-        cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', True)
-        dsk['image_dds4'] = (cmd, 'solve_dds4')
-    else:
-        dsk['image_dds4'] = (lambda *x: None, 'solve_dds4')
-
-    if do_image_smooth:
-        cmd = CMD(image_smooth_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
-        cmd.add('image_type', 'image_smoothed')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', image_smooth_working_dir)
-        cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', True)
-        dsk['image_smooth'] = (cmd, 'tec_inference')
-    else:
-        dsk['image_smooth'] = (lambda *x: None, 'tec_inference')
-
-    if do_image_smooth_slow:
-        cmd = CMD(image_smooth_slow_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
-        cmd.add('image_type', 'image_smoothed_slow')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', image_smooth_slow_working_dir)
-        cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', True)
-        dsk['image_smooth_slow'] = (cmd, 'tec_inference', 'slow_solve_dds4', 'merge_slow')
-    else:
-        dsk['image_smooth_slow'] = (lambda *x: None, 'tec_inference', 'slow_solve_dds4', 'merge_slow')
-
-    if do_image_screen:
-        cmd = CMD(image_screen_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
-        cmd.add('image_type', 'image_screen')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', image_screen_working_dir)
-        cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', True)
-        dsk['image_screen'] = (cmd, 'infer_screen')
-    else:
-        dsk['image_screen'] = (lambda *x: None, 'infer_screen')
-
-    if do_image_screen_slow:
-        cmd = CMD(image_screen_slow_working_dir, script_dir, 'image.py', exec_env=lofar_gain_screens_env)
-        cmd.add('image_type', 'image_screen_slow')
-        cmd.add('ncpu', ncpu)
-        cmd.add('obs_num', obs_num)
-        cmd.add('data_dir', data_dir)
-        cmd.add('working_dir', image_screen_slow_working_dir)
-        cmd.add('script_dir', script_dir)
-        cmd.add('use_init_dico', True)
-        dsk['image_screen_slow'] = (cmd, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
-    else:
-        dsk['image_screen_slow'] = (lambda *x: None, 'infer_screen', 'slow_solve_dds4', 'merge_slow')
+    for name in steps.keys():
+        dsk[name] = steps[name].get_dask_task()
 
     dsk['endpoint'] = (lambda *x: None,) + tuple([k for k in dsk.keys()])
-    state_file = os.path.join(root_working_dir, 'STATE')
     execute_dask(dsk, 'endpoint', timing_file=timing_file, state_file=state_file)
 
 
-def add_args(parser):
-    steps = [
-        "download_archive",
-        "choose_calibrators",
-        "subtract",
-        "solve_dds4",
-        "slow_solve_dds4",
-        "smooth_dds4",
-        "tec_inference",
-        "merge_slow",
-        "image_subtract_dirty",
-        "image_smooth",
-        "image_dds4",
-        "image_smooth_slow",
-        "infer_screen",
-        "image_screen",
-        "image_screen_slow"]
+STEPS = [
+    "download_archive",
+    "choose_calibrators",
+    "subtract",
+    "solve_dds4",
+    "slow_solve_dds4",
+    "smooth_dds4",
+    "tec_inference",
+    "merge_slow",
+    "image_subtract_dirty",
+    "image_smooth",
+    "image_dds4",
+    "image_smooth_slow",
+    "infer_screen",
+    "image_screen",
+    "image_screen_slow"]
 
+
+def add_args(parser):
     def string_or_none(s):
         if s.lower() == 'none':
             return None
@@ -541,19 +560,14 @@ def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.register('type', 'str_or_none', string_or_none)
 
-    # optional = parser._action_groups.pop()  # Edited this line
     required = parser.add_argument_group('Required arguments')
     env_args = parser.add_argument_group('Execution environment arguments')
     optional = parser.add_argument_group('Optional arguments')
-    # parser._action_groups.append(optional)  # added this line
     step_args = parser.add_argument_group('Enable/Disable steps')
 
-    optional.add_argument('--no_subtract',
-                          help='Whether to copy archive but skip subtract, useful for imaging only supposing all other required things are in place.',
+    optional.add_argument('--no_download',
+                          help='Whether to move instead of copy the archive dir. Potentially unsafe. Requires env variable set SP_AUTH="1".',
                           default=False, type="bool", required=False)
-    # optional.add_argument('--no_download',
-    #                       help='Whether to move instead of copy the archive dir.',
-    #                       default=False, type="bool", required=False)
     optional.add_argument('--region_file',
                           help='ds9 region file defining calbrators. If not provided, they will be automatically determined.',
                           required=False, type='str_or_none',
@@ -564,6 +578,9 @@ def add_args(parser):
     optional.add_argument('--ref_image_fits',
                           help='Reference image used to extract screen directions and auto select calibrators if region_file is None. If not provided, it will use the one in the archive directory.',
                           required=False, default=None, type='str_or_none')
+    optional.add_argument('--auto_resume',
+                          help='Whether or try to automatically resume operations based on the STATE file.',
+                          required=False, default=True, type='bool')
 
     try:
         workers = os.cpu_count()
@@ -578,7 +595,7 @@ def add_args(parser):
                           default=workers, type=int, required=False)
     required.add_argument('--obs_num', help='Obs number L*',
                           default=None, type=int, required=True)
-    required.add_argument('--archive_dir', help='Where are the archives stored.',
+    required.add_argument('--archive_dir', help='Where are the archives stored. Can also be networked locations, e.g. <user>@<host>:<path> but you must have authentication.',
                           default=None, type=str, required=True)
     required.add_argument('--root_working_dir', help='Where the root of all working dirs are.',
                           default=None, type=str, required=True)
@@ -605,7 +622,7 @@ def add_args(parser):
                           help='The conda env to use if bayes_gain_screens_simg not provided.',
                           default='tf_py', type=str, required=False)
 
-    for s in steps:
+    for s in STEPS:
         step_args.add_argument('--do_{}'.format(s),
                                help='Do {}? (NO=0/YES_CLOBBER=1/YES_NO_CLOBBER=2)'.format(s),
                                default=0, type=int, required=False)
@@ -622,7 +639,7 @@ def test_main():
          ref_dir=0,
          block_size=50,
          deployment_type='directional',
-         no_subtract=False,
+         no_download=False,
          bind_dirs='/beegfs/lofar',
          lofar_sksp_simg='/home/albert/store/lofar_sksp_ddf.simg',
          lofar_gain_screens_simg='/home/albert/store/lofar_sksp_ddf_gainscreens_premerge.simg',

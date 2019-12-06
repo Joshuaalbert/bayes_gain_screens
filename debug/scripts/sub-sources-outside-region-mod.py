@@ -117,8 +117,6 @@ def flatten(f):
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
-    parser.add_argument('--only_setup', help='Whether to stop before doing subtract.',
-                        default=False, type="bool", required=False)
     parser.add_argument('--region_file', help='boxfile, required argument', required=True, type=str)
     parser.add_argument('--ncpu', help='number of cpu to use, default=34', default=32, type=int)
     parser.add_argument('--keeplongbaselines',
@@ -152,7 +150,7 @@ def get_filenames(data_dir, working_dir, obs_num):
     return mslist_file, mslist, fullmask, indico, clustercat
 
 
-def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours, only_setup):
+def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, chunkhours):
     data_dir = os.path.abspath(data_dir)
     working_dir = os.path.abspath(working_dir)
     region_file = os.path.abspath(region_file)
@@ -184,9 +182,6 @@ def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, c
     data_colname = 'DATA'
     outcolname = 'DATA_SUB'
     columnchecker(mslist, data_colname)
-    if only_setup:
-        print("Only data setup. Not doing subtract at user request.")
-        return
     imagenpix = getimsize(fullmask)
     # predict
     if os.path.isfile(outdico):
