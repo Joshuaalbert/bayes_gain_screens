@@ -48,7 +48,6 @@ def main(data_dir, working_dir, obs_num):
     timestamps, times = datapack.get_times(axes['time'])
     time_screen = times.mjd*86400.
     phase_screen, axes = datapack.phase
-    amplitude_screen, axes = datapack.amplitude
 
     ###
     # get smoothed000 phase and amplitude
