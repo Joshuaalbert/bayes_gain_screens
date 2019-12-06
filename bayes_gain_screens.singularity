@@ -16,7 +16,7 @@ apt-get -y install software-properties-common
 
 apt-add-repository ppa:x2go/stable
 apt-get update
-apt-get -y install vim build-essential manpages-dev wget git ffmpeg htop feh mplayer x2goserver x2goserver-xsession xfce4
+apt-get -y install vim build-essential manpages-dev wget git ffmpeg htop feh mplayer x2goserver x2goserver-xsession xfce4 nano
 apt-get clean
 
 
@@ -74,9 +74,3 @@ export SP_SCRIPTS=/opt/scripts
 
 . /opt/miniconda3/etc/profile.d/conda.sh
 conda activate tf_py
-cd /opt/bayes_gain_screen
-git pull
-python setup.py install
-
-
-
