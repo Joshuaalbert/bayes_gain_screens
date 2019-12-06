@@ -311,7 +311,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         if not os.path.isfile(os.path.join(root_working_dir, 'bright_calibrators.reg')):
             cmd_call("rsync -avP {} {}".format(region_file, os.path.join(root_working_dir, 'bright_calibrators.reg')))
         else:
-            raise IOError("Region file already found. Not copying provided one.")
+            if do_kwargs['do_choose_calibrators'] > 0:
+                raise IOError("Region file already found. Not copying provided one.")
         region_file = os.path.join(root_working_dir, 'bright_calibrators.reg')
 
     print("Constructing run environments")
