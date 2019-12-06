@@ -410,17 +410,19 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         else:
             with open(state_file, 'r') as f:
                 for line in f.readlines():
-                    split = line.split("|")
-                    if len(split) == 3:
-                        name = split[1].strip()
-                        status = split[2].strip()
-                    else:
+                    if "END" not in line:
                         continue
+                    name = line.split(" ")[-1].strip()
+                    # split = line.split("|")
+                    # if len(split) == 3:
+                    #     name = split[1].strip()
+                    #     status = split[2].strip()
+                    # else:
+                    #     continue
                     if name not in steps.keys():
                         raise ValueError("Could not find step {}".format(name))
-                    if "END" in status:
-                        print("Auto-resume infers {} should be skipped.".format(name))
-                        steps[name].flag = 0
+                    print("Auto-resume infers {} should be skipped.".format(name))
+                    steps[name].flag = 0
     # make required working directories (no deleting
     for k, step in steps.items():
         step.build_working_dir(root_working_dir)
