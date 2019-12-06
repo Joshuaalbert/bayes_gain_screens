@@ -133,14 +133,14 @@ def add_args(parser):
                         default=None, type=str, required=True)
 
 
-def get_filenames(data_dir, working_dir, obs_num):
+def get_filenames(data_dir):
     print("Copying archives.")
     archive_fullmask = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
     archive_indico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
     archive_clustercat = os.path.join(data_dir, 'image_dirin_SSD_m.npy.ClusterCat.npy')
-    fullmask = os.path.join(working_dir, os.path.basename(archive_fullmask))
-    indico = os.path.join(working_dir, os.path.basename(archive_indico))
-    clustercat = os.path.join(working_dir, os.path.basename(archive_clustercat))
+    fullmask = os.path.join(data_dir, os.path.basename(archive_fullmask))
+    indico = os.path.join(data_dir, os.path.basename(archive_indico))
+    clustercat = os.path.join(data_dir, os.path.basename(archive_clustercat))
     mslist_file = os.path.join(data_dir, 'mslist.txt')
     mslist = []
     print('Reading {}'.format(mslist_file))
@@ -163,10 +163,10 @@ def main(data_dir, working_dir, obs_num, region_file, ncpu, keeplongbaselines, c
     except:
         pass
     os.chdir(working_dir)
-    solsdir = os.path.join(working_dir, 'SOLSDIR')
-    mslist_file, mslist, fullmask, indico, clustercat = get_filenames(data_dir, working_dir, obs_num)
-    outdico = os.path.join(working_dir, 'image_full_ampphase_di_m_SUB.NS.DicoModel')
-    outmask = os.path.join(working_dir, 'cutoutmask.fits')  # just a name, can be anything
+    solsdir = os.path.join(data_dir, 'SOLSDIR')
+    mslist_file, mslist, fullmask, indico, clustercat = get_filenames(data_dir)
+    outdico = os.path.join(data_dir, 'image_full_ampphase_di_m_SUB.NS.DicoModel')
+    outmask = os.path.join(data_dir, 'cutoutmask.fits')  # just a name, can be anything
     if not os.path.isfile(fullmask):
         raise IOError("Missing mask {}".format(fullmask))
     if not os.path.isfile(indico):

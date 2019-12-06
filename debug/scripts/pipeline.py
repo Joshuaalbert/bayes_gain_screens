@@ -435,6 +435,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     steps['download_archive'].cmd \
         .add('obs_num', obs_num) \
         .add('archive_dir', archive_dir) \
+        .add('no_download',no_download)
 
     steps['choose_calibrators'].cmd \
         .add('region_file', region_file) \
