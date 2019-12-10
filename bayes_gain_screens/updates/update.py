@@ -12,7 +12,7 @@ class Update(object):
         self.force_diag_Omega = force_diag_Omega
         self.S = S
 
-    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma):
+    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma, *serve_values):
         """
         If p(X) = N[prior_mu, prior_Gamma]
         then this computes,
@@ -43,6 +43,18 @@ class Update(object):
             [S, B, N]
         """
         raise NotImplementedError()
+
+    def predictive_distribution(self, post_mu_b, post_Gamma_b):
+        # S, B, K
+        samples = tfp.distributions.MultivariateNormalFullCovariance(loc=post_mu_b,
+                                                                     covariance_matrix=post_Gamma_b).sample(self.S)
+        # S, B, N
+        y_pred = self._forward(samples)
+
+        post_mean = tf.reduce_mean(y_pred, axis=0)
+        post_cov = tfp.stats.covariance(y_pred,sample_axis=0, event_axis=-1)
+        return post_mean, post_cov
+
 
     def get_params(self, y, post_mu_b, post_Gamma_b):
         """
@@ -83,7 +95,7 @@ class UpdatePy(Update):
     def __init__(self, *args, **kwargs):
         super(UpdatePy, self).__init__(*args, **kwargs)
 
-    def _update_function(self, t, prior_mu, prior_Gamma, y, Sigma):
+    def _update_function(self, t, prior_mu, prior_Gamma, y, Sigma, *serve_values):
         """
         If p(X) = N[prior_mu, prior_Gamma]
         then this computes,
@@ -104,7 +116,7 @@ class UpdatePy(Update):
         """
         raise NotImplementedError()
 
-    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma):
+    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma, *serve_values):
         """
         If p(X) = N[prior_mu, prior_Gamma]
         then this computes,
@@ -124,10 +136,11 @@ class UpdatePy(Update):
             the mean [K] and the covariance [K, K] of type tf.Tensor
         """
 
-        def _call(t, prior_mu, prior_Gamma, y, Sigma):
+        def _call(t, prior_mu, prior_Gamma, y, Sigma, *serve_values):
+            serve_values = [v.numpy() for v in serve_values]
             prior_mu, prior_Gamma, y, Sigma = prior_mu.numpy(), prior_Gamma.numpy(), y.numpy(), Sigma.numpy()
-            post_mu, post_Gamma = self._update_function(t, prior_mu, prior_Gamma, y, Sigma)
+            post_mu, post_Gamma = self._update_function(t, prior_mu, prior_Gamma, y, Sigma, *serve_values)
 
             return [post_mu.astype(np.float64), post_Gamma.astype(np.float64)]
 
-        return tf.py_function(_call, [t, prior_mu, prior_Gamma, y, Sigma], [float_type, float_type], name='update')
+        return tf.py_function(_call, [t, prior_mu, prior_Gamma, y, Sigma]+list(serve_values), [float_type, float_type], name='update')

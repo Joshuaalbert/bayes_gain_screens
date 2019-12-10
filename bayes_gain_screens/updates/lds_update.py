@@ -16,7 +16,18 @@ class UpdateLDS(Update):
         super(UpdateLDS, self).__init__(**kwargs)
         self.C = C
 
-    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma):
+    def _forward(self, samples):
+        """
+        Computes the data-domain samples by pushing forward.
+        :param samples: tf.Tensor
+            [S, B, K]
+        :return: tf.Tensor
+            [S, B, N]
+        """
+        #[N, K].[S, B, K]->[S,B,N]
+        return tf.einsum("nk,sbk->sbn",tf.convert_to_tensor(self.C, dtype=float_type, name='C'), samples)
+
+    def __call__(self, t, prior_mu, prior_Gamma, y, Sigma, *served_values):
         """
         If p(X) = N[prior_mu, prior_Gamma]
         then this computes,
@@ -63,11 +74,12 @@ class UpdateLDS(Update):
 
 
 class UpdateLDSPolynomial(UpdateLDS):
-    def __init__(self, x, deg=2, basis='jacobi', **kwargs):
+    def __init__(self, x, deg=2, basis='jacobi', scale = False,  **kwargs):
 
         K = deg + 1
-        x = (x - x.min())
-        x = x / x.max()
+        if scale:
+            x = (x - x.min())
+            x = x / x.max()
         if basis == 'jacobi':
             # N, K
             X = np.stack([jacobi(k, 0., 0.)(x) for k in range(K)], axis=1)
@@ -77,5 +89,6 @@ class UpdateLDSPolynomial(UpdateLDS):
         else:
             # N, K
             X = np.stack([x ** k for k in range(K)], axis=1)
-        X /= np.sqrt(np.sum(X ** 2, axis=0))
+        if scale:
+            X /= np.sqrt(np.sum(X ** 2, axis=0))
         super(UpdateLDSPolynomial, self).__init__(X, **kwargs)

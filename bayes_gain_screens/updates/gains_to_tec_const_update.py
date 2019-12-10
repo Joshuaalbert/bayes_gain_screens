@@ -196,7 +196,7 @@ class UpdateGainsToTecConst(UpdatePy):
         phase = samples[:, :, 0:1] * tec_conv + samples[:, :, 1:2]
         return tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1)
 
-    def _update_function(self, t, prior_mu, prior_Gamma, Y, Sigma):
+    def _update_function(self, t, prior_mu, prior_Gamma, Y, Sigma, *serve_values):
         """
         If p(X) = N[prior_mu, prior_Gamma]
         then this computes,
