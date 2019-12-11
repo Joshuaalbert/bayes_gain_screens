@@ -40,10 +40,10 @@ def smooth_gains(Yreal, Yimag, filter_size=1, deg=2):
                 enumerate(np.polyfit(_freqs, _Yimag, deg=deg))])
 
     res_real = np.abs(Yreal - real)
-    flag = res_real > np.sort(res_real, axis=0)[-2]
+    flag = res_real > np.sort(res_real, axis=0)[-3]
     _Yreal[flag] = real[flag]
     res_imag = np.abs(Yimag - imag)
-    flag = res_imag > np.sort(res_imag, axis=0)[-2]
+    flag = res_imag > np.sort(res_imag, axis=0)[-3]
     _Yimag[flag] = imag[flag]
 
     real = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in
@@ -54,10 +54,10 @@ def smooth_gains(Yreal, Yimag, filter_size=1, deg=2):
     _Yreal, _Yimag = np.copy(Yreal), np.copy(Yimag)
 
     res_real = np.abs(Yreal - real)
-    flag = res_real > np.sort(res_real, axis=0)[-2]
+    flag = res_real > np.sort(res_real, axis=0)[-3]
     _Yreal[flag] = real[flag]
     res_imag = np.abs(Yimag - imag)
-    flag = res_imag > np.sort(res_imag, axis=0)[-2]
+    flag = res_imag > np.sort(res_imag, axis=0)[-3]
     _Yimag[flag] = imag[flag]
 
     real = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in

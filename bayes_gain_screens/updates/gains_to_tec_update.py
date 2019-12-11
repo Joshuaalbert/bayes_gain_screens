@@ -251,6 +251,15 @@ class UpdateGainsToTec(UpdatePy):
 
         sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
                      (slice(-self.tec_scale, self.tec_scale, self.spacing),))
+        tec_conv = -8.4479745e6 / self.freqs
+        phase_model = sol1[0]*tec_conv
+        gains_model = np.exp(1j*phase_model)
+        total_res = np.abs(gains - gains_model)
+        keep = np.where(total_res < np.sort(total_res)[-3])[0]
+
+        s = SolveLossVI(gains.real[keep], gains.imag[keep], self.freqs[keep],
+                        tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
+                        S=20, L_Sigma=L_Sigma)
 
         sol3 = minimize(s.loss_func,
                         np.array([sol1[0], deconstrain_tec(5.)]),
