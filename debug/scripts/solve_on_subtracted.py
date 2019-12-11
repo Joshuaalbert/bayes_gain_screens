@@ -6,11 +6,19 @@ import sys
 import tables
 import argparse
 
+import subprocess
+
+def cmd_call(cmd):
+    print("{}".format(cmd))
+    exit_status = subprocess.call(cmd, shell=True)
+    if exit_status:
+        raise ValueError("Failed to  run: {}".format(cmd))
+
 
 def make_masked_dico(region_mask, full_dico_model, masked_dico_model):
     cmd = 'MaskDicoModel.py --MaskName={region_mask} --InDicoModel={full_dico_model} --OutDicoModel={masked_dico_model} --InvertMask=1'.format(
         region_mask=region_mask, full_dico_model=full_dico_model, masked_dico_model=masked_dico_model)
-    os.system(cmd)
+    cmd_call(cmd)
 
 def make_clustercat(reg_file, clustercat):
     regions = pyregion.open(reg_file)
@@ -75,7 +83,7 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu, s
         with open(os.path.join(working_dir, 'instruct_{:02d}.sh'.format(i)), 'w') as f:
             f.write(cmd)
         print(cmd)
-        os.system(cmd)
+        cmd_call(cmd)
 
 
 def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
@@ -97,8 +105,8 @@ def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
     with open(solsfile, 'w') as f:
         for s in sols:
             f.write("{}\n".format(s))
-    os.system('MergeSols.py --SolsFilesIn={} --SolFileOut={}'.format(solsfile, merged_sol))
-    os.system('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
+    cmd_call('MergeSols.py --SolsFilesIn={} --SolFileOut={}'.format(solsfile, merged_sol))
+    cmd_call('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
                                                                             h5_file=merged_h5parm))
 
 

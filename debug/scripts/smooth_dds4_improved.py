@@ -1,73 +1,60 @@
 import os
 os.environ['OMP_NUM_THREADS'] = "1"
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
-import pylab as plt
 from scipy.ndimage import median_filter
 from bayes_gain_screens import logging
 from bayes_gain_screens.datapack import DataPack
 from bayes_gain_screens.misc import make_soltab
-from scipy.stats import multivariate_normal
-from scipy.optimize import minimize
-from dask.multiprocessing import get
+import pylab as plt
 import argparse
-from timeit import default_timer
 
 """
 This script is still being debugged/tested. 
 Get's TEC from gains.
 """
 
-def stack_complex(y):
-    """
-    Stacks complex real and imaginary parts
-    :param y: [..., N]
-    :return: [...,2N]
-    real on top of imag
-    """
-    return np.stack([y.real, y.imag], axis=-1)
+import tensorflow as tf
+from bayes_gain_screens.misc import diagonal_jitter
 
-def sequential_solve(Yreal, Yimag, freqs, working_dir):
-    """
-    Run on blocks of time.
 
-    :param Yreal:
-        [D, Nf, Nt]
-    :param Yimag:
-    :param freqs:
+def smooth(x, Y, deg, cov_prior, Sigma):
+    """
+    Smoothes Y assuming the reression coefficients have a zero mean prior and covariance prior `cov_prior`.
+
+    :param x: [N]
+    :param Y: [B, N]
+    :param deg: int
+    :param cov_prior: [K, K]
+        Ordered from 0..deg
+    :param Sigma: [(B), N,N]
+
     :return:
-        [D, Nf, Nt]
     """
+    K = deg + 1
+    X = np.stack([x ** (deg - i) for i in range(K)])
+    with tf.Session(graph=tf.Graph()) as sess:
+        X = tf.constant(X, dtype=tf.float64)
+        cov = tf.constant(cov_prior, dtype=tf.float64)
+        # B,N
+        y_pl = tf.placeholder(tf.float64, shape=Y.shape)
+        # N,N
+        Sigma_pl = tf.placeholder(tf.float64, shape=Sigma.shape)
 
-    D, Nf, N = Yreal.shape
+        L_O = tf.linalg.cholesky(cov + diagonal_jitter(tf.shape(cov)[-1]))
+        LX = tf.linalg.triangular_solve(L_O, X, adjoint=False, lower=True)
+        # N, N
+        XOXT = tf.linalg.matmul(LX, LX, transpose_a=True)
+        #B, N, N
+        S = tf.broadcast_to(Sigma_pl + XOXT, tf.broadcast_dynamic_shape(y_pl[:, :, None]))
+        # B, N
+        post_mean = tf.linalg.matmul(XOXT, tf.linalg.lstsq(S, y_pl[:, :, None], fast=False))[:, :, 0]
+        return sess.run(post_mean, {y_pl: Y, Sigma_pl: Sigma})
 
-    phase_array = np.zeros((D, Nf, N))
-    for d in range(D):
-        t0 = default_timer()
-        Sigma, flag = smooth_gains(Yreal[d, :, :], Yimag[d, :, :], filter_size=1, deg=2)
-        Sigma = np.diag(np.diag(Sigma))
-        last_params = np.array([0.,0.,0.])
 
-        for t in range(N):
-            keep = np.logical_not(flag[:, t])
-            Sigma_keep = np.concatenate([keep, keep])
-            tec_conv = -8.4479745e6 / freqs[keep]
-            flagged_Sigma = Sigma[Sigma_keep, :][:, Sigma_keep]
-            clock_conv = 2 * np.pi * (1e-9 * freqs[keep])
-            Y_concat = np.concatenate([Yreal[d, keep, t], Yimag[d, keep, t]], axis=0)
-            def loss(params):
-                tec, const, clock = params
-                phase_pred = tec*tec_conv + const + clock*clock_conv
-                g_pred = np.concatenate([np.cos(phase_pred), np.sin(phase_pred)],axis=0)
-                L = -multivariate_normal(mean=Y_concat, cov=flagged_Sigma).logpdf(g_pred)
-                return L
-            res = minimize(loss, last_params, method='BFGS')
-            last_params = res.x
-            tec_conv = -8.4479745e6 / freqs
-            clock_conv = 2 * np.pi * (1e-9 * freqs)
-            phase_array[d, :, t] = last_params[0]*tec_conv + last_params[1] + last_params[2]*clock_conv
-        logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
-    return phase_array
-
+def wrap(p):
+    return np.arctan2(np.sin(p), np.cos(p))
 
 def smoothamps(amps):
     freqkernel = 3
@@ -80,6 +67,7 @@ def smoothamps(amps):
     ampssmoothed = np.exp((median_filter(np.log(amps), size=(1, 1, 1, freqkernel, timekernel), mode='reflect')))
     return ampssmoothed
 
+
 def smooth_gains(Yreal, Yimag, filter_size=1, deg=2):
     _Yreal, _Yimag = np.copy(Yreal), np.copy(Yimag)
     Nf, N = Yreal.shape
@@ -89,107 +77,113 @@ def smooth_gains(Yreal, Yimag, filter_size=1, deg=2):
     imag = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in
                 enumerate(np.polyfit(_freqs, _Yimag, deg=deg))])
 
-    res_real = np.abs(real - Yreal)
+    res_real = np.abs(Yreal - real)
+    flag = res_real > np.sort(res_real, axis=0)[-3]
+    _Yreal[flag] = real[flag]
     res_imag = np.abs(Yimag - imag)
+    flag = res_imag > np.sort(res_imag, axis=0)[-3]
+    _Yimag[flag] = imag[flag]
 
-    res_vec = np.concatenate([res_real, res_imag], axis=0)
-    Sigma = res_vec[:, None, :] * res_vec[None, :, :]
-    Sigma = np.nanmean(Sigma, axis=-1)
+    real = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in
+                enumerate(np.polyfit(_freqs, _Yreal, deg=deg))])
+    imag = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in
+                enumerate(np.polyfit(_freqs, _Yimag, deg=deg))])
 
-    flagreal = np.abs(real - Yreal) > 4.*np.sqrt(np.diag(Sigma)[:Nf, None])
-    flagimag = np.abs(imag - Yimag) > 4.*np.sqrt(np.diag(Sigma)[Nf:, None])
+    _Yreal, _Yimag = np.copy(Yreal), np.copy(Yimag)
 
-    return Sigma, np.logical_or(flagreal, flagimag)
+    res_real = np.abs(Yreal - real)
+    flag = res_real > np.sort(res_real, axis=0)[-3]
+    _Yreal[flag] = real[flag]
+    res_imag = np.abs(Yimag - imag)
+    flag = res_imag > np.sort(res_imag, axis=0)[-3]
+    _Yimag[flag] = imag[flag]
+
+    real = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in
+                enumerate(np.polyfit(_freqs, _Yreal, deg=deg))])
+    imag = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in
+                enumerate(np.polyfit(_freqs, _Yimag, deg=deg))])
+
+    return real, imag
 
 
-def main(data_dir, working_dir, obs_num, ncpu):
+def main(data_dir, working_dir, obs_num):
+    working_dir = os.path.abspath(working_dir)
+    os.makedirs(working_dir,exist_ok=True)
+    data_dir = os.path.abspath(data_dir)
+    logging.info("Changed dir to {}".format(working_dir))
     os.chdir(working_dir)
-    logging.info("Performing TEC and constant variational inference.")
-    merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
-    select = dict(pol=slice(0, 1, 1))
-    datapack = DataPack(merged_h5parm, readonly=False)
-    logging.info("Creating directionally_referenced/tec000+const000")
+    sol_name='DDS4_full'
+    datapack = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
+    if not os.path.isfile(datapack):
+        raise IOError("datapack doesn't exists {}".format(datapack))
+
+    logging.info("Using working directory: {}".format(working_dir))
+    select=dict(pol=slice(0,1,1))
+
+    datapack = DataPack(datapack, readonly=False)
+    logging.info("Creating smoothed/phase000+amplitude000")
     make_soltab(datapack, from_solset='sol000', to_solset='smoothed000', from_soltab='phase000',
                 to_soltab=['phase000', 'amplitude000'])
-    logging.info("Getting raw phase")
+    logging.info("Getting phase and amplitude data")
     datapack.current_solset = 'sol000'
     datapack.select(**select)
     axes = datapack.axes_phase
     antenna_labels, antennas = datapack.get_antennas(axes['ant'])
     patch_names, directions = datapack.get_directions(axes['dir'])
-    radec = np.stack([directions.ra.rad, directions.dec.rad], axis=1)
     timestamps, times = datapack.get_times(axes['time'])
     freq_labels, freqs = datapack.get_freqs(axes['freq'])
     pol_labels, pols = datapack.get_pols(axes['pol'])
     Npol, Nd, Na, Nf, Nt = len(pols), len(directions), len(antennas), len(freqs), len(times)
     phase_raw, axes = datapack.phase
     amp_raw, axes = datapack.amplitude
+    logging.info("Smoothing amplitudes in time and frequency.")
     amp_smooth = smoothamps(amp_raw)
-
-    tec_conv = -8.4479745e6 / freqs
-
-
+    logging.info("Constructing gains.")
     # Npol, Nd, Na, Nf, Nt
-    Yimag = amp_smooth * np.sin(phase_raw)
-    Yreal = amp_smooth * np.cos(phase_raw)
-    Yimag = Yimag.reshape((-1, Nf, Nt))
-    Yreal = Yreal.reshape((-1, Nf, Nt))
+    Yimag_full = amp_smooth * np.sin(phase_raw)
+    Yreal_full = amp_smooth * np.cos(phase_raw)
+    # Nf, Npol*Nd*Na*Nt
+    Yimag_full = Yimag_full.transpose((3,0,1,2,4)).reshape((Nf, -1))
+    Yreal_full = Yreal_full.transpose((3,0,1,2,4)).reshape((Nf, -1))
+    logging.info("Smoothing gains.")
 
-    logging.info("Building dask")
-    D = Yimag.shape[0]
-    num_processes = min(D, ncpu)
-    dsk = {}
-    keys = []
-    for c,i in enumerate(range(0, D, D // num_processes)):
-        start = i
-        stop = min(i + (D // num_processes), D)
-        dsk[str(c)] = (sequential_solve, Yreal[start:stop, :, :], Yimag[start:stop, :, :], freqs, working_dir)
-        keys.append(str(c))
-    logging.info("Running dask on {} processes".format(num_processes))
-    results = get(dsk, keys, num_workers=num_processes)
-    logging.info("Finished dask.")
-    phase_smooth = np.zeros((D, Nf, Nt))
-    for c, i in enumerate(range(0, D, D // num_processes)):
-        start = i
-        stop = min(i + (D // num_processes), D)
-        phase_smooth[start:stop, :, :] = results[c][0]
+    Yreal_full, Yimag_full = smooth_gains(Yreal_full, Yimag_full, 1, 2)
+    # Npol, Nd, Na, Nf, Nt
+    Yreal_full = Yreal_full.reshape((Nf, Npol, Nd, Na, Nt)).transpose((1,2,3,0,4))
+    Yimag_full = Yimag_full.reshape((Nf, Npol, Nd, Na, Nt)).transpose((1,2,3,0,4))
 
-    phase_smooth = phase_smooth.reshape((Npol, Nd, Na, Nf, Nt))
-
-    logging.info("Storing smoothed000/phase000+amplitude000")
+    phase_smooth = np.arctan2(Yimag_full, Yreal_full)
+    # amp_smooth =  np.sqrt(Yimag_full**2 + Yreal_full**2)
+    logging.info("Storing results in a datapack")
     datapack.current_solset = 'smoothed000'
+    # Npol, Nd, Na, Nf, Nt
     datapack.select(**select)
     datapack.phase = phase_smooth
     datapack.amplitude = amp_smooth
-
-    plot_results(amp_raw, amp_smooth, freqs, phase_raw, phase_smooth, working_dir)
-
-
-def plot_results(amp_raw, amp_smooth, freqs, phase_raw, phase_smooth, working_dir):
     logging.info("Plotting some residuals.")
-    diff_phase = wrap(wrap(phase_smooth) - wrap(phase_raw))
+    diff_phase = wrap(phase_smooth - wrap(phase_raw))
     diff_amp = np.log(amp_smooth) - np.log(amp_raw)
-    worst_ants = np.argsort(np.abs(diff_phase).mean(0).mean(0).mean(-1).mean(-1))[-5:]
-    worst_dirs = np.argsort(np.abs(diff_phase).mean(0).mean(-1).mean(-1).mean(-1))[-5:]
-    worst_times = np.argsort(np.abs(diff_phase).mean(0).mean(0).mean(0).mean(0))[-5:]
+    worst_ants = np.argsort(np.square(diff_phase).mean(0).mean(0).mean(-1).mean(-1))[-10:]
+    worst_dirs = np.argsort(np.square(diff_phase).mean(0).mean(-1).mean(-1).mean(-1))[-10:]
+    worst_times = np.argsort(np.square(diff_phase).mean(0).mean(0).mean(0).mean(0))[-10:]
+
     for d in worst_dirs:
         for a in worst_ants:
-            plt.imshow(diff_phase[0, d, a, :, :], origin='lower', aspect='auto', vmin=-0.1, vmax=0.1, cmap='coolwarm')
+            plt.imshow(diff_phase[0,d,a,:,:], origin='lower',aspect='auto',vmin=-0.1, vmax=0.1,cmap='coolwarm')
+            plt.colorbar()
             plt.xlabel('time')
             plt.ylabel('freq')
-            plt.colorbar()
-            plt.savefig(os.path.join(working_dir, 'phase_diff_dir{:02d}_ant{:02d}.png'.format(d, a)))
+            plt.savefig(os.path.join(working_dir, 'phase_diff_dir{:02d}_ant{:02d}.png'.format(d,a)))
             plt.close('all')
-            plt.imshow(diff_amp[0, d, a, :, :], origin='lower', cmap='coolwarm', aspect='auto',
-                       vmin=np.percentile(diff_amp[0, d, a, :, :], 5), vmax=np.percentile(diff_amp[0, d, a, :, :], 95))
+            plt.imshow(diff_amp[0, d, a, :, :], origin='lower', cmap='coolwarm', aspect='auto',vmin=np.percentile(diff_amp[0, d, a, :, :], 5), vmax=np.percentile(diff_amp[0, d, a, :, :], 95))
             plt.xlabel('time')
             plt.ylabel('freq')
             plt.colorbar()
             plt.savefig(os.path.join(working_dir, 'amp_diff_dir{:02d}_ant{:02d}.png'.format(d, a)))
             plt.close('all')
             for t in worst_times:
-                plt.scatter(freqs, phase_raw[0, d, a, :, t])
-                plt.plot(freqs, phase_smooth[0, d, a, :, t])
+                plt.scatter(freqs, phase_raw[0,d,a,:,t])
+                plt.plot(freqs, phase_smooth[0,d,a,:,t])
                 plt.xlabel('freq')
                 plt.ylabel('diff phase (rad)')
                 plt.savefig(os.path.join(working_dir, 'phase{:02d}_ant{:02d}_time{:03d}.png'.format(d, a, t)))
@@ -202,10 +196,6 @@ def plot_results(amp_raw, amp_smooth, freqs, phase_raw, phase_smooth, working_di
                 plt.close('all')
 
 
-def wrap(p):
-    return np.arctan2(np.sin(p), np.cos(p))
-
-
 
 def add_args(parser):
     parser.add_argument('--obs_num', help='Obs number L*',
@@ -214,15 +204,10 @@ def add_args(parser):
                         default=None, type=str, required=True)
     parser.add_argument('--working_dir', help='Where to perform the imaging.',
                         default=None, type=str, required=True)
-    parser.add_argument('--ncpu', help='How many processors available.',
-                        default=None, type=int, required=True)
-    parser.add_argument('--ref_dir', help='The index of reference dir.',
-                        default=0, type=int, required=False)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Variational inference of DDTEC and a constant term. Updates the smoothed000 solset too.',
+        description='Smoothes the DDS4_full solutions and stores in smoothed000 solset.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()

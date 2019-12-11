@@ -3,6 +3,13 @@ import glob
 import numpy as np
 import tables
 import argparse
+import subprocess
+
+def cmd_call(cmd):
+    print("{}".format(cmd))
+    exit_status = subprocess.call(cmd, shell=True)
+    if exit_status:
+        raise ValueError("Failed to  run: {}".format(cmd))
 
 def prepare_kms_sols(data_dir, obs_num):
     sol_name = 'DDS4_full'
@@ -71,7 +78,7 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
         with open(os.path.join(working_dir, 'instruct.sh'), 'w') as f:
             f.write(cmd)
         print(cmd)
-        os.system(cmd)
+        cmd_call(cmd)
 
 def make_merged_h5parm(obs_num, data_dir, working_dir):
     slow_sol = 'DDS4_full_slow'
@@ -92,8 +99,8 @@ def make_merged_h5parm(obs_num, data_dir, working_dir):
     with open(solsfile, 'w') as f:
         for s in sols:
             f.write("{}\n".format(s))
-    os.system('MergeSols.py --SolsFilesIn={} --SolFileOut={}'.format(solsfile, merged_sol))
-    os.system('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
+    cmd_call('MergeSols.py --SolsFilesIn={} --SolFileOut={}'.format(solsfile, merged_sol))
+    cmd_call('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
                                                                             h5_file=merged_h5parm))
 
 def make_symlinks(data_dir, obs_num):
