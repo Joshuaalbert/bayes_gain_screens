@@ -96,8 +96,10 @@ class CMD(object):
         # This is the command that will execute the above command in the correct bash env
         exec_command = self.exec_env.compose(run_cmd)
         print("Running:\n{}".format(exec_command))
-
-        exit_status = subprocess.call(exec_command, shell=True)
+        try:
+            exit_status = subprocess.call(exec_command, shell=True)
+        except KeyboardInterrupt:
+            exit_status = 1
         print("Finisihed:\n{}\nwith exit code {}".format(exec_command, exit_status))
         return exit_status
 
@@ -211,7 +213,7 @@ def execute_dask(dsk, key, timing_file=None, state_file=None):
                     state.flush()
                     exit(3)
             else:
-                state.write("{} | END_WITHOUT_RUN {}\n".format(now(), k))
+                state.write("{} | END_WITHOUT_RUN | {}\n".format(now(), k))
                 print("{} skipped.".format(k))
         state.write("{} | PIPELINE_SUCCESS\n".format(now()))
         state.flush()
