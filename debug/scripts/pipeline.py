@@ -463,7 +463,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
     steps['tec_inference'].cmd \
         .add('obs_num', obs_num) \
-        .add('ncpu', ncpu) \
+        .add('ncpu', ncpu//2) \
         .add('data_dir', data_dir) \
         .add('ref_dir', ref_dir)
 

@@ -51,7 +51,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
     obs_cov_array = np.zeros((D, 2*Nf, 2*Nf))
     update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10., force_diag_Sigma=True)
     config = tf.ConfigProto(intra_op_parallelism_threads=1,
-                            inter_op_parallelism_threads=2,
+                            inter_op_parallelism_threads=1,
                             allow_soft_placement=True,
                             device_count={'CPU': 1})
     for d in range(D):
