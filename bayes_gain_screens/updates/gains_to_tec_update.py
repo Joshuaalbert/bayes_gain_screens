@@ -258,11 +258,11 @@ class UpdateGainsToTec(UpdatePy):
         keep = np.where(total_res < np.sort(total_res)[-3])[0]
 
         _keep = list(keep)+list(keep+Nf)
-
+        _Sigma = Sigma[_keep,:][:, _keep]
         try:
-            L_Sigma = np.linalg.cholesky(Sigma[_keep,:][:, _keep] + 1e-4 * np.eye(2 * Nf - len(_keep)))
+            L_Sigma = np.linalg.cholesky(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))
         except:
-            L_Sigma = np.diag(np.sqrt(np.diag(Sigma[_keep,:][:, _keep] + 1e-4 * np.eye(2 * Nf - len(_keep)))))
+            L_Sigma = np.diag(np.sqrt(np.diag(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))))
 
         s = SolveLossVI(gains.real[keep], gains.imag[keep], self.freqs[keep],
                         tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
