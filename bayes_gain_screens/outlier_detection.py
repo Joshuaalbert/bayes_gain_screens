@@ -99,6 +99,31 @@ def smooth(v, axis=-1):
     out /= 2.
     return out
 
+def reinout_filter(ra, dec, tec):
+    rbftype = 'multiquadric'
+
+    count = 0
+    racleaned = np.copy(ra)
+    deccleaned = np.copy(dec)
+    TECcleaned = np.copy(tec)
+    flag_idx = np.zeros(ra.size, dtype=np.bool)
+    while True:
+        rbf_smooth = Rbf(racleaned, deccleaned, TECcleaned, smooth=0.3, function=rbftype)
+        res = np.abs(TECcleaned - rbf_smooth(racleaned, deccleaned))
+        idxbadmax = np.argmax(res)
+        flag_idx[idxbadmax] = True
+        maxval = res[idxbadmax]
+        if maxval < 8.:
+            break
+        else:
+            count = count + 1
+            idxgood = np.where(res < maxval)  # keep all good
+            racleaned = racleaned[idxgood]
+            deccleaned = deccleaned[idxgood]
+            TECcleaned = TECcleaned[idxgood]
+
+    return flag_idx
+
 def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     """
     Uses temporal and spatial smoothing.
@@ -147,7 +172,9 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
                 # print(max_dy)
                 keep = dy < max_dy
 
-            final_flags[:, a, t] = ~keep
+            reinout_flag = reinout_filter(directions[:,0], directions[:,1], y[:, a, t])
+
+            final_flags[:, a, t] = np.logical_or(~keep, reinout_flag)
             # print('CONF', np.interp(dy[~keep], np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
 
             # if keep.sum() < Nd:
