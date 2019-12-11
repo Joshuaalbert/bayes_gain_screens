@@ -132,7 +132,7 @@ def image_smoothed_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 0.
-    kwargs['major_iters'] = 1
+    kwargs['major_iters'] = 5
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:smoothed_slow000/phase000+amplitude000'.format(merged_sol)
     if 'init_dico' in kwargs.keys():
