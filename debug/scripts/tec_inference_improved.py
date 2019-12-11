@@ -13,6 +13,7 @@ from bayes_gain_screens.updates.gains_to_tec_update import UpdateGainsToTec
 from dask.multiprocessing import get
 import argparse
 from timeit import default_timer
+import tensorflow as tf
 import networkx as nx
 
 """
@@ -49,6 +50,10 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
     tec_uncert_array = np.zeros((D, N))
     obs_cov_array = np.zeros((D, 2*Nf, 2*Nf))
     update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10., force_diag_Sigma=True)
+    config = tf.ConfigProto(intra_op_parallelism_threads=1,
+                            inter_op_parallelism_threads=2,
+                            allow_soft_placement=True,
+                            device_count={'CPU': 1})
     for d in range(D):
         t0 = default_timer()
         Sigma_0 = 1 ** 2 * np.eye(2 * Nf)
@@ -60,7 +65,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         # logging.info("On {}: Warming up".format(d))
         # B, Nf
         Y_warmup = np.transpose(Yreal[d, :, : 50] + 1j * Yimag[d, :, :50])
-        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.9).run(stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0,
+        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.9, session=tf.Session(graph=tf.Graph(), config=config)).run(stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0,
                                                                       Gamma_0, 10)
         Sigma_0 = res['Sigma']
         Omega_0 = res['Omega']
@@ -68,7 +73,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         Gamma_0 = res['Gamma_0']
         # logging.info("On {}: Full chain".format(d))
         Y = np.transpose(Yreal[d, :, :] + 1j * Yimag[d, :, :])
-        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.1).run(stack_complex(Y), Sigma_0, Omega_0,
+        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.1, session=tf.Session(graph=tf.Graph(), config=config)).run(stack_complex(Y), Sigma_0, Omega_0,
                                                                       mu_0,
                                                                       Gamma_0, 2)
         tec_mean_array[d, :] = res['post_mu'][:, 0]
