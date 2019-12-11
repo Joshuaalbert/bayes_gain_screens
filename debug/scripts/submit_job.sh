@@ -26,6 +26,7 @@ bind_dirs=/beegfs/lofar
 ncpu=$(grep -c ^processor /proc/cpuinfo)
 conda_env=tf_py
 force_conda=
+auto_resume=True
 no_download=False
 
 ###
@@ -76,7 +77,8 @@ L=(obs_num \
     simg_dir \
     conda_env \
     force_conda \
-    no_download)
+    no_download \
+    auto_resume)
 
 arg_parse_str="help"
 for arg in ${L[@]}; do
@@ -131,6 +133,7 @@ python "$script_dir"/pipeline.py \
         --root_working_dir="$root_working_dir" \
         --script_dir="$script_dir" \
         --region_file="$region_file" \
+        --auto_resume="$auto_resume" \
         --ref_dir=0 \
         --ncpu="$ncpu" \
         --block_size=20 \
