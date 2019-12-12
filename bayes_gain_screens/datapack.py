@@ -1,7 +1,5 @@
 import tables as tb
-from . import logging, dist_type, angle_type
-from .frames import ENU
-from .misc import make_coord_array
+from . import logging
 import os
 import numpy as np
 import astropy.units as au
