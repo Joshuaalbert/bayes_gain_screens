@@ -34,6 +34,9 @@ def prepare_kms_sols(data_dir, obs_num):
              FreqDomains=kms['FreqDomains'], StationNames=kms['StationNames'], BeamTimes=kms['BeamTimes'],
              SourceCatSub=kms['SourceCatSub'], ClusterCat=kms['ClusterCat'], MSName=kms['MSName'], Sols=Sols,
              SkyModel=kms['SkyModel'])
+    d = np.load(smooth_merged_sol)
+
+    assert np.all(np.isclose(d['Sols']['G'], Sols))
 
 def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
     sol_name='DDS4_full'
