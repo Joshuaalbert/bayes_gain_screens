@@ -12,10 +12,9 @@ def cmd_call(cmd):
         raise ValueError("Failed to  run: {}".format(cmd))
 
 def prepare_kms_sols(data_dir, obs_num):
-    sol_name = 'DDS4_full'
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
-    merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, sol_name))
-    smooth_merged_sol = os.path.join(data_dir, 'L{}_{}_smoothed_merged.sols.npz'.format(obs_num, sol_name))
+    merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
+    merged_sol = os.path.join(data_dir, 'L{}_DDS4_full_merged.sols.npz'.format(obs_num))
+    smooth_merged_sol = os.path.join(data_dir, 'L{}_DDS4_full_smoothed_merged.sols.npz'.format(obs_num))
     with tables.open_file(merged_h5parm) as t:
         #Nt, Nf, Na, Nd, Npol
         phase = t.root.smoothed000.phase000.val[...].T
@@ -24,14 +23,16 @@ def prepare_kms_sols(data_dir, obs_num):
     if phase[:, :, :, :, 0].shape != kms['Sols']['G'][:, :, :, :, 0, 0].shape:
         raise ValueError("Shapes are not correct in kms solutions {} {}".format(kms['Sols']['G'].shape, phase.shape))
 
-    kms['Sols']['G'][:, :, :, :, 0, 0] = amp[:, :, :, :, 0] * np.cos(phase[:, :, :, :, 0]) + \
+    Sols = np.copy(kms['Sols']['G'])
+
+    Sols['G'][:, :, :, :, 0, 0] = amp[:, :, :, :, 0] * np.cos(phase[:, :, :, :, 0]) + \
                                          1j * amp[:, :, :, :, 0] * np.sin(phase[:, :, :, :, 0])  # XX
-    kms['Sols']['G'][:, :, :, :, 1, 1] = amp[:, :, :, :, 0] * np.cos(phase[:, :, :, :, 0]) + \
+    Sols['G'][:, :, :, :, 1, 1] = amp[:, :, :, :, 0] * np.cos(phase[:, :, :, :, 0]) + \
                                          1j * amp[:, :, :, :, 0] * np.sin(phase[:, :, :, :, 0])  # YY
 
     np.savez(smooth_merged_sol, ModelName=kms['ModelName'], MaskedSols=kms['MaskedSols'],
              FreqDomains=kms['FreqDomains'], StationNames=kms['StationNames'], BeamTimes=kms['BeamTimes'],
-             SourceCatSub=kms['SourceCatSub'], ClusterCat=kms['ClusterCat'], MSName=kms['MSName'], Sols=kms['Sols'],
+             SourceCatSub=kms['SourceCatSub'], ClusterCat=kms['ClusterCat'], MSName=kms['MSName'], Sols=Sols,
              SkyModel=kms['SkyModel'])
 
 def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
