@@ -2,29 +2,58 @@ import tensorflow as tf
 import numpy as np
 import astropy.coordinates as ac
 import astropy.units as au
-from astropy.io import fits
 from astropy import wcs
-import astropy.time as at
-
-from gpflow import settings
-float_type = settings.float_type
-from .settings import dist_type, float_type, jitter
-from timeit import default_timer
+from .settings import float_type, jitter
 from astropy.io import fits
 from matplotlib.patches import Circle
 import pylab as plt
 from scipy.spatial.distance import pdist
-from . import logging, TEC_CONV
-import os
 from .datapack import DataPack
-import networkx as nx
+from .frames import ENU
 from . import logging
 from collections import namedtuple
-from .coord_transforms import itrs_to_enu_with_references,tf_coord_transform
 from .settings import angle_type, dist_type
 from scipy.special import erfinv
-import datetime
 import networkx as nx
+
+
+def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
+    tmp_selection = datapack._selection
+    dummy_soltab = datapack.soltabs[0].replace('000', '')
+    datapack.select(ant=ref_ant, dir=ref_dir)
+    axes = datapack.__getattr__("axes_{}".format(dummy_soltab))
+    _, ref_ant = datapack.get_antennas(axes['ant'])
+    _, ref_dir = datapack.get_directions(axes['dir'])
+    datapack.select(**tmp_selection)
+    axes = datapack.__getattr__("axes_{}".format(dummy_soltab))
+    _, _antennas = datapack.get_antennas(axes['ant'])
+    _, _directions = datapack.get_directions(axes['dir'])
+    _, times = datapack.get_times(axes['time'])
+    Nt = len(times)
+
+    X_out = []
+    ref_ant_out = []
+    ref_dir_out = []
+    for t in range(Nt):
+        obstime = times[t]
+        ref_location = ac.ITRS(x=ref_ant.x, y=ref_ant.y, z=ref_ant.z)
+        ref_ant = ac.ITRS(x=ref_ant.x, y=ref_ant.y, z=ref_ant.z, obstime=obstime)
+        ref_dir = ac.ICRS(ra=ref_dir.ra, dec=ref_dir.dec)
+        enu = ENU(location=ref_location, obstime=obstime)
+        ref_ant = ref_ant.transform_to(enu).cartesian.xyz.to(dist_type).value.T
+        ref_dir = ref_dir.transform_to(enu).cartesian.xyz.value.T
+        antennas = ac.ITRS(x=_antennas.x, y=_antennas.y, z=_antennas.z, obstime=obstime)
+        antennas = antennas.transform_to(enu).cartesian.xyz.to(dist_type).value.T
+        directions = ac.ICRS(ra=_directions.ra, dec=_directions.dec)
+        directions = directions.transform_to(enu).cartesian.xyz.value.T
+        X_out.append(make_coord_array(directions, antennas, flat=False))
+        ref_ant_out.append(ref_ant)
+        ref_dir_out.append(ref_dir)
+    # Nt, Nd, Na, 6
+    X = np.stack(X_out, axis=0)
+    ref_ant = np.concatenate(ref_ant_out, axis=0)
+    ref_dir = np.concatenate(ref_dir_out, axis=0)
+    return X, ref_ant, ref_dir
 
 def tf_datetime():
     return tf.timestamp()

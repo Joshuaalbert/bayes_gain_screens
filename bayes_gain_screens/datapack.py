@@ -759,43 +759,6 @@ class DataPack(object):
         with self:
             return pols, np.arange(len(pols), dtype=np.int32)
 
-    def get_coordinates(self, ref_ant=0, ref_dir=0):
-        tmp_selection = self._selection
-        dummy_soltab = self.soltabs[0].replace('000','')
-        self.select(ant=ref_ant, dir=ref_dir)
-        axes = self.__getattr__("axes_{}".format(dummy_soltab))
-        _, ref_ant = self.get_antennas(axes['ant'])
-        _, ref_dir = self.get_directions(axes['dir'])
-        self.select(**tmp_selection)
-        axes = self.__getattr__("axes_{}".format(dummy_soltab))
-        _, _antennas = self.get_antennas(axes['ant'])
-        _, _directions = self.get_directions(axes['dir'])
-        _, times = self.get_times(axes['time'])
-        Nt = len(times)
-
-        X_out = []
-        ref_ant_out = []
-        ref_dir_out = []
-        for t in range(Nt):
-            obstime = times[t]
-            ref_location = ac.ITRS(x=ref_ant.x, y=ref_ant.y, z=ref_ant.z)
-            ref_ant = ac.ITRS(x=ref_ant.x, y=ref_ant.y, z=ref_ant.z, obstime=obstime)
-            ref_dir = ac.ICRS(ra=ref_dir.ra, dec=ref_dir.dec)
-            enu = ENU(location=ref_location, obstime=obstime)
-            ref_ant = ref_ant.transform_to(enu).cartesian.xyz.to(dist_type).value.T
-            ref_dir = ref_dir.transform_to(enu).cartesian.xyz.value.T
-            antennas = ac.ITRS(x=_antennas.x, y=_antennas.y, z=_antennas.z, obstime=obstime)
-            antennas = antennas.transform_to(enu).cartesian.xyz.to(dist_type).value.T
-            directions = ac.ICRS(ra=_directions.ra, dec=_directions.dec)
-            directions = directions.transform_to(enu).cartesian.xyz.value.T
-            X_out.append(make_coord_array(directions, antennas, flat=False))
-            ref_ant_out.append(ref_ant)
-            ref_dir_out.append(ref_dir)
-        #Nt, Nd, Na, 6
-        X = np.stack(X_out, axis=0)
-        ref_ant = np.concatenate(ref_ant_out, axis=0)
-        ref_dir = np.concatenate(ref_dir_out, axis=0)
-        return X, ref_ant, ref_dir
 
 
 
