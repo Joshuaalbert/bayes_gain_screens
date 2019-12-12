@@ -496,10 +496,13 @@ class DataPack(object):
             if isinstance(sel, list):
                 if sel[0] != np.min(sel) or sel[-1] != np.max(sel):
                     break
-                try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
-                comp_list = list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1)))
-                if comp_list == sel:
-                    _sel = try_slice
+                if len(sel) == 0:
+                    _sel = slice(sel[0], sel[0]+1, 1)
+                else:
+                    try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
+                    comp_list = list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1)))
+                    if comp_list == sel:
+                        _sel = try_slice
             corrected_selection.append(_sel)
 
         num_lists = sum([1 if isinstance(sel,list) else 0 for sel in corrected_selection])
