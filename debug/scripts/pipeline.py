@@ -379,7 +379,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              script_name='merge_slow.py', exec_env=bayes_gain_screens_env),
         Step('image_subtract_dirty', ['subtract'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_sksp_env),
-        Step('image_dds4', ['solve_dds4','image_subtract_dirty'], script_dir=script_dir, script_name='image.py', exec_env=lofar_sksp_env),
+        Step('image_subtracted_dds4', ['solve_dds4','image_subtract_dirty'], script_dir=script_dir, script_name='image.py', exec_env=lofar_sksp_env),
+        Step('image_dds4', ['solve_dds4','image_subtracted_dds4'], script_dir=script_dir, script_name='image.py', exec_env=lofar_sksp_env),
         Step('image_smooth', ['smooth_dds4','image_dds4'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_gain_screens_env),
         Step('image_smooth_slow', ['smooth_dds4', 'merge_slow','image_smooth'], script_dir=script_dir, script_name='image.py',
@@ -501,6 +502,14 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('script_dir', script_dir) \
         .add('use_init_dico', True)
 
+    steps['image_subtract_dds4'].cmd \
+        .add('image_type', 'image_subtract_dds4') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True)
+
     steps['image_smooth'].cmd \
         .add('image_type', 'image_smoothed') \
         .add('ncpu', ncpu) \
@@ -553,6 +562,7 @@ STEPS = [
     "image_subtract_dirty",
     "image_smooth",
     "image_dds4",
+    "image_subtract_dds4",
     "image_smooth_slow",
     "infer_screen",
     "image_screen",
@@ -665,6 +675,7 @@ def test_main():
          do_merge_slow=0,
          do_infer_screen=0,
          do_image_dds4=0,
+         do_image_subtract_dds4=0,
          do_image_smooth=0,
          do_image_smooth_slow=0,
          do_image_screen=0,

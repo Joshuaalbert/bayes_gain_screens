@@ -71,7 +71,6 @@ def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
     if len(images) == 0:
         raise ValueError("No image found to plot")
 
-
 def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
                                                                data_dir=data_dir,
@@ -278,6 +277,9 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
                           **kwargs)
     if image_type == 'image_dds4':
         image_DDS4(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
+
+    if image_type == 'image_subtracted_dds4':
+        image_DDS4(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_SUB', **kwargs)
 
 
 if __name__ == '__main__':
