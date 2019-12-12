@@ -23,7 +23,7 @@ def prepare_kms_sols(data_dir, obs_num):
     if phase[:, :, :, :, 0].shape != kms['Sols']['G'][:, :, :, :, 0, 0].shape:
         raise ValueError("Shapes are not correct in kms solutions {} {}".format(kms['Sols']['G'].shape, phase.shape))
 
-    Sols = np.copy(kms['Sols']['G'])
+    Sols = np.copy(kms['Sols'])
 
     Sols['G'][:, :, :, :, 0, 0] = amp[:, :, :, :, 0] * np.cos(phase[:, :, :, :, 0]) + \
                                          1j * amp[:, :, :, :, 0] * np.sin(phase[:, :, :, :, 0])  # XX
@@ -36,7 +36,7 @@ def prepare_kms_sols(data_dir, obs_num):
              SkyModel=kms['SkyModel'])
     d = np.load(smooth_merged_sol)
 
-    assert np.all(np.isclose(d['Sols']['G'], Sols))
+    assert np.all(np.isclose(d['Sols']['G'], Sols['G']))
 
 def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
     sol_name='DDS4_full'
