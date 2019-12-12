@@ -250,7 +250,7 @@ class Step(object):
         if self.flag > 0:
             self.cmd = CMD(self.name, **self.cmd_kwargs)
         else:
-            self.cmd = CMD(self.name, **self.cmd_kwargs, skip=True)
+            self.cmd = CMD(self.name, skip=True, **self.cmd_kwargs)
 
     def get_dask_task(self):
         if self.cmd is None:
