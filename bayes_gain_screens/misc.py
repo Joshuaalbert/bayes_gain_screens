@@ -22,8 +22,8 @@ def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
     dummy_soltab = datapack.soltabs[0].replace('000', '')
     datapack.select(ant=ref_ant, dir=ref_dir)
     axes = datapack.__getattr__("axes_{}".format(dummy_soltab))
-    _, ref_ant = datapack.get_antennas(axes['ant'])
-    _, ref_dir = datapack.get_directions(axes['dir'])
+    _, _ref_ant = datapack.get_antennas(axes['ant'])
+    _, _ref_dir = datapack.get_directions(axes['dir'])
     datapack.select(**tmp_selection)
     axes = datapack.__getattr__("axes_{}".format(dummy_soltab))
     _, _antennas = datapack.get_antennas(axes['ant'])
@@ -36,9 +36,9 @@ def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
     ref_dir_out = []
     for t in range(Nt):
         obstime = times[t]
-        ref_location = ac.ITRS(x=ref_ant.x, y=ref_ant.y, z=ref_ant.z)
-        ref_ant = ac.ITRS(x=ref_ant.x, y=ref_ant.y, z=ref_ant.z, obstime=obstime)
-        ref_dir = ac.ICRS(ra=ref_dir.ra, dec=ref_dir.dec)
+        ref_location = ac.ITRS(x=_ref_ant.x, y=_ref_ant.y, z=_ref_ant.z)
+        ref_ant = ac.ITRS(x=_ref_ant.x, y=_ref_ant.y, z=_ref_ant.z, obstime=obstime)
+        ref_dir = ac.ICRS(ra=_ref_dir.ra, dec=_ref_dir.dec)
         enu = ENU(location=ref_location, obstime=obstime)
         ref_ant = ref_ant.transform_to(enu).cartesian.xyz.to(dist_type).value.T
         ref_dir = ref_dir.transform_to(enu).cartesian.xyz.value.T
