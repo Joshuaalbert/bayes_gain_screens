@@ -106,6 +106,10 @@ def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
         for s in sols:
             f.write("{}\n".format(s))
     cmd_call('MergeSols.py --SolsFilesIn={} --SolFileOut={}'.format(solsfile, merged_sol))
+
+    if os.path.isfile(merged_h5parm):
+        print("Deleting old {}".format(merged_h5parm))
+        os.unlink(merged_h5parm)
     cmd_call('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
                                                                             h5_file=merged_h5parm))
 
