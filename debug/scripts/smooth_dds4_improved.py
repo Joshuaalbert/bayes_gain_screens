@@ -6,7 +6,7 @@ import numpy as np
 from scipy.ndimage import median_filter
 from bayes_gain_screens import logging
 from bayes_gain_screens.datapack import DataPack
-from bayes_gain_screens.misc import make_soltab
+from bayes_gain_screens.misc import make_soltab, great_circle_sep
 import pylab as plt
 import argparse
 
@@ -19,39 +19,93 @@ import tensorflow as tf
 from bayes_gain_screens.misc import diagonal_jitter
 
 
-def smooth(x, Y, deg, cov_prior, Sigma):
+def smooth(x, Y, deg, cov_prior, Sigma, return_resolution=False):
     """
     Smoothes Y assuming the reression coefficients have a zero mean prior and covariance prior `cov_prior`.
 
     :param x: [N]
     :param Y: [B, N]
     :param deg: int
-    :param cov_prior: [K, K]
+    :param cov_prior: [B, K, K]
         Ordered from 0..deg
     :param Sigma: [(B), N,N]
 
     :return:
     """
     K = deg + 1
-    X = np.stack([x ** (deg - i) for i in range(K)])
+    X = np.stack([x ** (deg - i) for i in range(K)], axis=0)
     with tf.Session(graph=tf.Graph()) as sess:
+        # K,N
         X = tf.constant(X, dtype=tf.float64)
-        cov = tf.constant(cov_prior, dtype=tf.float64)
+        # K, K
+        # cov = tf.constant(cov_prior, dtype=tf.float64)
+        # B, K, K
+        cov_pl = tf.placeholder(tf.float64, shape=cov_prior.shape)
         # B,N
         y_pl = tf.placeholder(tf.float64, shape=Y.shape)
+        B = tf.shape(y_pl)[0]
         # N,N
         Sigma_pl = tf.placeholder(tf.float64, shape=Sigma.shape)
-
-        L_O = tf.linalg.cholesky(cov + diagonal_jitter(tf.shape(cov)[-1]))
-        LX = tf.linalg.triangular_solve(L_O, X, adjoint=False, lower=True)
-        # N, N
+        # B, K, K
+        L_O = tf.linalg.cholesky(cov_pl + diagonal_jitter(tf.shape(cov_pl)[-1]))
+        #B, K, N
+        X_ext = tf.tile(X[None, :, :], [B, 1, 1])
+        # B, K, N
+        LX = tf.linalg.triangular_solve(L_O, X_ext, adjoint=False, lower=True)
+        # B, K,N
+        OXT = tf.linalg.triangular_solve(L_O, LX, adjoint=True, lower=True)
+        # B, N, N
         XOXT = tf.linalg.matmul(LX, LX, transpose_a=True)
-        #B, N, N
-        S = tf.broadcast_to(Sigma_pl + XOXT, tf.broadcast_dynamic_shape(y_pl[:, :, None]))
+        # B, N, N
+        S = Sigma_pl + XOXT
+        # # B, N, N
+        # S = tf.tile(S[None, :, :], [tf.shape(y_pl)[0], 1, 1])
         # B, N
         post_mean = tf.linalg.matmul(XOXT, tf.linalg.lstsq(S, y_pl[:, :, None], fast=False))[:, :, 0]
+        # B
+        R = tf.linalg.matmul(OXT, tf.linalg.lstsq(S, tf.transpose(X_ext, (0,2,1)), fast=False))
+        resolution = tf.linalg.trace(R)/tf.cast(tf.shape(R)[-1], R.dtype)
+        if return_resolution:
+            return sess.run([post_mean, resolution], {y_pl: Y, Sigma_pl: Sigma, cov_pl:cov_prior})
         return sess.run(post_mean, {y_pl: Y, Sigma_pl: Sigma})
 
+
+def get_cov_matrix(freqs, x, deg, tec_scale, with_bias=True, bias_scale=np.pi):
+    """
+    Get expected covariance for gains.
+
+    :param freqs: [Nf]
+    :param x: [Nf]
+    :param deg: int
+    :param tec_scale: [B]
+    :param with_bias: bool
+    :param bias_scale: float
+    :return:
+    """
+    tec_conv = -8.4479745e6 / freqs
+    Nf = freqs.size
+    N = 1000
+    B = len(tec_scale)
+    #N,B
+    tec = tec_scale * np.random.normal(size=[N,B])
+    #Nf, N, B
+    phase = tec_conv[:,None, None] * tec
+    if with_bias:
+        const = np.random.uniform(-bias_scale, bias_scale, size=N)
+        phase += const[None, :, None]
+
+    Yreal = np.cos(phase).reshape((Nf, N*B))
+    Yimag = np.sin(phase).reshape((Nf, N*B))
+    # K, N, B
+    preal = np.polyfit(x, Yreal, deg=deg).reshape((-1, N, B))
+    pimag = np.polyfit(x, Yimag, deg=deg).reshape((-1, N, B))
+    #K, N, B
+    preal -= np.mean(preal, axis=1, keepdims=True)
+    pimag -= np.mean(pimag, axis=1, keepdims=True)
+    #K, K, B
+    cov_real = np.mean(preal[:, None, :, :]*preal[None, :, :, :], axis=-2)
+    cov_imag = np.mean(pimag[:, None, :, :]*pimag[None, :, :, :], axis=-2)
+    return cov_real, cov_imag
 
 def wrap(p):
     return np.arctan2(np.sin(p), np.cos(p))
@@ -67,10 +121,25 @@ def smoothamps(amps):
     ampssmoothed = np.exp((median_filter(np.log(amps), size=(1, 1, 1, freqkernel, timekernel), mode='reflect')))
     return ampssmoothed
 
+def smooth_gains(Yreal, Yimag, deg=2):
+    """
 
-def smooth_gains(Yreal, Yimag, filter_size=1, deg=2):
-    _Yreal, _Yimag = np.copy(Yreal), np.copy(Yimag)
+    :param Yreal: [Npol, Nd, Na, Nf, Nt]
+    :param Yimag: [Npol, Nd, Na, Nf, Nt]
+    :param deg:
+    :return:
+    """
+    Npol, Nd, Na, Nf, Nt = Yreal.shape
+
+
+
+    phase = np.arctan2(Yimag, Yreal)
     Nf, N = Yreal.shape
+    x = np.linspace(-1., 1., Nf)
+    cov_real, cov_imag = get_cov_matrix(x, deg, tec_scale=200., with_bias=True, bias_scale=np.pi)
+
+    _Yreal, _Yimag = np.copy(Yreal), np.copy(Yimag)
+
     _freqs = np.linspace(-1., 1., Nf)
     real = sum([median_filter(p, filter_size) * _freqs[:, None] ** (deg - i) for i, p in
                 enumerate(np.polyfit(_freqs, _Yreal, deg=deg))])
@@ -106,7 +175,7 @@ def smooth_gains(Yreal, Yimag, filter_size=1, deg=2):
     return real, imag
 
 
-def main(data_dir, working_dir, obs_num):
+def main(data_dir, working_dir, obs_num, block_size):
     working_dir = os.path.abspath(working_dir)
     os.makedirs(working_dir,exist_ok=True)
     data_dir = os.path.abspath(data_dir)
@@ -133,6 +202,11 @@ def main(data_dir, working_dir, obs_num):
     timestamps, times = datapack.get_times(axes['time'])
     freq_labels, freqs = datapack.get_freqs(axes['freq'])
     pol_labels, pols = datapack.get_pols(axes['pol'])
+
+    ref_dist = np.linalg.norm(antennas - antennas[0, :], axis=1)
+
+    ref_ang_dist = great_circle_sep(directions.ra.rad, directions.dec.rad, directions.ra.rad[0], directions.dec.rad[0])
+
     Npol, Nd, Na, Nf, Nt = len(pols), len(directions), len(antennas), len(freqs), len(times)
     phase_raw, axes = datapack.phase
     amp_raw, axes = datapack.amplitude
@@ -140,8 +214,22 @@ def main(data_dir, working_dir, obs_num):
     amp_smooth = smoothamps(amp_raw)
     logging.info("Constructing gains.")
     # Npol, Nd, Na, Nf, Nt
+    phase_raw = np.unwrap(phase_raw, axis=-1)
+    c_phase_raw = phase_raw - np.mean(phase_raw, axis=-1, keepdims=True)
     Yimag_full = amp_smooth * np.sin(phase_raw)
     Yreal_full = amp_smooth * np.cos(phase_raw)
+    x = np.linspace(-1.,1., Nf)
+    deg = 2
+    for start in range(0,Nt, block_size):
+        stop = min(start+block_size, Nt)
+        phase_var = np.mean(np.square(c_phase_raw[..., start:stop]), axis=-1)
+        tec_scale = np.mean(phase_var*freqs[:, None]/8.4479745e6, axis=-1)
+        cov_real, cov_imag = get_cov_matrix(freqs,x,deg, tec_scale.flatten(), True, 1.)
+        Sigma = 0.1**2 * np.eye(Nf)
+        Yreal_smooth, R = smooth(x, Yreal_full[..., start:stop], deg, cov_real.T, Sigma, return_resolution=True)
+        Sigma = np.maximum(0.01**2, np.sqaure(Yreal_full[..., start:stop] - Yreal_smooth))
+
+
     # Nf, Npol*Nd*Na*Nt
     Yimag_full = Yimag_full.transpose((3,0,1,2,4)).reshape((Nf, -1))
     Yreal_full = Yreal_full.transpose((3,0,1,2,4)).reshape((Nf, -1))
@@ -203,6 +291,8 @@ def add_args(parser):
     parser.add_argument('--data_dir', help='Where are the ms files are stored.',
                         default=None, type=str, required=True)
     parser.add_argument('--working_dir', help='Where to perform the imaging.',
+                        default=None, type=str, required=True)
+    parser.add_argument('--block_size', help='Blocks over which to get stats for prior.',
                         default=None, type=str, required=True)
 
 if __name__ == '__main__':
