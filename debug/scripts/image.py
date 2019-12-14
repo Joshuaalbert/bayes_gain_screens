@@ -84,7 +84,7 @@ def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['sols'] = 'DDS4_full'
     kwargs['solsdir'] = os.path.join(data_dir, 'SOLSDIR')
 
-    if 'init_dico' in kwargs.keys():
+    if kwargs.get('init_dico', False):
         kwargs['major_iters'] = 1
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_kms_sols_restart_template'),
                               **kwargs)
@@ -109,7 +109,7 @@ def image_smoothed(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 5
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:smoothed000/phase000+amplitude000'.format(merged_sol)
-    if 'init_dico' in kwargs.keys():
+    if kwargs.get('init_dico', False):
         kwargs['major_iters'] = 1
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'),
                               **kwargs)
@@ -134,7 +134,7 @@ def image_smoothed_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 5
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:smoothed_slow000/phase000+amplitude000'.format(merged_sol)
-    if 'init_dico' in kwargs.keys():
+    if kwargs.get('init_dico', False):
         kwargs['major_iters'] = 1
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'),
                               **kwargs)
@@ -160,7 +160,7 @@ def image_screen(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 5
     merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:screen_posterior/phase000+amplitude000'.format(merged_h5parm)
-    if 'init_dico' in kwargs.keys():
+    if kwargs.get('init_dico', False):
         kwargs['major_iters'] = 1
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'),
                               **kwargs)
@@ -187,7 +187,7 @@ def image_screen_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
     kwargs['sols'] = '{}:screen_slow000/phase000+amplitude000'.format(merged_sol)
 
-    if 'init_dico' in kwargs.keys():
+    if kwargs.get('init_dico', False):
         kwargs['major_iters'] = 1
         cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_h5parm_restart_template'),
                               **kwargs)
@@ -251,14 +251,16 @@ def add_args(parser):
                         default=None, type=str, required=True)
     parser.add_argument('--use_init_dico', help='Whether to initialise clean with dico.',
                         default=False, type="bool", required=False)
+    parser.add_argument('--init_dico', help='Dico name (inside data dir) to initialise with.',
+                        default='image_full_ampphase_di_m.NS.DicoModel', type=str, required=False)
 
 
-def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_dico):
+def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_dico, init_dico):
     kwargs = {}
     kwargs['peak_factor'] = 0.001
     kwargs['nfacets'] = 11
     kwargs['robust'] = -0.5
-    init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
+    init_dico = os.path.join(data_dir, init_dico)
     if os.path.isfile(init_dico) and use_init_dico:
         kwargs['init_dico'] = init_dico
     if image_type == 'image_subtract_dirty':

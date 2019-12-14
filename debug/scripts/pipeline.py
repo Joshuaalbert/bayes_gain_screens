@@ -80,7 +80,7 @@ class CMD(object):
         if exec_env is None:
             exec_env = Env()
         self.exec_env = exec_env
-        self.skip=skip
+        self.skip = skip
 
     def add(self, name, value):
         self.cmd.append("--{}={}".format(name, value))
@@ -379,15 +379,19 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              script_name='merge_slow.py', exec_env=bayes_gain_screens_env),
         Step('image_subtract_dirty', ['subtract'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_sksp_env),
-        Step('image_subtracted_dds4', ['solve_dds4','image_subtract_dirty'], script_dir=script_dir, script_name='image.py', exec_env=lofar_sksp_env),
-        Step('image_dds4', ['solve_dds4','image_subtracted_dds4'], script_dir=script_dir, script_name='image.py', exec_env=lofar_sksp_env),
-        Step('image_smooth', ['smooth_dds4','image_dds4'], script_dir=script_dir, script_name='image.py',
+        Step('image_subtracted_dds4', ['solve_dds4', 'image_subtract_dirty'], script_dir=script_dir,
+             script_name='image.py', exec_env=lofar_sksp_env),
+        Step('image_dds4', ['solve_dds4', 'image_subtracted_dds4'], script_dir=script_dir, script_name='image.py',
+             exec_env=lofar_sksp_env),
+        Step('image_smooth', ['smooth_dds4', 'image_dds4'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_smooth_slow', ['smooth_dds4', 'merge_slow','image_smooth'], script_dir=script_dir, script_name='image.py',
+        Step('image_smooth_slow', ['smooth_dds4', 'merge_slow', 'image_smooth'], script_dir=script_dir,
+             script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_screen', ['infer_screen','image_smooth_slow'], script_dir=script_dir, script_name='image.py',
+        Step('image_screen', ['infer_screen', 'image_smooth_slow'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_screen_slow', ['infer_screen', 'merge_slow','image_screen'], script_dir=script_dir, script_name='image.py',
+        Step('image_screen_slow', ['infer_screen', 'merge_slow', 'image_screen'], script_dir=script_dir,
+             script_name='image.py',
              exec_env=lofar_gain_screens_env),
     ]
 
@@ -438,7 +442,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     steps['download_archive'].cmd \
         .add('obs_num', obs_num) \
         .add('archive_dir', archive_dir) \
-        .add('no_download',no_download)
+        .add('no_download', no_download)
 
     steps['choose_calibrators'].cmd \
         .add('region_file', region_file) \
@@ -456,22 +460,22 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('region_file', region_file) \
         .add('ncpu', ncpu) \
         .add('obs_num', obs_num) \
-        .add('data_dir', data_dir) \
+        .add('data_dir', data_dir)
 
     steps['smooth_dds4'].cmd \
         .add('obs_num', obs_num) \
-        .add('data_dir', data_dir) \
+        .add('data_dir', data_dir)
 
     steps['tec_inference'].cmd \
         .add('obs_num', obs_num) \
-        .add('ncpu', ncpu//2) \
+        .add('ncpu', ncpu // 2) \
         .add('data_dir', data_dir) \
         .add('ref_dir', ref_dir)
 
     steps['slow_solve_dds4'].cmd \
         .add('ncpu', ncpu) \
         .add('obs_num', obs_num) \
-        .add('data_dir', data_dir) \
+        .add('data_dir', data_dir)
 
     steps['infer_screen'].cmd \
         .add('obs_num', obs_num) \
@@ -485,7 +489,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
     steps['merge_slow'].cmd \
         .add('obs_num', obs_num) \
-        .add('data_dir', data_dir) \
+        .add('data_dir', data_dir)
 
     steps['image_subtract_dirty'].cmd \
         .add('image_type', 'image_subtract_dirty') \
@@ -508,7 +512,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('obs_num', obs_num) \
         .add('data_dir', data_dir) \
         .add('script_dir', script_dir) \
-        .add('use_init_dico', True)
+        .add('use_init_dico', False) \
+        .add('init_dico', 'image_full_ampphase_di_m.NS.masked.DicoModel')
 
     steps['image_smooth'].cmd \
         .add('image_type', 'image_smoothed') \
@@ -558,13 +563,13 @@ STEPS = [
     "slow_solve_dds4",
     "smooth_dds4",
     "tec_inference",
+    "infer_screen",
     "merge_slow",
     "image_subtract_dirty",
-    "image_smooth",
-    "image_dds4",
     "image_subtract_dds4",
+    "image_dds4",
+    "image_smooth",
     "image_smooth_slow",
-    "infer_screen",
     "image_screen",
     "image_screen_slow"]
 
@@ -614,7 +619,8 @@ def add_args(parser):
                           default=workers, type=int, required=False)
     required.add_argument('--obs_num', help='Obs number L*',
                           default=None, type=int, required=True)
-    required.add_argument('--archive_dir', help='Where are the archives stored. Can also be networked locations, e.g. <user>@<host>:<path> but you must have authentication.',
+    required.add_argument('--archive_dir',
+                          help='Where are the archives stored. Can also be networked locations, e.g. <user>@<host>:<path> but you must have authentication.',
                           default=None, type=str, required=True)
     required.add_argument('--root_working_dir', help='Where the root of all working dirs are.',
                           default=None, type=str, required=True)
