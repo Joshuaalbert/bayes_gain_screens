@@ -369,7 +369,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              exec_env=lofar_sksp_env),
         Step('slow_solve_dds4', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
              script_name='slow_solve_on_subtracted.py', exec_env=lofar_sksp_env),
-        Step('smooth_dds4', ['solve_dds4'], script_dir=script_dir, script_name='smooth_dds4_simple.py',
+        Step('smooth_dds4', ['solve_dds4'], script_dir=script_dir, script_name='smooth_dds4_improved.py',
              exec_env=bayes_gain_screens_env),
         Step('tec_inference', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
              script_name='tec_inference_improved.py', exec_env=bayes_gain_screens_env),
@@ -464,13 +464,16 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
     steps['smooth_dds4'].cmd \
         .add('obs_num', obs_num) \
-        .add('data_dir', data_dir)
+        .add('data_dir', data_dir) \
+        .add('smooth_amps', True) \
+        .add('deg', 2)
 
     steps['tec_inference'].cmd \
         .add('obs_num', obs_num) \
         .add('ncpu', ncpu // 2) \
         .add('data_dir', data_dir) \
-        .add('ref_dir', ref_dir)
+        .add('ref_dir', ref_dir) \
+        .add('walking_reference', True)
 
     steps['slow_solve_dds4'].cmd \
         .add('ncpu', ncpu) \

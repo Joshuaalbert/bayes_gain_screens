@@ -91,12 +91,12 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         plt.savefig(os.path.join(debug_dir, 'phase_diff_{:04d}.png'.format(d)))
         plt.close('all')
 
-        plt.imshow(res['Sigma'], origin='lower',
-                   cmap='bone', aspect='auto')
-        plt.colorbar()
-        plt.savefig(os.path.join(debug_dir, 'obs_cov_{:04d}.png'.format(d)))
-
-        plt.close('all')
+        # plt.imshow(res['Sigma'], origin='lower',
+        #            cmap='bone', aspect='auto')
+        # plt.colorbar()
+        # plt.savefig(os.path.join(debug_dir, 'obs_cov_{:04d}.png'.format(d)))
+        #
+        # plt.close('all')
 
 
     return tec_mean_array, tec_uncert_array, obs_cov_array
@@ -116,7 +116,7 @@ def smoothamps(amps):
     return ampssmoothed
 
 
-def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
+def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     os.chdir(working_dir)
     logging.info("Performing TEC and constant variational inference.")
     merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
@@ -156,6 +156,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
     walk_order = list(nx.bfs_edges(h, ref_dir))
     proc_idx = 0
     for (next_ref_dir, solve_dir) in walk_order:
+        if not walking_reference:
+            next_ref_dir = ref_dir
         logging.info("Solving dir: {}".format(solve_dir))
         phase_di = phase_raw[:, next_ref_dir:next_ref_dir+1, ...]
         logging.info("Referencing dir: {}".format(next_ref_dir))
@@ -194,25 +196,23 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu):
         tec_mean = tec_mean.reshape((Npol, 1, Na, Nt))
         tec_uncert = tec_uncert.reshape((Npol, 1, Na, Nt))
         obs_cov = obs_cov.reshape((Npol, 1, Na, 2*Nf, 2*Nf))
-        logging.info("Re-referencing to {}".format(ref_dir))
-        # phase_smooth[:, solve_dir:solve_dir+1, ...] = tec_mean[..., None, :] * tec_conv[:, None] + phase_di
-        #Reference to ref_dir 0: tau_ij + tau_jk = tau_ik
-        tec_mean_array[:, solve_dir:solve_dir+1,...] = tec_mean + tec_mean_array[:,next_ref_dir:next_ref_dir+1,...]
-        tec_uncert_array[:, solve_dir:solve_dir+1, ...] = np.sqrt(tec_uncert**2 + tec_uncert_array[:, next_ref_dir:next_ref_dir+1, ...]**2)
-        obs_cov_array[:, solve_dir:solve_dir+1, ...] = obs_cov
-    
-    
+        if walking_reference:
+            logging.info("Re-referencing to {}".format(ref_dir))
+            # phase_smooth[:, solve_dir:solve_dir+1, ...] = tec_mean[..., None, :] * tec_conv[:, None] + phase_di
+            #Reference to ref_dir 0: tau_ij + tau_jk = tau_ik
+            tec_mean_array[:, solve_dir:solve_dir+1,...] = tec_mean + tec_mean_array[:,next_ref_dir:next_ref_dir+1,...]
+            tec_uncert_array[:, solve_dir:solve_dir+1, ...] = np.sqrt(tec_uncert**2 + tec_uncert_array[:, next_ref_dir:next_ref_dir+1, ...]**2)
+            obs_cov_array[:, solve_dir:solve_dir+1, ...] = obs_cov
+        else:
+            tec_mean_array[:, solve_dir:solve_dir + 1, ...] = tec_mean
+            tec_uncert_array[:, solve_dir:solve_dir + 1, ...] = tec_uncert
+            obs_cov_array[:, solve_dir:solve_dir + 1, ...] = obs_cov
 
     # phase_smooth_uncert = np.abs(tec_conv[:, None] * tec_uncert_array[..., None, :])
     phase_model = tec_mean_array[..., None, :]*tec_conv[:, None] + phase_smooth[:, ref_dir:ref_dir+1, ...]
-    res_real = amp_smooth * (np.cos(phase_model) - np.cos(phase_raw))
-    res_imag = amp_smooth * (np.sin(phase_model) - np.sin(phase_raw))
+    res_real = amp_smooth * np.cos(phase_raw) - np.cos(phase_model)
+    res_imag = amp_smooth * np.sin(phase_raw) - np.sin(phase_model)
 
-    # logging.info("Updating smoothed phase")
-    # datapack.current_solset = 'smoothed000'
-    # datapack.select(**select)
-    # datapack.phase = phase_smooth
-    # datapack.weights_phase = phase_smooth_uncert
     logging.info("Storing TEC and const")
     datapack.current_solset = 'directionally_referenced'
     # Npol, Nd, Na, Nf, Nt
@@ -286,6 +286,7 @@ def plot_results(Na, Nd, antenna_labels, working_dir, phase_model,
 
 
 def add_args(parser):
+    parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.add_argument('--obs_num', help='Obs number L*',
                         default=None, type=int, required=True)
     parser.add_argument('--data_dir', help='Where are the ms files are stored.',
@@ -296,6 +297,8 @@ def add_args(parser):
                         default=None, type=int, required=True)
     parser.add_argument('--ref_dir', help='The index of reference dir.',
                         default=0, type=int, required=False)
+    parser.add_argument('--walking_reference', help='Whether to remove bias by rereferencing in a minimum distance spanning tree walk.',
+                        default=True, type="bool", required=False)
 
 
 if __name__ == '__main__':

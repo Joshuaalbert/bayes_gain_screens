@@ -482,8 +482,8 @@ class DataPack(object):
                 selection.append(list_select)
             elif isinstance(axis_selection, str):
                 is_pattern = []
-                for idx, element in enumerate(axis_val):
-                    if re.search(axis_selection, element.astype(type(axis_selection))) is not None:
+                for idx, element in enumerate(axis_val.astype(type(axis_selection))):
+                    if re.search(axis_selection, element) is not None:
                         is_pattern.append(idx)
                 selection.append(is_pattern)
             else:

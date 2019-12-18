@@ -16,6 +16,153 @@ from .settings import angle_type, dist_type
 from scipy.special import erfinv
 import networkx as nx
 
+def rolling_window(a, window):
+    pad_start = np.zeros(len(a.shape), dtype=np.int32)
+    pad_start[-1] = window//2
+    pad_end = np.zeros(len(a.shape), dtype=np.int32)
+    pad_end[-1] = (window - 1) - pad_start[-1]
+    pad = list(zip(pad_start, pad_end))
+    a = np.pad(a, pad,mode='reflect')
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    strides = a.strides + (a.strides[-1],)
+    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+
+def fit_tec_and_noise(freqs, Yreal, Yimag, step=0.5, search_n=5, iter_n=2, flags=None):
+    """
+        Fit tec quickly and robust to local minima, but non-robustly.
+
+        :param freqs: np.array
+            [Nf]
+        :param Yreal: np.array
+            [B, Nf]
+        :param Yimag: np.array
+            [B, Nf]
+        :param step: float less than 1.
+        :param search_n: int
+            basins to search in each direction from local minimum.
+        :return: tec np.array [B]
+        sigmaa np.array [2*Nf]
+        """
+    tec_conv = -8.448e6 / freqs
+    Nf = freqs.size
+    B = Yreal.shape[0]
+
+    sigma = np.zeros((2 * Nf))
+    sigma[:Nf] = 1.
+    sigma[Nf:] = 1.
+    if flags is not None:
+        sigma = np.tile(sigma[None, :], [B, 1])
+    tec = None
+    for _ in range(iter_n):
+        if flags is not None:
+            sigma[:,:Nf][flags] = np.inf
+            sigma[:,Nf:][flags] = np.inf
+        tec = fit_tec_quick(freqs, Yreal, Yimag, sigma, step, search_n)
+        phase_mod = tec[:, None] * tec_conv
+        Yreal_mod = np.cos(phase_mod)
+        Yimag_mod = np.sin(phase_mod)
+        sigma[..., :Nf] = np.sqrt(np.mean((Yreal - Yreal_mod) ** 2, axis=0))
+        sigma[..., Nf:] = np.sqrt(np.mean((Yimag - Yimag_mod) ** 2, axis=0))
+    return tec, sigma
+
+
+def fit_tec_quick(freqs, Yreal, Yimag, sigma, step=0.5, search_n=5):
+    """
+    Fit tec quickly and robust to local minima, but non-robustly.
+
+    :param freqs: np.array
+        [Nf]
+    :param Yreal: np.array
+        [B, Nf]
+    :param Yimag: np.array
+        [B, Nf]
+    :param sigma: np.array
+        [B, Nf]
+    :param step: float less than 1.
+    :param search_n: int
+        basins to search in each direction from local minimum.
+    :return: tec np.array [B]
+    """
+    B = Yreal.shape[0]
+    # B, 2*Nf
+    tec_conv = -8.447957e6 / freqs
+
+    basin = np.mean(np.abs(np.pi / tec_conv))
+
+    with tf.Session(graph=tf.Graph()) as sess:
+        Yreal_pl = tf.placeholder(tf.float64, shape=Yreal.shape)
+        Yimag_pl = tf.placeholder(tf.float64, shape=Yimag.shape)
+        Y = tf.concat([Yreal_pl, Yimag_pl], axis=1)
+        sigma_pl = tf.placeholder(tf.float64, shape=sigma.shape)
+
+        basin = tf.constant(basin, dtype=tf.float64)
+
+        def obj(params):
+            """
+            sum((Y - Y_mod)^2/sigma^2, axis=-1)
+            :param params:
+            :return: [B]
+            """
+            tec = params
+            phase_mod = tec[:, None] * tec_conv
+            Y_mod = tf.concat([tf.math.cos(phase_mod), tf.math.sin(phase_mod)], axis=1)
+            dY = (Y - Y_mod) / sigma_pl
+            return tf.reduce_sum(dY ** 2, axis=-1)
+
+        def jac(params):
+            """
+            d/dtec sum((Y - Y_mod)^2/sigma^2, axis=-1)
+            = sum(2 (Y-Y_mod)/sigma^2 Y', axis=-1)
+
+            Y = cos(tec), sin(tec)
+            Y' = -sin(tec), cos(tec)
+            :param params:
+            :return:
+            """
+            tec = params
+            phase_mod = tec[:, None] * tec_conv
+            Y_mod = tf.concat([tf.math.cos(phase_mod), tf.math.sin(phase_mod)], axis=1)
+            Y_prime = tf.concat([tec_conv * tf.math.sin(phase_mod), -tec_conv * tf.math.cos(phase_mod)], axis=1)
+            dY = (Y - Y_mod) / sigma_pl ** 2
+            return tf.reshape(tf.reduce_sum(2. * dY * Y_prime, axis=-1), (B, 1))
+
+        def hess(params):
+            """
+            :param params:
+            :return: [B]
+            """
+            tec = params
+            phase_mod = tec[:, None] * tec_conv
+            cos2phase = tf.math.cos(2. * phase_mod)
+            h = 2. * \
+                tf.concat([tec_conv ** 2 * (Yreal_pl * tf.math.cos(phase_mod) - cos2phase),
+                           tec_conv ** 2 * (cos2phase + Yimag_pl * tf.math.sin(phase_mod))], axis=1)
+            h = h / sigma_pl ** 2
+            return tf.reshape(tf.reduce_sum(h, axis=-1), (B, 1, 1))
+
+        x_cur = tf.zeros([B], dtype=tf.float64)
+
+        def cond(done, x_cur):
+            return tf.reduce_any(tf.logical_not(done))
+
+        def body(done, x_cur):
+            g = jac(x_cur)
+            h = hess(x_cur)
+            dir = g[:, 0] / h[:, 0, 0]
+            x_next = x_cur - dir * step
+            done = dir < 0.1
+            return [done, x_next]
+
+        [_, x_cur] = tf.while_loop(cond, body,
+                                   [tf.zeros([B], dtype=tf.bool), x_cur])
+        obj_try = tf.stack([obj(x_cur + basin * i) for i in np.arange(-search_n, search_n + 1, 1)], axis=0)
+        which_basin = tf.argmin(obj_try, axis=0)
+        x_cur = x_cur + basin * (tf.cast(which_basin, tf.float64) - float(search_n))
+
+        [_, x_cur] = tf.while_loop(cond, body,
+                                   [tf.zeros([B], dtype=tf.bool), x_cur])
+
+        return sess.run(x_cur, {Yreal_pl: Yreal, Yimag_pl: Yimag, sigma_pl: sigma})
 
 def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
     tmp_selection = datapack._selection
