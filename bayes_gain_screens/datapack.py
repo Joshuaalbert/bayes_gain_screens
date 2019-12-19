@@ -414,7 +414,10 @@ class DataPack(object):
         for axis_name in self.axes_order:
             if axis_name not in axes.keys():
                 continue
-            self._selection[axis_name] = axes[axis_name]
+            if isinstance(axes[axis_name], int):
+                self._selection[axis_name] = [axes[axis_name]]
+            else:
+                self._selection[axis_name] = axes[axis_name]
 
     def select_all(self):
         self._selection = None
@@ -479,8 +482,8 @@ class DataPack(object):
                 selection.append(list_select)
             elif isinstance(axis_selection, str):
                 is_pattern = []
-                for idx, element in enumerate(axis_val):
-                    if re.search(axis_selection, element.astype(type(axis_selection))) is not None:
+                for idx, element in enumerate(axis_val.astype(type(axis_selection))):
+                    if re.search(axis_selection, element) is not None:
                         is_pattern.append(idx)
                 selection.append(is_pattern)
             else:
@@ -493,10 +496,13 @@ class DataPack(object):
             if isinstance(sel, list):
                 if sel[0] != np.min(sel) or sel[-1] != np.max(sel):
                     break
-                try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
-                comp_list = list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1)))
-                if comp_list == sel:
-                    _sel = try_slice
+                if len(sel) == 0:
+                    _sel = slice(sel[0], sel[0]+1, 1)
+                else:
+                    try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
+                    comp_list = list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1)))
+                    if comp_list == sel:
+                        _sel = try_slice
             corrected_selection.append(_sel)
 
         num_lists = sum([1 if isinstance(sel,list) else 0 for sel in corrected_selection])
@@ -753,6 +759,7 @@ class DataPack(object):
     def get_pols(self, pols):
         with self:
             return pols, np.arange(len(pols), dtype=np.int32)
+
 
 
 

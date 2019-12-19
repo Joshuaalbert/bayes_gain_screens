@@ -12,8 +12,26 @@ exec "$@"
 %post
 # Build instructions
 apt-get update
-apt-get -y install vim build-essential manpages-dev wget git ffmpeg htop feh mplayer
+apt-get -y install software-properties-common
+
+apt-add-repository ppa:x2go/stable
+apt-get update
+apt-get -y install less vim build-essential locales manpages-dev wget git ffmpeg htop feh mplayer xfce4 nano
+
+# locale-gen en_US
+# dpkg-reconfigure locales
+
+sed -i 's/# nl_NL.UTF-8 UTF-8/nl_NL.UTF-8 UTF-8/' /etc/locale.gen && \
+sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+ln -fs /etc/locale.alias /usr/share/locale/locale.alias && \
+locale-gen && update-locale LANG=en_US.UTF-8
+cp /usr/share/zoneinfo/Europe/Amsterdam /etc/localtime && \
+echo "Europe/Amsterdam" >  /etc/timezone
+
+
+apt-get -y install x2goserver x2goserver-xsession
 apt-get clean
+
 
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh
 bash ~/miniconda.sh -b -p /opt/miniconda3
@@ -26,11 +44,12 @@ conda info -a
 conda create -q -n tf_py python=3.6
 conda activate tf_py
 
-cd $HOME
+cd /opt
 mkdir git
 cd git 
 git clone https://github.com/Joshuaalbert/bayes_gain_screens.git
 cd bayes_gain_screens
+cp -r debug/scripts /opt/scripts
 pip install -r requirements.txt
 pip install --no-deps pyregion pyparsing
 python setup.py install
@@ -52,6 +71,7 @@ $test
 %startscript
 export NUMEXPR_MAX_THREADS=$(grep -c ^processor /proc/cpuinfo)
 export OMP_NUM_THREADS=$(grep -c ^processor /proc/cpuinfo)
+service x2goserver start
 
 %environment
 #These are sourced at runtime
@@ -61,10 +81,9 @@ export VISUAL=$EDITOR
 
 alias ls='ls --color=always'
 alias ll='ls -ltr --color=always'
-export NUMEXPR_MAX_THREADS=32
 export PS1='\u@\h:\w\$ '
 
+export SP_SCRIPTS=/opt/scripts
 
 . /opt/miniconda3/etc/profile.d/conda.sh
 conda activate tf_py
-

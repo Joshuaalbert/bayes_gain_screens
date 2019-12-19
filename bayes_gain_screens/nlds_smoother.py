@@ -1,20 +1,30 @@
 import tensorflow as tf
+
 float_type = tf.float64
 import tensorflow as tf
 
 
 class NLDSSmoother(object):
-    def __init__(self, num_latent, num_observables, sequence_length, update, momentum=0.5, serve_Sigma=False):
+    def __init__(self, num_latent, num_observables, sequence_length, update, momentum=0.5, serve_shapes=None, session:tf.Session=None):
         """
         Perform non-linear dynamics smoothing.
+        :param serve_serve: dict of shapes of kwargs that will be sliced and served
+            Each value is assumed to be [...] and will form a [B, ...] placeholder
+            and will be sliced on first dimension and passed to _update function.
         """
         N = num_observables
         B = sequence_length
         K = num_latent
-        self.serve_Sigma = serve_Sigma
         self._update = update
 
-        graph = tf.Graph()
+        if serve_shapes is None:
+            serve_shapes = []
+        if session is None:
+            graph = tf.Graph()
+            self.sess = tf.Session(graph=graph)
+        else:
+            graph = session.graph
+            self.sess = session
 
         with graph.as_default():
             Nmax_pl = tf.placeholder(tf.int32, shape=(), name='Nmax')
@@ -25,12 +35,11 @@ class NLDSSmoother(object):
             B = tf.shape(y_pl)[0]
             mu_0_pl = tf.placeholder(float_type, shape=[K], name='mu_0')
             Gamma_0_pl = tf.placeholder(float_type, shape=[K, K], name='Gamma_0')
-            if self.serve_Sigma:
-                #B, N, N
-                Sigma_0_pl = tf.placeholder(float_type, shape=[None, N, N], name='Sigma')
-            else:
-                # N,N
-                Sigma_0_pl = tf.placeholder(float_type, shape=[N, N], name='Sigma_0')
+
+            serve_pl = [tf.placeholder(float_type, shape=[None] + list(shape)) for shape in serve_shapes]
+
+            # N,N
+            Sigma_0_pl = tf.placeholder(float_type, shape=[N, N], name='Sigma_0')
 
             ###
             # Bayesian evidence
@@ -40,20 +49,18 @@ class NLDSSmoother(object):
 
             def body(n, mu_0_n1, Gamma_0_n1, Sigma_n1, Omega_n1, post_mu_n1, post_Gamma_n1):
                 prior_Gamma, post_mu_f, post_Gamma_f = self.forward_filter(y_pl, mu_0_n1, Gamma_0_n1,
-                                                                               Sigma_n1, Omega_n1)
+                                                                           Sigma_n1, Omega_n1, serve_pl)
 
                 post_mu_b, post_Gamma_b, post_Gamma_inter = self.backward_filter(prior_Gamma, post_mu_f,
                                                                                  post_Gamma_f, Omega_n1)
 
                 res = self.parameter_estimation(y_pl, post_mu_b, post_Gamma_b, post_Gamma_inter)
-                if self.serve_Sigma:
-                    Sigma = Sigma_n1
-                else:
-                    Sigma = momentum * Sigma_n1 + (1. - momentum) * res['R_new']
+
+                Sigma = momentum * Sigma_n1 + (1. - momentum) * res['R_new']
                 Omega = momentum * Omega_n1 + (1. - momentum) * res['Q_new']
 
-                mu_0 = mu_0_n1  # momentum*mu_0_n1 + (1. - momentum)*res['mu_0']#mu_0_n1#
-                Gamma_0 = Gamma_0_n1  # momentum * Gamma_0_n1 + (1. - momentum) * res['Gamma_0']#Gamma_0_n1#
+                mu_0 = momentum*mu_0_n1 + (1. - momentum)*res['mu_0']#mu_0_n1#
+                Gamma_0 = momentum * Gamma_0_n1 + (1. - momentum) * res['Gamma_0']#Gamma_0_n1#
 
                 post_Gamma_b.set_shape(post_Gamma_n1.shape)
                 post_mu_b.set_shape(post_mu_n1.shape)
@@ -75,28 +82,23 @@ class NLDSSmoother(object):
                                tf.zeros([B, K, K], float_type)
                                ])
 
-            #             # [B,K].[N,K]->[B,N]
-            #             predictive_y = tf.linalg.matmul(post_mu, A, transpose_b=True)
-            #             # B, N, N
-            #             predictive_y_Cov = Sigma + tf.linalg.matmul(A_ext, tf.linalg.matmul(post_Gamma, A_ext, transpose_b=True))
-
+            self.post_y_mean, self.post_y_cov = self._update.predictive_distribution(post_mu, post_Gamma)
             self.y_pl = y_pl
             self.Sigma_0_pl = Sigma_0_pl
             self.Omega_0_pl = Omega_0_pl
             self.mu_0_pl = mu_0_pl
             self.Gamma_0_pl = Gamma_0_pl
             self.Nmax_pl = Nmax_pl
-            self.sess = tf.Session(graph=graph)
+            self.serve_pl = serve_pl
             self.result = dict(
                 post_mu=post_mu,
                 post_Gamma=post_Gamma,
                 Omega=Omega,
                 Sigma=Sigma,
                 mu_0=mu_0,
-                Gamma_0=Gamma_0)
-
-    #                 predictive_y=predictive_y,
-    #                 predictive_y_Cov=predictive_y_Cov)
+                Gamma_0=Gamma_0,
+                post_y_mean=self.post_y_mean,
+                post_y_cov=self.post_y_cov)
 
     def parameter_estimation(self, y, post_mu_b, post_Gamma_b, post_Gamma_inter):
         """
@@ -233,11 +235,8 @@ class NLDSSmoother(object):
 
         return post_mu, post_Gamma, post_Gamma_inter
 
-    def forward_filter(self, y, mu_0, Gamma_0, Sigma, Omega):
+    def forward_filter(self, y, mu_0, Gamma_0, Sigma, Omega, serve_pl):
         B = tf.shape(y)[0]
-
-        if not self.serve_Sigma:
-            Sigma = tf.tile(Sigma[None, :, :], [B, 1,1])
 
         def cond(n, *args):
             return n < B
@@ -249,7 +248,9 @@ class NLDSSmoother(object):
             # K,K
             prior_Gamma_n = post_Gamma_n1 + Omega
 
-            post_mu_n, post_Gamma_n = self._update(n, prior_mu_n, prior_Gamma_n, y[n, :], Sigma[n, :, :])
+            sliced_serve_pl = [v[n, ...] for v in serve_pl]
+
+            post_mu_n, post_Gamma_n = self._update(n, prior_mu_n, prior_Gamma_n, y[n, :], Sigma, *sliced_serve_pl)
             post_mu_n.set_shape(post_mu_n1.shape)
             post_Gamma_n.set_shape(post_Gamma_n1.shape)
             return [n + 1, post_mu_n, post_Gamma_n, prior_Gamma_ta.write(n, prior_Gamma_n),
@@ -276,11 +277,16 @@ class NLDSSmoother(object):
 
         return prior_Gamma, post_mu, post_Gamma
 
-    def run(self, y, Sigma_0, Omega_0, mu_0, Gamma_0, Nmax=2):
+    def run(self, y, Sigma_0, Omega_0, mu_0, Gamma_0, Nmax=2, serve_values=None):
+        if serve_values is not None:
+            feed_dict = {v_pl: v for (v, v_pl) in zip(serve_values, self.serve_pl)}
+        else:
+            feed_dict = {}
+        feed_dict.update({self.y_pl: y,
+                          self.mu_0_pl: mu_0,
+                          self.Gamma_0_pl: Gamma_0,
+                          self.Sigma_0_pl: Sigma_0,
+                          self.Omega_0_pl: Omega_0,
+                          self.Nmax_pl: Nmax})
         # y = np.concatenate([y.real, y.imag], axis=1)
-        return self.sess.run(self.result, feed_dict={self.y_pl: y,
-                                                     self.mu_0_pl: mu_0,
-                                                     self.Gamma_0_pl: Gamma_0,
-                                                     self.Sigma_0_pl: Sigma_0,
-                                                     self.Omega_0_pl: Omega_0,
-                                                     self.Nmax_pl: Nmax})
+        return self.sess.run(self.result, feed_dict=feed_dict)

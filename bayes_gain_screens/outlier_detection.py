@@ -99,6 +99,32 @@ def smooth(v, axis=-1):
     out /= 2.
     return out
 
+def reinout_filter(ra, dec, tec):
+    rbftype = 'multiquadric'
+
+    racleaned = np.copy(ra)
+    deccleaned = np.copy(dec)
+    TECcleaned = np.copy(tec)
+    flag_idx = np.zeros(ra.size, dtype=np.bool)
+    while True:
+        rbf_smooth = Rbf(racleaned, deccleaned, TECcleaned, smooth=0.3, function=rbftype)
+        res = np.abs(TECcleaned - rbf_smooth(racleaned, deccleaned))
+        idxbadmax = np.argmax(res)
+        flag_idx[idxbadmax] = True
+        maxval = res[idxbadmax]
+        if maxval < 8.:
+            break
+        else:
+            idxgood = res < maxval  # keep all good
+            if idxgood.sum() < 4:
+                logging.info("Reinout outlier filter flagged {} of {}!".format(flag_idx.sum(), flag_idx.size))
+                break
+            racleaned = racleaned[idxgood]
+            deccleaned = deccleaned[idxgood]
+            TECcleaned = TECcleaned[idxgood]
+
+    return flag_idx
+
 def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     """
     Uses temporal and spatial smoothing.
@@ -117,28 +143,31 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
         init_y_uncert = 1.*np.ones_like(y)
 
     Nd, Na, Nt = y.shape
+    # mean tec over an observation should be zero for dense arrays (not for long baselines of course)
     time_flag = np.tile(np.abs(np.mean(y, axis=-1 ,keepdims=True)) > 16., [1, 1, y.shape[-1]])
-    time_flag = np.logical_or(time_flag,
-                              np.concatenate([np.zeros([Nd, Na, 1], dtype=np.bool),
-                                              np.abs(np.diff(y, axis=-1)) > 40.], axis=-1))
+    # jumps in tec in one time step should be less than a banding (~55 mTECU)
+    band_jump = np.abs(np.diff(y, axis=-1)) > 40.
+    time_flag[...,:-1][band_jump] = True
+    # not sure if it was the value before of after that was bad
+    time_flag[...,1:][band_jump] = True
+
     # Nd, 2
-    X = directions
-    X -= np.mean(X, axis=0)
-    X /= np.std(X, axis=0)
+    X = (directions - np.mean(directions, axis=0)) / np.std(directions, axis=0)
     final_flags = np.zeros_like(y, dtype=np.bool)
     x_list0 = list(X.T)
     Nd, Na, Nt = y.shape
     maxiter = Nd
     for t in range(Nt):
         for a in range(Na):
-            keep = np.logical_not(time_flag[:,a,t])#np.ones(Nd, dtype=np.bool)
+            keep = np.logical_not(time_flag[:,a,t])
             if t > 0:
                 keep = np.logical_or(keep, np.logical_not(final_flags[:, a, t-1]))
             for i in range(maxiter):
                 if keep.sum() < Nd//2:
                     keep = np.ones(Nd, dtype=np.bool)
-                svm = Rbf(*list(X[keep, :].T), y[keep, a, t], smooth=0.3, **kwargs)
-                y_star = svm(*x_list0)
+                # spatially a smoothed-RBF should do a decent job of describing the TEC
+                svm = Rbf(X[keep, 0], X[keep, 1], y[keep, a, t], smooth=0.3, **kwargs)
+                y_star = svm(X[:,0], X[:,1])
                 dy = np.abs(y_star - y[:, a, t])
                 # print(np.median(dy), np.percentile(dy, 95))
                 max_dy = np.max(dy[keep])
@@ -147,7 +176,9 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
                 # print(max_dy)
                 keep = dy < max_dy
 
-            final_flags[:, a, t] = ~keep
+            reinout_flag = reinout_filter(X[:,0], X[:,1], y[:, a, t])
+
+            final_flags[:, a, t] = np.logical_or(~keep, reinout_flag)
             # print('CONF', np.interp(dy[~keep], np.percentile(dy, np.linspace(0., 100, 100)), np.linspace(0., 100, 100)))
 
             # if keep.sum() < Nd:

@@ -15,24 +15,24 @@ Get's TEC from gains.
 def main(data_dir, working_dir, obs_num):
     os.chdir(working_dir)
     logging.info("Merging slow solutions into screen and smoothed.")
-    original_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
-    slow_h5parm = os.path.join(data_dir, 'L{}_{}_slow_merged.h5'.format(obs_num, 'DDS4_full'))
+    original_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
+    slow_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_slow_merged.h5'.format(obs_num))
     select = dict(pol = slice(0, 1, 1))
 
     ###
     # get slow phase and amplitude
 
-    datapack = DataPack(slow_h5parm, readonly=False)
+    datapack_slow = DataPack(slow_h5parm, readonly=True)
     logging.info("Getting slow000/phase000+amplitude000")
-    datapack.current_solset = 'sol000'
-    datapack.select(**select)
-    axes = datapack.axes_phase
-    patch_names, directions = datapack.get_directions(axes['dir'])
+    datapack_slow.current_solset = 'sol000'
+    datapack_slow.select(**select)
+    axes = datapack_slow.axes_phase
+    patch_names, directions = datapack_slow.get_directions(axes['dir'])
     directions_slow = np.stack([directions.ra.rad, directions.dec.rad], axis=1)
-    timestamps, times = datapack.get_times(axes['time'])
-    time_slow = times.mjd
-    phase_slow, axes = datapack.phase
-    amplitude_slow, axes = datapack.amplitude
+    timestamps, times = datapack_slow.get_times(axes['time'])
+    time_slow = times.mjd*86400.
+    phase_slow, axes = datapack_slow.phase
+    amplitude_slow, axes = datapack_slow.amplitude
 
 
     ###
@@ -46,25 +46,8 @@ def main(data_dir, working_dir, obs_num):
     patch_names, directions = datapack.get_directions(axes['dir'])
     directions_screen = np.stack([directions.ra.rad, directions.dec.rad], axis=1)
     timestamps, times = datapack.get_times(axes['time'])
-    time_screen = times.mjd
+    time_screen = times.mjd*86400.
     phase_screen, axes = datapack.phase
-    amplitude_screen, axes = datapack.amplitude
-
-    ###
-    # Create and set screen_slow000
-
-    logging.info("Creating screen_slow000/phase000+amplitude000")
-    make_soltab(datapack, from_solset='screen_posterior', to_solset='screen_slow000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000'], remake_solset=True)
-    datapack.current_solset = 'screen_slow000'
-    datapack.select(**select)
-    dir_idx = np.array([np.argmin(great_circle_sep(directions_slow[:,0], directions_slow[:,1], ra, dec)) for (ra, dec) in zip(directions_screen[:,0], directions_screen[:, 1])])
-    time_idx = np.array([np.argmin(np.abs(time_slow - t)) for t in time_screen])
-
-    phase_screen_slow = phase_screen + phase_slow[:,dir_idx,...][...,time_idx]
-    amplitude_screen_slow = amplitude_screen * amplitude_slow[:,dir_idx,...][...,time_idx]
-    datapack.phase = phase_screen_slow
-    datapack.amplitude = amplitude_screen_slow
 
     ###
     # get smoothed000 phase and amplitude
@@ -76,27 +59,43 @@ def main(data_dir, working_dir, obs_num):
     patch_names, directions = datapack.get_directions(axes['dir'])
     directions_smoothed = np.stack([directions.ra.rad, directions.dec.rad], axis=1)
     timestamps, times = datapack.get_times(axes['time'])
-    time_smoothed = times.mjd
+    time_smoothed = times.mjd * 86400.
     phase_smoothed, axes = datapack.phase
     amplitude_smoothed, axes = datapack.amplitude
+    Ncal = directions_smoothed.shape[0]
 
     ###
-    # Create and set smoothed_slow000
+    # Create and set screen_slow000
 
+    logging.info("Creating screen_slow000/phase000+amplitude000")
+    make_soltab(datapack, from_solset='screen_posterior', to_solset='screen_slow000', from_soltab='phase000',
+                to_soltab=['phase000', 'amplitude000'], remake_solset=True)
     logging.info("Creating smoothed_slow000/phase000+amplitude000")
     make_soltab(datapack, from_solset='smoothed000', to_solset='smoothed_slow000', from_soltab='phase000',
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True)
+
+    logging.info("Creating time mapping")
+    time_map = np.array([np.argmin(np.abs(time_slow - t)) for t in time_screen])
+    logging.info("Creating direction mapping")
+    dir_map = np.array([np.argmin(great_circle_sep(directions_slow[:,0], directions_slow[:,1], ra, dec))
+                        for (ra, dec) in zip(directions_screen[:,0], directions_screen[:, 1])])
+
+    phase_smooth_slow = phase_slow[..., time_map] + phase_smoothed
+    amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
+
+    phase_screen_slow = phase_screen # + phase_slow[..., time_map][:, dir_map, ...] #TODO: check if this should be applied
+    phase_screen_slow[:, :Ncal, ...] = phase_smooth_slow
+    amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...]
+
+    datapack.current_solset = 'screen_slow000'
+    datapack.select(**select)
+    datapack.phase = phase_screen_slow
+    datapack.amplitude = amplitude_screen_slow
+
     datapack.current_solset = 'smoothed_slow000'
     datapack.select(**select)
-    dir_idx = np.array(
-        [np.argmin(great_circle_sep(directions_slow[:, 0], directions_slow[:, 1], ra, dec)) for (ra, dec) in
-         zip(directions_smoothed[:, 0], directions_smoothed[:, 1])])
-    time_idx = np.array([np.argmin(np.abs(time_slow - t)) for t in time_smoothed])
-
-    phase_smoothed_slow = phase_smoothed + phase_slow[:, dir_idx, ...][..., time_idx]
-    amplitude_smoothed_slow = amplitude_smoothed * amplitude_slow[:, dir_idx, ...][..., time_idx]
-    datapack.phase = phase_smoothed_slow
-    datapack.amplitude = amplitude_smoothed_slow
+    datapack.phase = phase_smooth_slow
+    datapack.amplitude = amplitude_smooth_slow
 
 
 def add_args(parser):

@@ -63,36 +63,9 @@ def log_mv_gaussian_pdf(dx, L_Sigma):
     constant = -0.5 * L_Sigma.shape[0] * np.log(2 * np.pi)
     return maha + log_det + constant
 
-class SolveLossVI(object):
-    """
-    This class builds the loss function.
-    Simple use case:
-    # loop over data
-    loss_fn = build_loss(Yreal, Yimag, freqs, gain_uncert=0.02, tec_mean_prior=0., tec_uncert_prior=0.1,S=20)
-    #brute force
-    tec_mean, tec_uncert = brute(loss_fn, (slice(-200, 200,1.), slice(np.log(0.01), np.log(10.), 1.), finish=fmin)
-    #The results are Bayesian estimates of tec mean and uncert.
 
-    :param Yreal: np.array shape [Nf]
-        The real data (including amplitude)
-    :param Yimag: np.array shape [Nf]
-        The imag data (including amplitude)
-    :param freqs: np.array shape [Nf]
-        The freqs in Hz
-    :param gain_uncert: float
-        The uncertainty of gains.
-    :param tec_mean_prior: float
-        the prior mean for tec in mTECU
-    :param tec_uncert_prior: float
-        the prior tec uncert in mTECU
-    :param S: int
-        Number of hermite terms for Guass-Hermite quadrature
-    :return: callable function of the form
-        func(params) where params is a tuple or list with:
-            params[0] is tec_mean in mTECU
-            params[1] is log_tec_uncert in log[mTECU]
-        The return of the func is a scalar loss to be minimised.
-    """
+class SolveLossVI(object):
+    """VI loss with TEC and const"""
 
     def __init__(self, Yreal, Yimag, freqs, tec_mean_prior=0., tec_uncert_prior=100.,
                  const_mean_prior=0., const_uncert_prior=100.,
@@ -133,27 +106,30 @@ class SolveLossVI(object):
         return prior_KL
 
     def test_loss_func(self, params):
-        tec_mean, _tec_uncert = params[0], params[1]
+        tec_mean, _tec_uncert, const_mean, _const_uncert = params[0], params[1], params[2], params[3]
         tec_uncert = constrain_tec(_tec_uncert)
+        const_uncert = constrain_const(_const_uncert)
 
-        q = multivariate_normal(tec_mean, tec_uncert ** 2)
-        tec_prior = multivariate_normal(self.tec_mean_prior, self.tec_uncert_prior ** 2)
-        q_samples = q.rvs(1000)
-        tec_prior_KL = np.mean(q.logpdf(q_samples) - tec_prior.logpdf(q_samples))
-        #         print("tec_prior_KL", tec_prior_KL)
+        q = multivariate_normal([tec_mean, const_mean], np.diag([tec_uncert ** 2, const_uncert ** 2]))
+        prior = multivariate_normal([self.tec_mean_prior, self.const_mean_prior],
+                                    np.diag([self.tec_uncert_prior ** 2, self.const_uncert_prior ** 2]))
+        q_samples = q.rvs(100000)
+        prior_KL = np.mean(q.logpdf(q_samples) - prior.logpdf(q_samples))
 
-        # S_tec, Nf
-        phase = q_samples[:, None] * self.tec_conv
+        # S, Nf
+        phase = q_samples[:, 0:1] * self.tec_conv + q_samples[:, 1:2]
         Yreal_m = np.cos(phase)
         Yimag_m = np.sin(phase)
         # S_tec
-        log_prob = log_gaussian_pdf((Yreal_m - self.Yreal),
-                                    (Yimag_m - self.Yimag),
-                                    self.sigma)
+        # S_tec, 2*Nf
+        dx = np.concatenate([Yreal_m - self.Yreal, Yimag_m - self.Yimag], axis=1)
+        # S_tec
+        log_prob = log_mv_gaussian_pdf(dx, self.L_Sigma)
+
         # scalar
         var_exp = np.mean(log_prob)
         #         print('var_exp',var_exp)
-        loss = np.negative(var_exp - tec_prior_KL)
+        loss = np.negative(var_exp - prior_KL)
         return loss
 
     def loss_func(self, params):
@@ -165,36 +141,43 @@ class SolveLossVI(object):
             scalar The loss
         """
 
-        tec_mean, _tec_uncert = params[0], params[1]
+        tec_mean, _tec_uncert, const_mean, _const_uncert = params[0], params[1], params[2], params[3]
 
         tec_uncert = constrain_tec(_tec_uncert)
+        const_uncert = constrain_const(_const_uncert)
 
         # S_tec
         tec = tec_mean + np.sqrt(2.) * tec_uncert * self.x_tec
-        # S_tec, Nf
-        phase = tec[:, None] * self.tec_conv
+        # S_const
+        const = const_mean + np.sqrt(2.) * const_uncert * self.x_const
+
+        # S_tec, S_const, Nf
+        phase = tec[:, None, None] * self.tec_conv + const[None, :, None]
         Yreal_m = np.cos(phase)
         Yimag_m = np.sin(phase)
-        #S_tec, 2*Nf
-        dx = np.concatenate([Yreal_m - self.Yreal, Yimag_m - self.Yimag], axis=1)
-        #S_tec
-        log_prob = log_mv_gaussian_pdf(dx, self.L_Sigma)
-        # S_tec -> scalar
-        var_exp = np.sum(log_prob * self.w_tec, axis=0)
+        # S_tec, S_const, 2*Nf
+        dx = np.concatenate([Yreal_m - self.Yreal, Yimag_m - self.Yimag], axis=-1)
+        shape = dx.shape
+        dx = dx.reshape((-1, shape[-1]))
+        # S_tec, S_const
+        log_prob = log_mv_gaussian_pdf(dx, self.L_Sigma).reshape(shape[0:2])
+        # S_tec, S_const -> scalar
+        var_exp = np.sum(log_prob * self.w_tec[:, None] * self.w_const[None, :])
         # Get KL
         tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
+        const_prior_KL = self._scalar_KL(const_mean, const_uncert, self.const_mean_prior, self.const_uncert_prior)
         # scalar
-        loss = np.negative(var_exp - tec_prior_KL)
+        loss = np.negative(var_exp - tec_prior_KL - const_prior_KL)
         return loss
 
 
-class UpdateGainsToTec(UpdatePy):
+class UpdateGainsToTecConst(UpdatePy):
     """
     Uses variational inference to condition TEC on Gains.
     """
 
     def __init__(self, freqs, tec_scale=300., spacing=10., **kwargs):
-        super(UpdateGainsToTec, self).__init__(**kwargs)
+        super(UpdateGainsToTecConst, self).__init__(**kwargs)
         self.freqs = freqs
         self.tec_scale = tec_scale
         self.spacing = spacing
@@ -210,7 +193,7 @@ class UpdateGainsToTec(UpdatePy):
 
         tec_conv = tf.constant(-8.4479745e6 / self.freqs, samples.dtype)
         # S, B, Nf
-        phase = samples[:, :, 0:1] * tec_conv
+        phase = samples[:, :, 0:1] * tec_conv + samples[:, :, 1:2]
         return tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1)
 
     def _update_function(self, t, prior_mu, prior_Gamma, Y, Sigma, *serve_values):
@@ -249,33 +232,19 @@ class UpdateGainsToTec(UpdatePy):
                         tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
                         S=20, L_Sigma=L_Sigma)
 
-        sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
-                     (slice(-self.tec_scale, self.tec_scale, self.spacing),))
-        tec_conv = -8.4479745e6 / self.freqs
-        phase_model = sol1[0]*tec_conv
-        gains_model = np.exp(1j*phase_model)
-        total_res = np.abs(gains - gains_model)
-        keep = np.where(total_res < np.sort(total_res)[-3])[0]
-
-        _keep = list(keep)+list(keep+Nf)
-        _Sigma = Sigma[_keep,:][:, _keep]
-        try:
-            L_Sigma = np.linalg.cholesky(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))
-        except:
-            L_Sigma = np.diag(np.sqrt(np.diag(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))))
-
-        s = SolveLossVI(gains.real[keep], gains.imag[keep], self.freqs[keep],
-                        tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
-                        S=20, L_Sigma=L_Sigma)
+        sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.), p[1], deconstrain_const(0.1)]),
+                     (slice(-self.tec_scale, self.tec_scale, self.spacing),slice(-np.pi, np.pi, 2.*np.pi/10.)))
 
         sol3 = minimize(s.loss_func,
-                        np.array([sol1[0], deconstrain_tec(5.)]),
+                        np.array([sol1[0], deconstrain_tec(5.),sol1[1], deconstrain_const(0.1)]),
                         method='BFGS').x
 
         tec_mean = sol3[0]
         tec_uncert = constrain_tec(sol3[1])
+        const_mean = sol3[2]
+        const_uncert = constrain_const(sol3[3])
 
-        post_mu = np.array([tec_mean, 0], np.float64)
-        post_cov = np.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
+        post_mu = np.array([tec_mean, const_mean], np.float64)
+        post_cov = np.array([[tec_uncert ** 2, 0.], [0., const_uncert**2]], np.float64)
 
         return [post_mu, post_cov]
