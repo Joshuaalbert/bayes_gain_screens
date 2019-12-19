@@ -158,7 +158,7 @@ python "$script_dir"/pipeline.py \
         --do_infer_screen="$do_infer_screen" \
         --do_merge_slow="$do_merge_slow" \
         --do_image_smooth="$do_image_smooth" \
-        --do_image_subtract_dds4="$image_do_image_subtract_dds4" \
+        --do_image_subtract_dds4="$do_image_subtract_dds4" \
         --do_image_dds4="$do_image_dds4" \
         --do_image_smooth_slow="$do_image_smooth_slow" \
         --do_image_smooth_slow_restricted="$do_image_smooth_slow_restricted" \
