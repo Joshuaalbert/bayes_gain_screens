@@ -77,8 +77,11 @@ def mask_region(infilename, ds9region, outfilename):
     :return:
     """
     hdu = fits.open(infilename)
-    hduflat = flatten(hdu)
-    r = pyregion.open(ds9region)
+    hduflat = flatten(hdu)[0]
+    center = (hduflat.data.shape[0]//2,hduflat.data.shape[1]//2)
+    radius = hduflat.data.shape[0]//4
+    r = pyregion.parse("image\nCircle({},{},{})".format(*center, radius))
+    # r = pyregion.open(ds9region)
     manualmask = r.get_mask(hdu=hduflat)
     hdu[0].data[0][0][np.where(manualmask == True)] = 0.0
     hdu.writeto(outfilename, overwrite=True)
@@ -138,7 +141,7 @@ def add_args(parser):
     parser.add_argument('--predict_column', help='Where the predicted data will go.',
                         default="PREDICT_SUB", type=str, required=False)
     parser.add_argument('--sub_column', help='Where the subtracted data will go.',
-                        default="DATA_SUB", type=str, required=False)
+                        default="DATA_RESTRICTED", type=str, required=False)
 
 
 def get_filenames(data_dir):

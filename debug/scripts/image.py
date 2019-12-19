@@ -252,15 +252,23 @@ def add_args(parser):
     parser.add_argument('--use_init_dico', help='Whether to initialise clean with dico.',
                         default=False, type="bool", required=False)
     parser.add_argument('--init_dico', help='Dico name (inside data dir) to initialise with.',
-                        default='image_full_ampphase_di_m.NS.DicoModel', type=str, required=False)
+                        default=None, type=str, required=False)
 
+def cleanup_working_dir(working_dir):
+    print("Deleting cache since we're done.")
+    for f in glob.glob(os.path.join(working_dir,"*.ddfcache")):
+        cmd_call("rm -r {}".format(f))
 
 def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_dico, init_dico):
     kwargs = {}
     kwargs['peak_factor'] = 0.001
     kwargs['nfacets'] = 11
     kwargs['robust'] = -0.5
-    init_dico = os.path.join(data_dir, init_dico)
+    if init_dico is None:
+        init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
+    else:
+        if not os.path.isfile(init_dico):
+            raise ValueError("Supplied {} doesn't exist".format(init_dico))
     if os.path.isfile(init_dico) and use_init_dico:
         kwargs['init_dico'] = init_dico
     if image_type == 'image_subtract_dirty':
@@ -272,16 +280,24 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     if image_type == 'image_smoothed_slow':
         image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA',
                             **kwargs)
+    if image_type == 'image_smoothed_slow_restricted':
+        image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
+                            **kwargs)
     if image_type == 'image_screen':
         image_screen(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_screen_slow':
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA',
+                          **kwargs)
+    if image_type == 'image_screen_slow_restricted':
+        image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
                           **kwargs)
     if image_type == 'image_dds4':
         image_DDS4(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
 
     if image_type == 'image_subtracted_dds4':
         image_DDS4(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_SUB', **kwargs)
+
+    cleanup_working_dir(working_dir)
 
 
 if __name__ == '__main__':

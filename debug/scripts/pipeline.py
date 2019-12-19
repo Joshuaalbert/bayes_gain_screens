@@ -365,6 +365,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              exec_env=lofar_sksp_env),
         Step('subtract', ['choose_calibrators', 'download_archive'], script_dir=script_dir,
              script_name='sub-sources-outside-region-mod.py', exec_env=lofar_sksp_env),
+        Step('subtract_outside_pb', ['choose_calibrators', 'download_archive'], script_dir=script_dir,
+             script_name='sub-sources-outside-pb.py', exec_env=lofar_sksp_env),
         Step('solve_dds4', ['subtract'], script_dir=script_dir, script_name='solve_on_subtracted.py',
              exec_env=lofar_sksp_env),
         Step('slow_solve_dds4', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
@@ -391,6 +393,14 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         Step('image_screen', ['infer_screen', 'image_smooth_slow'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_gain_screens_env),
         Step('image_screen_slow', ['infer_screen', 'merge_slow', 'image_screen'], script_dir=script_dir,
+             script_name='image.py',
+             exec_env=lofar_gain_screens_env),
+        Step('image_screen_slow_restricted', ['infer_screen', 'merge_slow', 'image_screen', 'subtract_outside_pb'],
+             script_dir=script_dir,
+             script_name='image.py',
+             exec_env=lofar_gain_screens_env),
+        Step('image_smooth_slow_restricted', ['smooth_dds4', 'merge_slow', 'image_smooth', 'subtract_outside_pb'],
+             script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
     ]
@@ -453,8 +463,16 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     steps['subtract'].cmd \
         .add('region_file', region_file) \
         .add('ncpu', ncpu) \
-        .add('obs_num', obs_num) \
-        .add('data_dir', data_dir)
+        .add('data_dir', data_dir) \
+        .add('predict_column', 'PREDICT_SUB') \
+        .add('sub_column', 'DATA_SUB')
+
+    steps['subtract_outside_pb'].cmd \
+        .add('region_file', region_file) \
+        .add('ncpu', ncpu) \
+        .add('data_dir', data_dir) \
+        .add('predict_column', 'PREDICT_SUB') \
+        .add('sub_column', 'DATA_RESTRICTED')
 
     steps['solve_dds4'].cmd \
         .add('region_file', region_file) \
@@ -516,7 +534,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('data_dir', data_dir) \
         .add('script_dir', script_dir) \
         .add('use_init_dico', False) \
-        .add('init_dico', 'image_full_ampphase_di_m.NS.masked.DicoModel')
+        .add('init_dico',os.path.join(steps['download_archive'].working_dir,
+                                      'image_full_ampphase_di_m.NS.DATA_SUB.DicoModel'))
 
     steps['image_smooth'].cmd \
         .add('image_type', 'image_smoothed') \
@@ -534,6 +553,16 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('script_dir', script_dir) \
         .add('use_init_dico', True)
 
+    steps['image_smooth_slow_restricted'].cmd \
+        .add('image_type', 'image_smoothed_slow_restricted') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True) \
+        .add('init_dico', os.path.join(steps['download_archive'].working_dir,
+                                       'image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'))
+
     steps['image_screen'].cmd \
         .add('image_type', 'image_screen') \
         .add('ncpu', ncpu) \
@@ -550,6 +579,16 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('script_dir', script_dir) \
         .add('use_init_dico', True)
 
+    steps['image_screen_slow_restricted'].cmd \
+        .add('image_type', 'image_screen_slow_restricted') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True) \
+        .add('init_dico', os.path.join(steps['download_archive'].working_dir,
+                                       'image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'))
+
     dsk = {}
     for name in steps.keys():
         dsk[name] = steps[name].get_dask_task()
@@ -562,6 +601,7 @@ STEPS = [
     "download_archive",
     "choose_calibrators",
     "subtract",
+    "subtract_outside_pb",
     "solve_dds4",
     "slow_solve_dds4",
     "smooth_dds4",
@@ -573,8 +613,10 @@ STEPS = [
     "image_dds4",
     "image_smooth",
     "image_smooth_slow",
+    "image_smooth_slow_restricted",
     "image_screen",
-    "image_screen_slow"]
+    "image_screen_slow",
+    "image_screen_slow_restricted"]
 
 
 def add_args(parser):

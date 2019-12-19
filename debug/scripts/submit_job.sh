@@ -35,6 +35,7 @@ no_download=False
 do_download_archive=2
 do_choose_calibrators=2
 do_subtract=2
+do_subtract_outside_pb=2
 do_solve_dds4=2
 do_smooth_dds4=2
 do_slow_solve_dds4=2
@@ -49,7 +50,9 @@ do_image_smooth=0
 do_image_subtract_dds4=0
 do_image_dds4=0
 do_image_smooth_slow=2
+do_image_smooth_slow_restricted=0
 do_image_screen_slow=2
+do_image_screen_slow_restricted=0
 do_image_screen=0
 
 ###
@@ -65,11 +68,14 @@ L=(obs_num \
     do_image_subtract_dds4 \
     do_image_dds4 \
     do_image_smooth_slow \
+    do_image_smooth_slow_restricted \
     do_image_screen_slow \
+    do_image_screen_slow_restricted \
     do_image_screen \
     do_download_archive \
     do_choose_calibrators \
     do_subtract \
+    do_subtract_outside_pb \
     do_solve_dds4 \
     do_smooth_dds4 \
     do_slow_solve_dds4 \
@@ -144,6 +150,7 @@ python "$script_dir"/pipeline.py \
         --do_download_archive="$do_download_archive" \
         --do_choose_calibrators="$do_choose_calibrators" \
         --do_subtract="$do_subtract" \
+        --do_subtract_outside_pb="$do_subtract_outside_pb" \
         --do_solve_dds4="$do_solve_dds4" \
         --do_smooth_dds4="$do_smooth_dds4" \
         --do_slow_solve_dds4="$do_slow_solve_dds4" \
@@ -154,7 +161,9 @@ python "$script_dir"/pipeline.py \
         --do_image_subtract_dds4="$image_do_image_subtract_dds4" \
         --do_image_dds4="$do_image_dds4" \
         --do_image_smooth_slow="$do_image_smooth_slow" \
+        --do_image_smooth_slow_restricted="$do_image_smooth_slow_restricted" \
         --do_image_screen_slow="$do_image_screen_slow" \
+        --do_image_screen_slow_restricted="$do_image_screen_slow_restricted" \
         --do_image_screen="$do_image_screen" \
         --obs_num="$obs_num" \
         --bind_dirs="$bind_dirs" \

@@ -14,12 +14,6 @@ def cmd_call(cmd):
     if exit_status:
         raise ValueError("Failed to  run: {}".format(cmd))
 
-
-def make_masked_dico(region_mask, full_dico_model, masked_dico_model):
-    cmd = 'MaskDicoModel.py --MaskName={region_mask} --InDicoModel={full_dico_model} --OutDicoModel={masked_dico_model} --InvertMask=1'.format(
-        region_mask=region_mask, full_dico_model=full_dico_model, masked_dico_model=masked_dico_model)
-    cmd_call(cmd)
-
 def make_clustercat(reg_file, clustercat):
     regions = pyregion.open(reg_file)
     centers = np.zeros(len(regions[:]),
@@ -113,6 +107,10 @@ def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
     cmd_call('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
                                                                             h5_file=merged_h5parm))
 
+def cleanup_working_dir(working_dir):
+    print("Deleting cache since we're done.")
+    for f in glob.glob(os.path.join(working_dir,"*.ddfcache")):
+        cmd_call("rm -r {}".format(f))
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
@@ -128,19 +126,15 @@ def add_args(parser):
                         default=None, type=str, required=True)
 
 def main(region_file, obs_num, data_dir, working_dir, ncpu):
-    region_mask = os.path.join(data_dir, 'cutoutmask.fits')
-    full_dico_model = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
-    if not os.path.isfile(region_mask):
-        raise IOError("region mask doesn't exists {}".format(region_mask))
-    if not os.path.isfile(full_dico_model):
-        raise IOError("Dico model doesn't exists {}".format(full_dico_model))
+    filtered_dico_model = os.path.join(data_dir,  'image_full_ampphase_di_m.NS.DATA_SUB.DicoModel')
+    if not os.path.isfile(filtered_dico_model):
+        raise IOError("Dico model doesn't exists {}".format(filtered_dico_model))
     clustercat = os.path.join(data_dir, 'subtract.ClusterCat.npy')
-    masked_dico_model = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.masked.DicoModel')
     os.chdir(working_dir)
     make_clustercat(region_file, clustercat)
-    make_masked_dico(region_mask, full_dico_model, masked_dico_model)
-    solve(masked_dico_model,obs_num, clustercat, working_dir,data_dir, ncpu, 'DDS4_full')
+    solve(filtered_dico_model,obs_num, clustercat, working_dir,data_dir, ncpu, 'DDS4_full')
     make_merged_h5parm(obs_num, 'DDS4_full', data_dir, working_dir)
+    cleanup_working_dir(working_dir)
 
 
 if __name__ == '__main__':

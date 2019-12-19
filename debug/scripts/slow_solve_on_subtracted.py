@@ -123,14 +123,25 @@ def make_symlinks(data_dir, obs_num):
         print("Linking {} -> {}".format(src,dst))
         os.symlink(src,dst)
 
+def cleanup_working_dir(working_dir):
+    print("Deleting cache since we're done.")
+    for f in glob.glob(os.path.join(working_dir,"*.ddfcache")):
+        cmd_call("rm -r {}".format(f))
+
+
 def main(obs_num, data_dir, working_dir, ncpu):
     clustercat = os.path.join(data_dir, 'subtract.ClusterCat.npy')
-    masked_dico_model = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.masked.DicoModel')
+    if not os.path.isfile(clustercat):
+        raise IOError("Clustercat{} doesn't exist".format(clustercat))
+    filtered_dico_model = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DATA_SUB.DicoModel')
+    if not os.path.isfile(filtered_dico_model):
+        raise IOError("Dico model doesn't exists {}".format(filtered_dico_model))
     os.chdir(working_dir)
     prepare_kms_sols(data_dir, obs_num)
     make_symlinks(data_dir, obs_num)
-    solve(masked_dico_model,obs_num, clustercat, working_dir,data_dir, ncpu)
+    solve(filtered_dico_model,obs_num, clustercat, working_dir,data_dir, ncpu)
     make_merged_h5parm(obs_num, data_dir, working_dir)
+    cleanup_working_dir(working_dir)
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
