@@ -68,7 +68,7 @@ def addextraweights(msfiles):
                     ts.putcol('WEIGHT_SPECTRUM_FROM_IMAGING_WEIGHT', ws_tmp)
 
 
-def mask_region(infilename, ds9region, outfilename):
+def make_region_mask(infilename, ds9region, outfilename):
     """
     Make mask that is `infilename` everywhere except in regions specified by `ds9region` which is zero.
     :param infilename:
@@ -76,12 +76,15 @@ def mask_region(infilename, ds9region, outfilename):
     :param outfilename:
     :return:
     """
+    print('Making: {}'.format(outfilename))
     hdu = fits.open(infilename)
     hduflat = flatten(hdu)
     r = pyregion.open(ds9region)
     manualmask = r.get_mask(hdu=hduflat)
     hdu[0].data[0][0][np.where(manualmask == True)] = 0.0
     hdu.writeto(outfilename, overwrite=True)
+    if not os.path.isfile(outfilename):
+        raise IOError("Did not successfully create {}".format(outfilename))
 
 
 def flatten(f):
@@ -171,9 +174,20 @@ def make_filtered_dico(region_mask, full_dico_model, masked_dico_model):
     :param masked_dico_model:
     :return:
     """
+    print("Making dico containing only calibrators: {}".format(masked_dico_model))
     cmd = 'MaskDicoModel.py --MaskName={region_mask} --InDicoModel={full_dico_model} --OutDicoModel={masked_dico_model} --InvertMask=1'.format(
         region_mask=region_mask, full_dico_model=full_dico_model, masked_dico_model=masked_dico_model)
     cmd_call(cmd)
+    if not os.path.isfile(masked_dico_model):
+        raise IOError("Failed to make {}".format(masked_dico_model))
+
+def make_predict_dico(indico, predict_dico, predict_mask):
+    print("Making dico containing all but calibrators: {}".format(predict_dico))
+    cmd_call(
+        "MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(predict_mask, indico, predict_dico))
+    if not os.path.isfile(predict_dico):
+        raise IOError("Failed to make {}".fomat(predict_dico))
+
 
 def cleanup_working_dir(working_dir):
     print("Deleting cache since we're done.")
@@ -198,8 +212,8 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
     predict_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.not_{sub_column}.DicoModel'.format(sub_column=sub_column))
     filtered_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.{sub_column}.DicoModel'.format(sub_column=sub_column))
 
-    predict_mask = os.path.join(data_dir, 'predict_mask_to_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
-    filter_mask = os.path.join(data_dir, 'filter_mask_to_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
+    predict_mask = os.path.join(data_dir, 'predict_mask_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
+    filter_mask = os.path.join(data_dir, 'filter_mask_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
 
     if keeplongbaselines:
         uvsel = "[0.100000,5000.000000]"
@@ -215,12 +229,9 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
         os.unlink(predict_dico)
     if os.path.isfile(predict_mask):
         os.unlink(predict_mask)
-    print("Masking region with {}.".format(region_file))
-    mask_region(fullmask, region_file, predict_mask)
-    print("Making dico containing only calibrators")
+    make_region_mask(fullmask, region_file, predict_mask)
     make_filtered_dico(filter_mask, indico, filtered_dico)
-    print("Making dico containing all but calibrators.")
-    cmd_call("MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(predict_mask, indico, predict_dico))
+    make_predict_dico(indico, predict_dico, predict_mask)
     args = dict(chunkhours=chunkhours, mslist_file=mslist_file, data_colname=data_colname, ncpu=ncpu,
                 clustercat=clustercat,
                 robust=robust, imagenpix=imagenpix, imagecell=imagecell, predict_mask=predict_mask, predict_dico=predict_dico, uvsel=uvsel,
@@ -263,6 +274,7 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
     addextraweights(mslist)
 
     cleanup_working_dir(working_dir)
+
 
 
 if __name__ == '__main__':
