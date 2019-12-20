@@ -11,6 +11,7 @@ from bayes_gain_screens.misc import make_soltab, great_circle_sep
 from bayes_gain_screens.plotting import animate_datapack
 from bayes_gain_screens.nlds_smoother import NLDSSmoother
 from bayes_gain_screens.updates.gains_to_tec_update import UpdateGainsToTec
+from bayes_gain_screens import TEC_CONV
 from dask.multiprocessing import get
 import argparse
 from timeit import default_timer
@@ -50,7 +51,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
     obs_cov_array = np.zeros((D, 2*Nf, 2*Nf))
-    update = UpdateGainsToTec(freqs, S=200, tec_scale=200., spacing=10., force_diag_Sigma=True)
+    update = UpdateGainsToTec(freqs, S=200, tec_scale=300., spacing=10., force_diag_Sigma=True)
     config = tf.ConfigProto(intra_op_parallelism_threads=1,
                             inter_op_parallelism_threads=1,
                             allow_soft_placement=True,
@@ -82,7 +83,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         obs_cov_array[d, :, :] = res['Sigma']
         logging.info("DDTEC Levy uncert: {:.2f} mTECU".format(np.sqrt(res['Omega'][0,0])))
         logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
-        phase_model = tec_mean_array[d, None, :] * -8.448e6/freqs[:, None]
+        phase_model = tec_mean_array[d, None, :] * TEC_CONV/freqs[:, None]
         phase_diff = wrap(wrap(phase_model) - np.arctan2(Yimag[d,:, :], Yreal[d, :, :]))
         plt.imshow(phase_diff,origin='lower', vmin=-0.2, vmax= 0.2,
                    cmap='coolwarm', aspect='auto',
@@ -145,7 +146,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     phase_smooth, axes = datapack.phase
     amp_smooth, axes = datapack.amplitude
 
-    tec_conv = -8.4479745e6 / freqs
+    tec_conv = TEC_CONV / freqs
     tec_mean_array = np.zeros((Npol, Nd, Na, Nt))
     tec_uncert_array = np.zeros((Npol, Nd, Na, Nt))
     obs_cov_array = np.zeros((Npol, Nd, Na, 2*Nf, 2*Nf))
