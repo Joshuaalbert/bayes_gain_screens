@@ -5,6 +5,7 @@ from .coord_transforms import ITRSToENUWithReferences_v2
 from . import logging, angle_type, dist_type, float_type
 from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, great_circle_sep
 from .outlier_detection import filter_tec_dir
+from . import TEC_CONV
 from scipy.ndimage import median_filter
 from timeit import default_timer
 import numpy as np
@@ -327,7 +328,7 @@ class Deployment(object):
             logging.info("Computing screen phase")
             axes = self.datapack.axes_phase
             _, freqs = self.datapack.get_freqs(axes['freq'])
-            tec_conv = -8.4479745e6 / freqs
+            tec_conv = TEC_CONV / freqs
             #1, Nd, Na, Nf, Nt
             post_phase_mean = post_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di# + const_NN[None,..., None, :]
             post_phase_std = np.abs(post_std_array[None, ..., None, :] * tec_conv[:, None])
@@ -349,79 +350,4 @@ class Deployment(object):
 
         logging.info("Done. Time to run: {:.1f} seconds".format(default_timer() - t0))
 
-    def debug_plot_posterior(self, t, post_mean, post_var):
-        num_plots = int(np.sqrt(self.Na))
-        import pylab as plt
-        from bayes_gain_screens.plotting import plot_vornoi_map
-        fig, axs = plt.subplots(num_plots, num_plots, sharex=True, sharey=True, figsize=(num_plots * 3, num_plots * 3))
-        c = 0
-        for i in range(num_plots):
-            for j in range(num_plots):
-                if c >= self.Na:
-                    continue
 
-                plot_vornoi_map(self.Xd_screen,
-                                post_mean[0, :, c],
-                                axs[i][j],
-                                radius=2 * np.pi,
-                                cmap=plt.cm.coolwarm)
-                c += 1
-        plt.savefig(os.path.join(self.debug_dir, "posterior_mean_{:03d}.png".format(t)))
-        plt.close('all')
-
-        fig, axs = plt.subplots(num_plots, num_plots, sharex=True, sharey=True, figsize=(num_plots * 3, num_plots * 3))
-        c = 0
-        for i in range(num_plots):
-            for j in range(num_plots):
-                if c >= self.Na:
-                    continue
-
-                plot_vornoi_map(self.Xd_screen,
-                                np.sqrt(post_var[0, :, c]),
-                                axs[i][j],
-                                radius=2 * np.pi,
-                                cmap=plt.cm.coolwarm)
-                c += 1
-        plt.savefig(os.path.join(self.debug_dir, "data_std_{:03d}.png".format(t)))
-        plt.close('all')
-    
-    def debug_plot_data(self,t, data_mean, data_std):
-        np.savez(os.path.join(self.cwd, 'data_{:03d}.npz'.format(t)), mean=data_mean, std=data_std, Xd=self.Xd)
-        return
-        data_std = np.copy(data_std)
-        data_std[np.isinf(data_std)] = np.nan
-        num_plots = int(np.sqrt(self.Na))
-        import pylab as plt
-        from bayes_gain_screens.plotting import plot_vornoi_map
-        fig, axs = plt.subplots(num_plots, num_plots, sharex=True, sharey=True, figsize=(num_plots * 3, num_plots * 3))
-        c = 0
-        for i in range(num_plots):
-            for j in range(num_plots):
-                if c >= self.Na:
-                    break
-
-                plot_vornoi_map(self.Xd,
-                                data_mean[0, c, :],
-                                axs[i][j],
-                                radius=None,
-                                relim=True,
-                                cmap=plt.cm.coolwarm)
-                c += 1
-        plt.savefig(os.path.join(self.debug_dir, "data_mean_{:03d}.png".format(t)))
-        plt.close('all')
-
-        fig, axs = plt.subplots(num_plots, num_plots, sharex=True, sharey=True, figsize=(num_plots * 3, num_plots * 3))
-        c = 0
-        for i in range(num_plots):
-            for j in range(num_plots):
-                if c >= self.Na:
-                    break
-
-                plot_vornoi_map(self.Xd,
-                                data_std[0, c, :],
-                                axs[i][j],
-                                radius=2 * np.pi,
-                                cmap=plt.cm.coolwarm)
-                c += 1
-        plt.savefig(os.path.join(self.debug_dir, "dataerior_std_{:03d}.png".format(t)))
-        plt.close('all')
