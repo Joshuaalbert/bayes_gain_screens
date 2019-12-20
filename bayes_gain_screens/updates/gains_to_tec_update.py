@@ -4,7 +4,7 @@ from scipy.optimize import minimize, brute
 import numpy as np
 import tensorflow as tf
 from scipy.stats import multivariate_normal
-
+from .. import TEC_CONV
 
 
 
@@ -101,29 +101,29 @@ class SolveLossVI(object):
     def __init__(self, Yreal, Yimag, freqs, tec_mean_prior=0., tec_uncert_prior=100.,
                  const_mean_prior=0., const_uncert_prior=100.,
                  S=20, sigma_real=None, sigma_imag=None, L_Sigma=None):
-        self.x, self.w = np.polynomial.hermite.hermgauss(S)
-        self.x_tec = self.x
-        self.x_const = self.x
-        self.w /= np.pi ** (0.5)
-        self.w_tec = self.w
-        self.w_const = self.w
+        # self.x, self.w = np.polynomial.hermite.hermgauss(S)
+        # self.x_tec = self.x
+        # self.x_const = self.x
+        # self.w /= np.pi ** (0.5)
+        # self.w_tec = self.w
+        # self.w_const = self.w
+        #
+        # # S_tec
+        # self.const = const_mean_prior + np.sqrt(2.) * const_uncert_prior * self.x_const
 
-        # S_tec
-        self.const = const_mean_prior + np.sqrt(2.) * const_uncert_prior * self.x_const
-
-        self.tec_conv = -8.4479745e6 / freqs
+        self.tec_conv = TEC_CONV / freqs
         # Nf
         self.Yreal = Yreal
         self.Yimag = Yimag
 
         self.tec_mean_prior = tec_mean_prior
         self.tec_uncert_prior = tec_uncert_prior
-        self.const_mean_prior = const_mean_prior
-        self.const_uncert_prior = const_uncert_prior
+        # self.const_mean_prior = const_mean_prior
+        # self.const_uncert_prior = const_uncert_prior
 
         self.sigma_real = sigma_real
         self.sigma_imag = sigma_imag
-        self.L_Sigma = L_Sigma
+        # self.L_Sigma = L_Sigma
 
     def _scalar_KL(self, mean, uncert, mean_prior, uncert_prior):
         # Get KL
@@ -250,7 +250,7 @@ class UpdateGainsToTec(UpdatePy):
             [S, B, N]
         """
 
-        tec_conv = tf.constant(-8.4479745e6 / self.freqs, samples.dtype)
+        tec_conv = tf.constant(TEC_CONV / self.freqs, samples.dtype)
         # S, B, Nf
         phase = samples[:, :, 0:1] * tec_conv
         return tf.concat([tf.math.cos(phase), tf.math.sin(phase)], axis=-1)
@@ -288,39 +288,21 @@ class UpdateGainsToTec(UpdatePy):
         sigma_real = np.sqrt(np.diag(Sigma)[:Nf])
         sigma_imag = np.sqrt(np.diag(Sigma)[Nf:])
 
-        gains = Y[:Nf] + 1j * Y[Nf:]
-
-        s = SolveLossVI(gains.real, gains.imag, self.freqs,
+        s = SolveLossVI(Y[:Nf], Y[Nf:], self.freqs,
                         tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
                         sigma_real=sigma_real, sigma_imag = sigma_imag)
 
-        sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
-                     (slice(-self.tec_scale, self.tec_scale, self.spacing),))
-        tec_conv = -8.4479745e6 / self.freqs
-        phase_model = sol1[0] * tec_conv
-        gains_model = np.exp(1j * phase_model)
-        total_res = np.abs(gains - gains_model)
-        keep = np.where(total_res < np.sort(total_res)[-3])[0]
+        basin = np.mean(np.abs(np.pi / s.tec_conv))*0.5
+        num_basin = int(self.tec_scale/basin)+1
 
-        _keep = list(keep) + list(keep + Nf)
-        # _Sigma = Sigma[_keep, :][:, _keep]
-        # try:
-        #     L_Sigma = np.linalg.cholesky(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))
-        # except:
-        #     L_Sigma = np.diag(np.sqrt(np.diag(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))))
-        sigma_real = sigma_real[:Nf]
-        sigma_imag = sigma_imag[Nf:]
+        res = minimize(s.loss_func, np.array([0., deconstrain_tec(5.)]), method='BFGS').x
+        obj_try = np.stack([s.loss_func([res[0] + i * basin, res[1]]) for i in range(-num_basin, num_basin+1, 1)], axis=0)
+        which_basin = np.argmin(obj_try, axis=0)
+        x_next = np.array([res[0] + (which_basin - float(num_basin)) * basin, res[1]])
+        sol = minimize(s.loss_func, x_next, method='BFGS').x
 
-        s = SolveLossVI(gains.real[keep], gains.imag[keep], self.freqs[keep],
-                        tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
-                        sigma_real=sigma_real, sigma_imag = sigma_imag)
-
-        sol3 = minimize(s.loss_func,
-                        np.array([sol1[0], deconstrain_tec(5.)]),
-                        method='BFGS').x
-
-        tec_mean = sol3[0]
-        tec_uncert = constrain_tec(sol3[1])
+        tec_mean = sol[0]
+        tec_uncert = constrain_tec(sol[1])
 
         post_mu = np.array([tec_mean, 0], np.float64)
         post_cov = np.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
