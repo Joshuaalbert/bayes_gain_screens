@@ -6,6 +6,9 @@ import tensorflow as tf
 from scipy.stats import multivariate_normal
 
 
+
+
+
 def constrain(v, a, b):
     return a + (np.tanh(v) + 1) * (b - a) / 2.
 
@@ -63,6 +66,7 @@ def log_mv_gaussian_pdf(dx, L_Sigma):
     constant = -0.5 * L_Sigma.shape[0] * np.log(2 * np.pi)
     return maha + log_det + constant
 
+
 class SolveLossVI(object):
     """
     This class builds the loss function.
@@ -96,7 +100,7 @@ class SolveLossVI(object):
 
     def __init__(self, Yreal, Yimag, freqs, tec_mean_prior=0., tec_uncert_prior=100.,
                  const_mean_prior=0., const_uncert_prior=100.,
-                 S=20, sigma=None, L_Sigma=None):
+                 S=20, sigma_real=None, sigma_imag=None, L_Sigma=None):
         self.x, self.w = np.polynomial.hermite.hermgauss(S)
         self.x_tec = self.x
         self.x_const = self.x
@@ -117,7 +121,8 @@ class SolveLossVI(object):
         self.const_mean_prior = const_mean_prior
         self.const_uncert_prior = const_uncert_prior
 
-        self.sigma = sigma
+        self.sigma_real = sigma_real
+        self.sigma_imag = sigma_imag
         self.L_Sigma = L_Sigma
 
     def _scalar_KL(self, mean, uncert, mean_prior, uncert_prior):
@@ -131,6 +136,25 @@ class SolveLossVI(object):
         twoKL = mahalanobis + constant + logdet_qcov + trace
         prior_KL = 0.5 * twoKL
         return prior_KL
+
+    def var_exp(self, m, l, Yreal, Yimag, sigma_real, sigma_imag):
+        """
+        Analytic int log p(y | ddtec, sigma^2) N[ddtec | q, Q] dddtec
+        :param l:
+        :param Yreal:
+        :param Yimag:
+        :param sigma_real:
+        :param sigma_imag:
+        :param k:
+        :return:
+        """
+        res = -(1. + 2. * Yimag ** 2) / (4. * sigma_imag ** 2)
+        res += -(1. + 2. * Yreal ** 2) / (4. * sigma_real ** 2)
+        res += -np.exp(-2. * self.tec_conv ** 2 * l ** 2) * np.cos(2. * self.tec_conv * m) * (sigma_imag ** 2 - sigma_real ** 2) / (
+                    4. * sigma_imag ** 2 * sigma_real ** 2)
+        res += np.exp(-0.5 * self.tec_conv ** 2 * l ** 2) * (
+                    Yreal * np.cos(self.tec_conv * m) / sigma_real ** 2 + Yimag * np.sin(self.tec_conv * m) / sigma_imag ** 2)
+        return np.sum(res, axis=-1)
 
     def test_loss_func(self, params):
         tec_mean, _tec_uncert = params[0], params[1]
@@ -156,7 +180,7 @@ class SolveLossVI(object):
         loss = np.negative(var_exp - tec_prior_KL)
         return loss
 
-    def loss_func(self, params):
+    def loss_func_gauss_hermite(self, params):
         """
         VI loss
         :param params: tf.Tensor
@@ -175,12 +199,30 @@ class SolveLossVI(object):
         phase = tec[:, None] * self.tec_conv
         Yreal_m = np.cos(phase)
         Yimag_m = np.sin(phase)
-        #S_tec, 2*Nf
+        # S_tec, 2*Nf
         dx = np.concatenate([Yreal_m - self.Yreal, Yimag_m - self.Yimag], axis=1)
-        #S_tec
+        # S_tec
         log_prob = log_mv_gaussian_pdf(dx, self.L_Sigma)
         # S_tec -> scalar
         var_exp = np.sum(log_prob * self.w_tec, axis=0)
+        # Get KL
+        tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
+        # scalar
+        loss = np.negative(var_exp - tec_prior_KL)
+        return loss
+
+    def loss_func(self, params):
+        """
+        VI loss
+        :param params: tf.Tensor
+            shapfrom scipy.optimize import brute, fmine [D]
+        :return: tf.Tensor
+            scalar The loss
+        """
+
+        tec_mean, _tec_uncert = params[0], params[1]
+        tec_uncert = constrain_tec(_tec_uncert)
+        var_exp = self.var_exp(tec_mean, tec_uncert, self.Yreal, self.Yimag, self.sigma_real, self.sigma_imag)
         # Get KL
         tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
         # scalar
@@ -238,35 +280,40 @@ class UpdateGainsToTec(UpdatePy):
 
         Nf = self.freqs.shape[0]
 
-        try:
-            L_Sigma = np.linalg.cholesky(Sigma + 1e-4 * np.eye(2 * Nf))
-        except:
-            L_Sigma = np.diag(np.sqrt(np.diag(Sigma + 1e-4 * np.eye(2 * Nf))))
+        # try:
+        #     L_Sigma = np.linalg.cholesky(Sigma + 1e-4 * np.eye(2 * Nf))
+        # except:
+        #     L_Sigma = np.diag(np.sqrt(np.diag(Sigma + 1e-4 * np.eye(2 * Nf))))
+
+        sigma_real = np.sqrt(np.diag(Sigma)[:Nf])
+        sigma_imag = np.sqrt(np.diag(Sigma)[Nf:])
 
         gains = Y[:Nf] + 1j * Y[Nf:]
 
         s = SolveLossVI(gains.real, gains.imag, self.freqs,
                         tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
-                        S=20, L_Sigma=L_Sigma)
+                        sigma_real=sigma_real, sigma_imag = sigma_imag)
 
         sol1 = brute(lambda p: s.loss_func([p[0], deconstrain_tec(5.)]),
                      (slice(-self.tec_scale, self.tec_scale, self.spacing),))
         tec_conv = -8.4479745e6 / self.freqs
-        phase_model = sol1[0]*tec_conv
-        gains_model = np.exp(1j*phase_model)
+        phase_model = sol1[0] * tec_conv
+        gains_model = np.exp(1j * phase_model)
         total_res = np.abs(gains - gains_model)
         keep = np.where(total_res < np.sort(total_res)[-3])[0]
 
-        _keep = list(keep)+list(keep+Nf)
-        _Sigma = Sigma[_keep,:][:, _keep]
-        try:
-            L_Sigma = np.linalg.cholesky(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))
-        except:
-            L_Sigma = np.diag(np.sqrt(np.diag(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))))
+        _keep = list(keep) + list(keep + Nf)
+        # _Sigma = Sigma[_keep, :][:, _keep]
+        # try:
+        #     L_Sigma = np.linalg.cholesky(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))
+        # except:
+        #     L_Sigma = np.diag(np.sqrt(np.diag(_Sigma + 1e-4 * np.eye(_Sigma.shape[0]))))
+        sigma_real = sigma_real[:Nf]
+        sigma_imag = sigma_imag[Nf:]
 
         s = SolveLossVI(gains.real[keep], gains.imag[keep], self.freqs[keep],
                         tec_mean_prior=prior_mu[0], tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
-                        S=20, L_Sigma=L_Sigma)
+                        sigma_real=sigma_real, sigma_imag = sigma_imag)
 
         sol3 = minimize(s.loss_func,
                         np.array([sol1[0], deconstrain_tec(5.)]),
