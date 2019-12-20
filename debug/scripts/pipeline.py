@@ -426,6 +426,14 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
             print("No state file: {}".format(state_file))
             print("Resume not possible. Trusting your user requested pipeline steps.")
         else:
+            if auto_resume == 1:
+                print("Resuming pipeline with flag setting '1'. Deleting old undone/failed work.")
+            if auto_resume == 2:
+                print("Resuming pipeline with flag setting '2'. Co-existing with old undone/failed work.")
+            for step in steps.keys():
+                if steps[step].flag > 0:
+                    print("Changing step user requested flag {} : {} -> {}".format(step, steps[step].flag, auto_resume))
+                    steps[step].flag = auto_resume
             with open(state_file, 'r') as f:
                 for line in f.readlines():
                     if "END" not in line:
@@ -648,9 +656,8 @@ def add_args(parser):
                           help='Reference image used to extract screen directions and auto select calibrators if region_file is None. If not provided, it will use the one in the archive directory.',
                           required=False, default=None, type='str_or_none')
     optional.add_argument('--auto_resume',
-                          help='Whether or try to automatically resume operations based on the STATE file.',
-                          required=False, default=True, type='bool')
-
+                          help='Int flag indicating whether or try to automatically resume operations based on the STATE file. Flags 0/1/2 with usual meaning (see do_*).',
+                          required=False, default=2, type=int)
     try:
         workers = os.cpu_count()
         if 'sched_getaffinity' in dir(os):

@@ -26,7 +26,7 @@ bind_dirs=/beegfs/lofar
 ncpu=$(grep -c ^processor /proc/cpuinfo)
 conda_env=tf_py
 force_conda=
-auto_resume=True
+auto_resume=2
 no_download=False
 
 ###
