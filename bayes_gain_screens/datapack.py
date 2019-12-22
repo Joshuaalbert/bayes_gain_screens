@@ -496,7 +496,7 @@ class DataPack(object):
             if isinstance(sel, list):
                 if sel[0] != np.min(sel) or sel[-1] != np.max(sel):
                     break
-                if len(sel) == 0:
+                if len(sel) == 1:
                     _sel = slice(sel[0], sel[0]+1, 1)
                 else:
                     try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
