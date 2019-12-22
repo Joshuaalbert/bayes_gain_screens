@@ -80,7 +80,7 @@ def mask_region(infilename, ds9region, outfilename):
     hduflat = flatten(hdu)[0]
     center = (hduflat.data.shape[0]//2,hduflat.data.shape[1]//2)
     radius = hduflat.data.shape[0]//4
-    r = pyregion.parse("image\nCircle({},{},{})".format(*center, radius))
+    r = pyregion.parse("image\nCircle({},{},{})".format(center[0], center[1], radius))
     # r = pyregion.open(ds9region)
     manualmask = r.get_mask(hdu=hduflat)
     hdu[0].data[0][0][np.where(manualmask == True)] = 0.0
