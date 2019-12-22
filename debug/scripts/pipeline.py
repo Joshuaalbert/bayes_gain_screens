@@ -499,7 +499,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('ncpu', ncpu // 2) \
         .add('data_dir', data_dir) \
         .add('ref_dir', ref_dir) \
-        .add('walking_reference', True)
+        .add('walking_reference', False)
 
     steps['slow_solve_dds4'].cmd \
         .add('ncpu', ncpu) \
