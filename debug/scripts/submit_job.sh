@@ -17,12 +17,12 @@ HEREDOC
 progname=$(basename $0)
 # wheres
 simg_dir=${HOME}/store
-obs_num=562061
-archive_dir=${HOME}/store/P126+65
-root_working_dir=${HOME}/store/root
-script_dir=${HOME}/store/scripts
+obs_num=
+archive_dir=
+root_working_dir=
+script_dir=
 region_file=None
-bind_dirs=/beegfs/lofar
+bind_dirs=
 ncpu=$(grep -c ^processor /proc/cpuinfo)
 conda_env=tf_py
 force_conda=
@@ -35,7 +35,7 @@ no_download=False
 do_download_archive=2
 do_choose_calibrators=2
 do_subtract=2
-do_subtract_outside_pb=2
+do_subtract_outside_pb=0
 do_solve_dds4=2
 do_smooth_dds4=2
 do_slow_solve_dds4=2
