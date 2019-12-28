@@ -261,7 +261,7 @@ class DatapackPlotter(object):
              vmax=None, mode='perantenna', observable='phase', phase_wrap=True, log_scale=False, plot_crosses=True,
              plot_facet_idx=False, plot_patchnames=False, labels_in_radec=False, plot_arrays=False,
              solset=None, plot_screen=False, tec_eval_freq=None, per_plot_scale=False, mean_residual=False, cmap=None,
-             flag_outliers=False, **kwargs):
+             overlay_solset=None, **kwargs):
         """
 
         :param ant_sel:
@@ -300,6 +300,8 @@ class DatapackPlotter(object):
             plot_facet_idx = False
         if plot_patchnames or plot_facet_idx:
             plot_crosses = False
+        if overlay_solset is not None:
+            plot_overlay = True
 
         matplotlib.use('Agg')
 
@@ -323,11 +325,13 @@ class DatapackPlotter(object):
                 # obs = np.sqrt(np.abs(1. / obs))  # uncert from weights = 1/var
                 # obs = np.sqrt(obs)  # uncert from weights = 1/var
                 phase_wrap = False
-            if flag_outliers:
-                weights, _ = self.datapack.__getattr__("weights_"+observable)
-                logging.info("Flagging observables based on inf uncertanties:")
+            if plot_overlay:
+                self.datapack.current_solset = overlay_solset
+                overlay_obs, axes = self.datapack.__getattr__(observable)
+                weights, axes = self.datapack.__getattr__("weights_"+observable)
+                _, flag_directions = self.datapack.get_directions(axes['dir'])
+                logging.info("Flagging observables based on inf uncertanties")
                 flags = weights==np.inf
-                obs[flags] = np.nan
 
             if 'pol' in axes.keys():
                 # plot only first pol selected
@@ -434,6 +438,7 @@ class DatapackPlotter(object):
                                     figsize=(4 * M, 4 * M))
             fig.subplots_adjust(wspace=0., hspace=0.)
             axes_patches = []
+            axes_overlay = []
             c = 0
             for row in range(M):
                 for col in range(M):
@@ -462,6 +467,9 @@ class DatapackPlotter(object):
                                                          annotations=annotations,
                                                          title="{} {:.1f}km".format(title, ref_dist[c]),
                                                          reverse_x=labels_in_radec)
+                    sc = ax.scatter(flag_directions.ra.deg, flag_directions.dec.deg, s=100, ec=cmap(np.ones(len(flag_directions))),
+                                    fc=cmap(np.ones(len(flag_directions))), alpha=np.zeros(len(flag_directions)))
+                    axes_overlay.append(sc)
                     axes_patches.append(p)
                     c += 1
 
@@ -476,21 +484,27 @@ class DatapackPlotter(object):
                 for i in range(Na):
                     if not plot_screen:
                         datum = obs[:, i, fixfreq, j]
+                        overlay_datum = overlay_obs[:, i, fixfreq, j]
                         flagum = flags[:, i, fixfreq, j]
                     else:
                         datum = obs[:, :, i, fixfreq, j]
+                        overlay_datum = overlay_obs[:, :, i, fixfreq, j]
                         flagum = flags[:, :, i, fixfreq, j]
                     if per_plot_scale:
                         vmin = np.nanmin(datum)
                         vmax = np.nanmax(datum)
                         norm = plt.Normalize(vmin, vmax)
                     colors = cmap(norm(datum))
-                    if flag_outliers:
-                        # print(flagum, (colors.shape))
-                        colors[...,0][flagum] = 1.#[1., 0., 0., 1.]
-                        colors[...,1][flagum] = 0.#[1., 0., 0., 1.]
-                        colors[...,2][flagum] = 0.#[1., 0., 0., 1.]
-                        colors[...,3][flagum] = 1.#[1., 0., 0., 1.]
+
+                    if plot_overlay:
+                        ecolors = cmap(norm(overlay_datum))
+                        fcolors = cmap(norm(overlay_datum))
+                        ecolors[...,0][flagum] = 1.#[1., 0., 0., 1.]
+                        ecolors[...,1][flagum] = 0.#[1., 0., 0., 1.]
+                        ecolors[...,2][flagum] = 0.#[1., 0., 0., 1.]
+                        ecolors[...,3][flagum] = 1.#[1., 0., 0., 1.]
+                        axes_overlay[i].set_facecolors(fcolors)
+                        axes_overlay[i].set_edgecolors(ecolors)
                     if plot_screen:
                         axes_patches[i].set_array(colors)
                     else:
