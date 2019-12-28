@@ -4,7 +4,6 @@ from bayes_gain_screens import logging
 from bayes_gain_screens.datapack import DataPack
 from bayes_gain_screens.misc import great_circle_sep
 from bayes_gain_screens.misc import make_soltab
-from scipy.spatial import cKDTree
 import argparse
 
 """

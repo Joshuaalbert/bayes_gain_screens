@@ -1,6 +1,5 @@
 from gpflow.models import GPModel
 from gpflow.likelihoods import Gaussian
-from gpflow.params import Parameter
 from gpflow import DataHolder, name_scope, params_as_tensors, autoflow
 from gpflow import settings
 float_type = settings.float_type
@@ -9,16 +8,14 @@ import numpy as np
 from typing import List
 from scipy.special import logsumexp
 from gpflow.training import ScipyOptimizer
-from scipy.optimize import brute
 from . import logging
 
 
 
 class HGPR(GPModel):
 
-    def __init__(self, X, Y, Y_var, kern, regularisation_param=1., mean_function=None, parallel_iterations=1,
+    def __init__(self, X, Y, Y_var, kern, mean_function=None,  caption=None,
                  name=None):
-
         likelihood = Gaussian()
         # M, D
         X = DataHolder(X)
@@ -28,8 +25,7 @@ class HGPR(GPModel):
         GPModel.__init__(self, X=X, Y=Y, kern=kern, likelihood=likelihood,
                          mean_function=mean_function, num_latent=num_latent, name=name)
         self.Y_var = DataHolder(Y_var)
-        self.parallel_iterations = parallel_iterations
-        self.regularisation_param = Parameter(regularisation_param, dtype=float_type, trainable=False)
+        self.caption = caption
 
     @name_scope('common')
     @params_as_tensors
@@ -73,7 +69,7 @@ class HGPR(GPModel):
 
         constant = 0.5 * np.log(np.sqrt(2. * np.pi)) * tf.cast(M, float_type)
         # B, (T)
-        log_marginal_likelihood = maha - self.regularisation_param * logdetL - constant
+        log_marginal_likelihood = maha - logdetL - constant
         return log_marginal_likelihood
 
     @name_scope('likelihood')
@@ -136,7 +132,7 @@ class HGPR(GPModel):
         pred_f_mean, pred_f_var = self._build_predict(Xnew)
         return self.likelihood.predict_mean_and_var(pred_f_mean, pred_f_var)
 
-    @autoflow((float_type, [None, None]))
+    @autoflow((float_type, [None,None, None]))
     @params_as_tensors
     def log_marginal_likelihood_and_predict_f_mean_and_cov(self, Xnew):
         """
@@ -162,7 +158,7 @@ class HGPR(GPModel):
 
         return log_marginal_likelihood, post_mean, post_cov
 
-    @autoflow((float_type, [None, None]))
+    @autoflow((float_type, [None,None, None]))
     @params_as_tensors
     def log_marginal_likelihood_and_predict_f_mean_and_var(self, Xnew):
         """
@@ -189,7 +185,7 @@ class HGPR(GPModel):
 
         return log_marginal_likelihood, post_mean, post_cov
 
-    @autoflow((float_type, [None, None]))
+    @autoflow((float_type, [None,None, None]))
     @params_as_tensors
     def log_marginal_likelihood_and_predict_f_only_mean(self, Xnew):
         """
@@ -240,9 +236,8 @@ class AverageModel(object):
 
     INF_UNCERT = np.finfo(np.float64).max#np.inf works too, but gradient of lml becomes nan.
 
-    def __init__(self, models: List[HGPR], debug=False, flag_outliers=True):
+    def __init__(self, models: List[HGPR]):
         self.models = models
-        self.debug = debug
 
     @property
     def models(self):
@@ -265,70 +260,21 @@ class AverageModel(object):
     def get_hyperparams(self):
         return {m.name : m.read_trainables() for m in self.models}
 
-    def optimise_and_flag(self):
-        Y_var = self.models[0].Y_var.value
-        init_flags = Y_var == np.inf
-        Y_var[init_flags] = 55.**2
-        X = self.models[0].X.value
-        Y = self.models[0].Y.value
-        found_outliers = np.zeros(Y_var.shape, dtype=np.bool)
-        for i in range(2):
-            g_lml = np.mean([model.grad_likelihood_new_data(X, Y, Y_var) for model in self.models], axis=0)
-            g_lml_ = g_lml[~found_outliers].flatten()
-            thresh = np.min(g_lml_) + 1.5*np.mean(np.abs(g_lml_ - np.min(g_lml_)))
-            found_outliers = np.logical_or(init_flags,g_lml >= thresh)
-            for model in self.models:
-                model.Y_var = np.where(found_outliers, np.inf, Y_var)
-                try:
-                    ScipyOptimizer().minimize(model)
-                except:
-                    logging.error("Problem with optimisation!!")
-                    model.initialzie(force=True)
-                    ScipyOptimizer().minimize(model)
-                    pass
-        outliers = self.models[0].Y_var.value == np.inf
-        for model in self.models:
-            logging.info("Flagged {} outliers".format(outliers.sum()))
-            with np.printoptions(precision=2):
-                logging.info("Learned model:\n{}".format(
-                    "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
-
     def optimise(self, search=False):
         if search:
-            for model in self.models:
-                logging.info("Search Optimising model: {}".format(model.name))
-
-                def _loss(params):
-                    model.kern.inner_kernel.hpd = params[0]
-                    model.kern.inner_kernel.hpd.trainable = False
-                    ScipyOptimizer().minimize(model)
-                    try:
-                        return -model.compute_likelihood()
-                    except:
-                        return np.inf
-
-                res = brute(_loss, (slice(0.4*np.pi/180., 2.5*np.pi/180., 0.2*np.pi/180.),), finish=None)
-                model.kern.inner_kernel.hpd = res
-                model.kern.inner_kernel.hpd.trainable = False
+            raise NotImplementedError("Search not implemented")
+        for model in self.models:
+            logging.info("Optimising model: {}".format(model.caption))
+            opt = ScipyOptimizer()
+            try:
+                opt.minimize(model)
+            except:
+                logging.error("Problem with optimisation!! Will reinitialise and try again.")
+                model.initialize(force=True)
                 ScipyOptimizer().minimize(model)
-                model.kern.inner_kernel.hpd.trainable = True
-                ScipyOptimizer().minimize(model)
-                with np.printoptions(precision=2):
-                    logging.info("Learned model:\n{}".format(
-                        "\n".join(["\t{} -> {}".format(k, v) for (k, v) in model.read_trainables().items()])))
-        else:
-            for model in self.models:
-                logging.info("Optimising model: {}".format(model.name))
-                opt = ScipyOptimizer()
-                try:
-                    opt.minimize(model)
-                except:
-                    logging.error("Problem with optimisation!!")
-                    model.initialize(force=True)
-                    ScipyOptimizer().minimize(model)
-                with np.printoptions(precision=2):
-                    logging.info("Learned model:\n{}".format(
-                        "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
+            with np.printoptions(precision=2):
+                logging.info("Learned model:\n{}".format(
+                    "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
 
 
     def predict_f(self, X, only_mean=True):
@@ -357,10 +303,10 @@ class AverageModel(object):
             logging.info("Model log marginal likelihoods:")
             if len(log_marginal_likelihoods.shape) == 3:
                 for m, l in zip(self.models, log_marginal_likelihoods.sum(-1).sum(-1)):
-                    logging.info("\t{} -> {:.2f}".format(m.name, l))
+                    logging.info("\t{} -> {:.2f}".format(m.caption, l))
             else:
                 for m, l in zip(self.models, log_marginal_likelihoods.sum(-1)):
-                    logging.info("\t{} -> {:.2f}".format(m.name, l))
+                    logging.info("\t{} -> {:.2f}".format(m.caption, l))
         # batch_size
         # num_models, batch_size, N
         post_means = np.stack(post_means, axis = 0)

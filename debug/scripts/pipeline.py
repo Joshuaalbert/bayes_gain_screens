@@ -247,6 +247,8 @@ class Step(object):
         self.flag = None
 
     def build_cmd(self):
+        if self.flag is None:
+            raise ValueError("Flag is none for {}".format(self.name))
         if self.flag > 0:
             self.cmd = CMD(self.name, **self.cmd_kwargs)
         else:
@@ -375,7 +377,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              exec_env=bayes_gain_screens_env),
         Step('tec_inference', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
              script_name='tec_inference_improved.py', exec_env=bayes_gain_screens_env),
-        Step('infer_screen', ['smooth_dds4', 'tec_inference'], script_dir=script_dir, script_name='infer_screen.py',
+        Step('infer_screen', ['smooth_dds4', 'tec_inference'], script_dir=script_dir, script_name='infer_screen_improved.py',
              exec_env=bayes_gain_screens_env),
         Step('merge_slow', ['slow_solve_dds4', 'smooth_dds4', 'infer_screen'], script_dir=script_dir,
              script_name='merge_slow.py', exec_env=bayes_gain_screens_env),
@@ -706,22 +708,23 @@ def add_args(parser):
 
 
 def test_main():
-    main('/home/albert/store/lockman/archive',  # P126+65',
-         '/home/albert/store/root_redo',
-         '/home/albert/store/scripts',
-         obs_num=342938,  # 664320,#667204,#664480,#562061,
-         region_file='/home/albert/store/lockman/LHdeepbright.reg',
-         ref_image_fits=None,  # '/home/albert/store/lockman/lotss_archive_deep_image.app.restored.fits',
-         ncpu=32,
+    main(archive_dir='/disks/paradata/shimwell/LoTSS-DR2/archive/P126+65/',
+         root_working_dir='/home/albert/nederrijn_1/screens/root',
+         script_dir='/home/albert/nederrijn_1/screens/scripts',
+         obs_num=562061,
+         region_file=None,
+         ncpu=56,
          ref_dir=0,
-         block_size=50,
+         ref_image_fits=None,
+         block_size=40,
          deployment_type='directional',
          no_download=False,
-         bind_dirs='/beegfs/lofar',
-         lofar_sksp_simg='/home/albert/store/lofar_sksp_ddf.simg',
-         lofar_gain_screens_simg='/home/albert/store/lofar_sksp_ddf_gainscreens_premerge.simg',
+         bind_dirs='/net/nederrijn/data1,/disks/paradata/shimwell',
+         lofar_sksp_simg='/home/albert/nederrijn_1/screens/lofar_sksp_ddf.simg',
+         lofar_gain_screens_simg='/home/albert/nederrijn_1/screens/lofar_sksp_ddf_gainscreens_premerge.simg',
          bayes_gain_screens_simg=None,
          bayes_gain_screens_conda_env='tf_py',
+         auto_resume=0,
          do_choose_calibrators=0,
          do_download_archive=0,
          do_subtract=0,
@@ -729,15 +732,18 @@ def test_main():
          do_solve_dds4=0,
          do_smooth_dds4=0,
          do_slow_solve_dds4=0,
-         do_tec_inference=2,
+         do_tec_inference=0,
          do_merge_slow=0,
-         do_infer_screen=0,
+         do_infer_screen=2,
          do_image_dds4=0,
          do_image_subtract_dds4=0,
          do_image_smooth=0,
          do_image_smooth_slow=0,
          do_image_screen=0,
-         do_image_screen_slow=0)
+         do_image_screen_slow=0,
+         do_subtract_outside_pb=0,
+         do_image_smooth_slow_restricted=0,
+         do_image_screen_slow_restricted=0)
 
 
 if __name__ == '__main__':

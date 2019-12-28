@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import Rbf
 from scipy.ndimage import median_filter
 from scipy.spatial import cKDTree
-from bayes_gain_screens.misc import make_coord_array
+from bayes_gain_screens.misc import make_coord_array, rolling_window
 from bayes_gain_screens import logging
 from dask.multiprocessing import get
 from timeit import default_timer
@@ -125,7 +125,7 @@ def reinout_filter(ra, dec, tec):
 
     return flag_idx
 
-def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
+def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8., **kwargs):
     """
     Uses temporal and spatial smoothing.
 
@@ -142,7 +142,6 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     if init_y_uncert is None:
         init_y_uncert = 1.*np.ones_like(y)
 
-    Nd, Na, Nt = y.shape
     # mean tec over an observation should be zero for dense arrays (not for long baselines of course)
     time_flag = np.tile(np.abs(np.mean(y, axis=-1 ,keepdims=True)) > 16., [1, 1, y.shape[-1]])
     # jumps in tec in one time step should be less than a banding (~55 mTECU)
@@ -154,7 +153,6 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8.,  **kwargs):
     # Nd, 2
     X = (directions - np.mean(directions, axis=0)) / np.std(directions, axis=0)
     final_flags = np.zeros_like(y, dtype=np.bool)
-    x_list0 = list(X.T)
     Nd, Na, Nt = y.shape
     maxiter = Nd
     for t in range(Nt):
