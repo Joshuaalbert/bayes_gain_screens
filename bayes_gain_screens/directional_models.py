@@ -39,12 +39,7 @@ def generate_models(X, Y, Y_var, ref_location=None, ref_direction=None,
     logging.info("Generating directional GP models.")
     amplitude = None
     if len(Y.shape) == 3:
-        Y_flag = np.copy(Y)
-        for _ in range(3):
-            # B, T, N -> B*N, T -> T
-            amplitude = np.nanstd(Y_flag.transpose((0, 2, 1)).reshape((-1, Y.shape[1])), axis=0)
-            Y_flag[Y_flag > 3. * amplitude[None, :, None]] = np.nan
-        amplitude = np.nanstd(Y_flag.transpose((0, 2, 1)).reshape((-1, Y.shape[1])), axis=0)
+        amplitude = np.sqrt(np.nanmean(np.nanmean( np.where(np.isinf(Y_var),np.nan, Y**2), axis=0), axis=-1))
         amplitude = np.where(np.isnan(amplitude), 1., amplitude)
 
     # h*l = hpd -> l = hpd / h
