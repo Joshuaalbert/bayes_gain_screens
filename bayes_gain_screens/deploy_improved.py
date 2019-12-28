@@ -134,7 +134,7 @@ class Deployment(object):
             self.datapack.select(time=slice(mid_time, mid_time + 1, 1))
             X, ref_location, ref_direction = get_coordinates(self.datapack, self.ref_ant_idx, self.ref_dir_idx)
             # Nd, Na, 6 -> Na, Nd, 6
-            X = X[0, :, :, 0, :].transpose((1, 0, 2))
+            X = X[0, :, :, :].transpose((1, 0, 2))
             ref_location = ref_location[0, :]
             ref_direction = ref_direction[0, :]
 
@@ -142,7 +142,7 @@ class Deployment(object):
             self.datapack.select(time=slice(mid_time, mid_time + 1, 1))
             X_screen, _, _ = get_coordinates(self.datapack, self.ref_ant_idx, self.ref_dir_idx)
             # Nd_, Na ->  Na, Nd_, 6
-            X_screen = X_screen[0, :, :, 0, :].transpose((1, 0, 2))
+            X_screen = X_screen[0, :, :, :].transpose((1, 0, 2))
 
             with tf.Session(graph=tf.Graph()) as gp_session:
                 # block_size, Na, Nd
