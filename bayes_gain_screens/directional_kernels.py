@@ -756,7 +756,42 @@ class DirectionalKernelThinLayerFull(Kernel):
 
         # Na, Nd, Nd
         K = tf.math.accumulate_n(components)
-
         if self.amplitude is not None:
             return tf.math.square(self.amplitude)[:, None, None] * K
         return K
+
+def fix_kernel(kern: Kernel):
+
+    @params_as_tensors
+    def _scaled_square_dist(cls, X, X2):
+        """
+        Rewrite of gpflow version with broadcasting.
+
+        :param X: tf.Tensor [B1, N, D]
+        :param X2: [B1, M, D]
+        :return: tf.Tensor [B1, N, M] if B1=B2 else raises error at run time.
+        """
+        # B1, N, D
+        X = X / cls.lengthscales
+
+        if X2 is None:
+            # B1, N
+            Xs = tf.reduce_sum(tf.square(X), axis=-1)
+            # B1, N, N
+            dist = -2 * tf.matmul(X, X, transpose_b=True)
+            # B1, N, N
+            dist += Xs[...,:,None] + Xs[..., None, :]
+            return dist
+        # B1, N
+        Xs = tf.reduce_sum(tf.square(X), axis=-1)
+        # B2, M, D
+        X2 = X2 / cls.lengthscales
+        # B2, M
+        X2s = tf.reduce_sum(tf.square(X2), axis=-1)
+        #B, N, M
+        dist = -2 * tf.linalg.matmul(X, X2, transpose_b=True)
+        dist += Xs[..., :, None] + X2s[..., None, :]
+        return dist
+
+    setattr(kern,'_scaled_square_dist', _scaled_square_dist)
+    return kern

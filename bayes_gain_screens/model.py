@@ -16,7 +16,6 @@ class HGPR(GPModel):
 
     def __init__(self, X, Y, Y_var, kern, mean_function=None,  caption=None,
                  name=None):
-        self.caption = caption
         likelihood = Gaussian()
         # M, D
         X = DataHolder(X)
@@ -26,6 +25,7 @@ class HGPR(GPModel):
         GPModel.__init__(self, X=X, Y=Y, kern=kern, likelihood=likelihood,
                          mean_function=mean_function, num_latent=num_latent, name=name)
         self.Y_var = DataHolder(Y_var)
+        self.caption = caption
 
     @name_scope('common')
     @params_as_tensors
@@ -132,7 +132,7 @@ class HGPR(GPModel):
         pred_f_mean, pred_f_var = self._build_predict(Xnew)
         return self.likelihood.predict_mean_and_var(pred_f_mean, pred_f_var)
 
-    @autoflow((float_type, [None, None]))
+    @autoflow((float_type, [None,None, None]))
     @params_as_tensors
     def log_marginal_likelihood_and_predict_f_mean_and_cov(self, Xnew):
         """
@@ -158,7 +158,7 @@ class HGPR(GPModel):
 
         return log_marginal_likelihood, post_mean, post_cov
 
-    @autoflow((float_type, [None, None]))
+    @autoflow((float_type, [None,None, None]))
     @params_as_tensors
     def log_marginal_likelihood_and_predict_f_mean_and_var(self, Xnew):
         """
@@ -185,7 +185,7 @@ class HGPR(GPModel):
 
         return log_marginal_likelihood, post_mean, post_cov
 
-    @autoflow((float_type, [None, None]))
+    @autoflow((float_type, [None,None, None]))
     @params_as_tensors
     def log_marginal_likelihood_and_predict_f_only_mean(self, Xnew):
         """
@@ -264,7 +264,7 @@ class AverageModel(object):
         if search:
             raise NotImplementedError("Search not implemented")
         for model in self.models:
-            logging.info("Optimising model: {}".format(model.name))
+            logging.info("Optimising model: {}".format(model.caption))
             opt = ScipyOptimizer()
             try:
                 opt.minimize(model)

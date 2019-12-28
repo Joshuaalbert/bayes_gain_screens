@@ -247,6 +247,8 @@ class Step(object):
         self.flag = None
 
     def build_cmd(self):
+        if self.flag is None:
+            raise ValueError("Flag is none for {}".format(self.name))
         if self.flag > 0:
             self.cmd = CMD(self.name, **self.cmd_kwargs)
         else:
@@ -708,7 +710,7 @@ def add_args(parser):
 def test_main():
     main(archive_dir='/disks/paradata/shimwell/LoTSS-DR2/archive/P126+65/',
          root_working_dir='/home/albert/nederrijn_1/screens/root',
-         script_dir='/home/albert/git/bayes_gain_screens/debug/scripts',
+         script_dir='/home/albert/nederrijn_1/screens/scripts',
          obs_num=562061,
          region_file=None,
          ncpu=56,
@@ -738,7 +740,10 @@ def test_main():
          do_image_smooth=0,
          do_image_smooth_slow=0,
          do_image_screen=0,
-         do_image_screen_slow=0)
+         do_image_screen_slow=0,
+         do_subtract_outside_pb=0,
+         do_image_smooth_slow_restricted=0,
+         do_image_screen_slow_restricted=0)
 
 
 if __name__ == '__main__':
