@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import Rbf
 from scipy.ndimage import median_filter
 from scipy.spatial import cKDTree
-from bayes_gain_screens.misc import make_coord_array
+from bayes_gain_screens.misc import make_coord_array, rolling_window
 from bayes_gain_screens import logging
 from dask.multiprocessing import get
 from timeit import default_timer

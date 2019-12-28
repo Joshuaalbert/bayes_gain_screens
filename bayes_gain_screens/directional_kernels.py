@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 from gpflow import transforms, params_as_tensors
 from gpflow import settings
+from itertools import product
 
 float_type = settings.float_type
 from gpflow.kernels import Kernel
@@ -607,9 +608,9 @@ class DirectionalKernel(Kernel):
                  amplitude=None,
                  inner_kernel: Kernel = None,
                  obs_type='DDTEC'):
-        super().__init__(3, active_dims,
-                         name="DirectionalKernel_{}{}".format("aniso" if anisotropic else "iso",
-                                                              inner_kernel.name))
+        super().__init__(3, active_dims)
+        self.caption = "DirectionalKernel_{}{}".format("aniso" if anisotropic else "iso",
+                                                              inner_kernel.name)
         self.inner_kernel = inner_kernel
 
         self.obs_type = obs_type
@@ -677,18 +678,17 @@ class DirectionalKernel(Kernel):
         return res
 
 
-class DirectionalKernelFull(Kernel):
+class DirectionalKernelThinLayerFull(Kernel):
     def __init__(self,
                  ref_direction=[0., 0., 1.],
                  ref_location=[0.,0.,0.],
-                 anisotropic=False,
+                 a = 250.,
                  active_dims=None,
                  amplitude=None,
                  inner_kernel: Kernel = None,
                  obs_type='DDTEC'):
-        super().__init__(6, active_dims,
-                         name="DirectionalKernel_{}{}".format("aniso" if anisotropic else "iso",
-                                                              inner_kernel.name))
+        super().__init__(6, active_dims)
+        self.caption = "DirectionalKernel_{}".format(inner_kernel.name)
         self.inner_kernel = inner_kernel
 
         self.obs_type = obs_type
@@ -697,16 +697,15 @@ class DirectionalKernelFull(Kernel):
         self.ref_location = Parameter(ref_location,
                                        dtype=float_type, trainable=False)
 
+        self.a = Parameter(a,
+                               transform=transforms.positiveRescale(a),
+                               dtype=settings.float_type)
+
         if amplitude is not None:
             self.amplitude = Parameter(amplitude,
                                        dtype=float_type, transform=transforms.positive)
         else:
             self.amplitude = None
-        self.anisotropic = anisotropic
-        if self.anisotropic:
-            # Na, 3, 3
-            self.M = Parameter(np.eye(3), dtype=float_type,
-                               transform=transforms.LowerTriangular(3, squeeze=True))
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False):
@@ -720,39 +719,44 @@ class DirectionalKernelFull(Kernel):
         if not presliced:
             X1, X2 = self._slice(X1, X2)
 
-        sym = False
         if X2 is None:
             X2 = X1
-            sym = True
 
-        k1, x1 = X1[:,0:3], X1[:,3:6]
-        k2, x2 = X2[:,0:3], X2[:,3:6]
+        x0 = self.ref_location[None, None, :]
+        k0 = self.ref_direction[None, None, :]
+        k1, x1 = X1[...,0:3], X1[...,3:6]
+        k2, x2 = X2[...,0:3], X2[...,3:6]
+        x0i = tf.broadcast_to(x0, tf.shape(x1))
+        x0j = tf.broadcast_to(x0, tf.shape(x2))
+        k0i = tf.broadcast_to(k0, tf.shape(k1))
+        k0j = tf.broadcast_to(k0, tf.shape(k2))
 
-        if self.anisotropic:
-            # M_ij.k_nj -> k_ni
-            k1 = tf.matmul(k1, self.M, transpose_b=True)
-            if sym:
-                k2 = k1
-            else:
-                k2 = tf.matmul(k2, self.M, transpose_b=True)
-
-        kern_dir = self.inner_kernel
-        res = None
-        if self.obs_type == 'TEC' or self.obs_type == 'DTEC':
-            res = kern_dir.K(k1, k2)
+        if self.obs_type == 'TEC':
+            sig = product(['xi'], ['xj'], ['ki'], ['kj'])
+        if self.obs_type == 'DTEC':
+            sig = product(['xi', 'x0'], ['xj', 'x0'], ['ki'], ['kj'])
         if self.obs_type == 'DDTEC':
-            if sym:
-                dir_sym = kern_dir.K(k1, self.ref_direction[None, :])
-                res = kern_dir.K(k1, k2) \
-                      - dir_sym \
-                      - tf.transpose(dir_sym, (1, 0)) \
-                      + kern_dir.K(self.ref_direction[None, :], self.ref_direction[None, :])
+            sig = product(['xi', 'x0'], ['xj', 'x0'], ['ki', 'k0'], ['kj', 'k0'])
+
+        components = []
+        for s in sig:
+            xi = x1 if s[0] == 'xi' else x0i
+            xj = x2 if s[1] == 'xj' else x0j
+            ki = k1 if s[2] == 'ki' else k0i
+            kj = k2 if s[3] == 'kj' else k0j
+
+            is_pos = "".join(list(s)).count("0") % 2 == 0
+
+            ri = xi + ki*(self.a - (xi[...,2:3] - x0[...,2:3]))/ki[...,2:3]
+            rj = xj + kj*(self.a - (xj[...,2:3] - x0[...,2:3]))/kj[...,2:3]
+            if is_pos:
+                components.append(self.inner_kernel.K(ri, rj))
             else:
-                res = kern_dir.K(k1, k2) \
-                      - kern_dir.K(self.ref_direction[None, :], k2) \
-                      - kern_dir.K(k1, self.ref_direction[None, :]) \
-                      + kern_dir.K(self.ref_direction[None, :], self.ref_direction[None, :])
+                components.append(-self.inner_kernel.K(ri, rj))
+
+        # Na, Nd, Nd
+        K = tf.math.accumulate_n(components)
 
         if self.amplitude is not None:
-            return tf.math.square(self.amplitude)[:, None, None] * res
-        return res
+            return tf.math.square(self.amplitude)[:, None, None] * K
+        return K

@@ -10,7 +10,7 @@ import pylab as plt
 from scipy.spatial.distance import pdist
 from .datapack import DataPack
 from .frames import ENU
-from . import logging
+from . import logging, TEC_CONV
 from collections import namedtuple
 from .settings import angle_type, dist_type
 from scipy.special import erfinv
@@ -27,7 +27,7 @@ def rolling_window(a, window):
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
 
-def fit_tec_and_noise(freqs, Yreal, Yimag, step=0.5, search_n=5, iter_n=2, flags=None):
+def fit_tec_and_noise(freqs, Yreal, Yimag, step=0.5, tec_scale=300., iter_n=2, flags=None):
     """
         Fit tec quickly and robust to local minima, but non-robustly.
 
@@ -43,7 +43,7 @@ def fit_tec_and_noise(freqs, Yreal, Yimag, step=0.5, search_n=5, iter_n=2, flags
         :return: tec np.array [B]
         sigmaa np.array [2*Nf]
         """
-    tec_conv = -8.448e6 / freqs
+    tec_conv = TEC_CONV / freqs
     Nf = freqs.size
     B = Yreal.shape[0]
 
@@ -57,7 +57,7 @@ def fit_tec_and_noise(freqs, Yreal, Yimag, step=0.5, search_n=5, iter_n=2, flags
         if flags is not None:
             sigma[:,:Nf][flags] = np.inf
             sigma[:,Nf:][flags] = np.inf
-        tec = fit_tec_quick(freqs, Yreal, Yimag, sigma, step, search_n)
+        tec = fit_tec_quick(freqs, Yreal, Yimag, sigma, step, tec_scale)
         phase_mod = tec[:, None] * tec_conv
         Yreal_mod = np.cos(phase_mod)
         Yimag_mod = np.sin(phase_mod)
@@ -66,7 +66,7 @@ def fit_tec_and_noise(freqs, Yreal, Yimag, step=0.5, search_n=5, iter_n=2, flags
     return tec, sigma
 
 
-def fit_tec_quick(freqs, Yreal, Yimag, sigma, step=0.5, search_n=5):
+def fit_tec_quick(freqs, Yreal, Yimag, sigma, step=0.5, tec_scale=300.):
     """
     Fit tec quickly and robust to local minima, but non-robustly.
 
@@ -85,9 +85,10 @@ def fit_tec_quick(freqs, Yreal, Yimag, sigma, step=0.5, search_n=5):
     """
     B = Yreal.shape[0]
     # B, 2*Nf
-    tec_conv = -8.447957e6 / freqs
+    tec_conv = TEC_CONV / freqs
 
-    basin = np.mean(np.abs(np.pi / tec_conv))
+    basin = np.mean(np.abs(np.pi / tec_conv))*0.5
+    search_n = int(tec_scale/basin) + 1
 
     with tf.Session(graph=tf.Graph()) as sess:
         Yreal_pl = tf.placeholder(tf.float64, shape=Yreal.shape)
@@ -150,7 +151,7 @@ def fit_tec_quick(freqs, Yreal, Yimag, sigma, step=0.5, search_n=5):
             h = hess(x_cur)
             dir = g[:, 0] / h[:, 0, 0]
             x_next = x_cur - dir * step
-            done = dir < 0.1
+            done = tf.math.abs(dir) < 0.01
             return [done, x_next]
 
         [_, x_cur] = tf.while_loop(cond, body,

@@ -23,7 +23,7 @@ try:
 except ImportError:
     phase_cmap = plt.cm.hsv
 
-def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.jet, relim=False):
+def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.PuOr, relim=False):
 
     if cmap is 'phase':
         cmap = phase_cmap
@@ -150,7 +150,7 @@ class DatapackPlotter(object):
             datapack = DataPack(filename=datapack, readonly=True)
         self.datapack = datapack
 
-    def _create_polygon_plot(self, points, values=None, N=None, ax=None, cmap=plt.cm.bone, overlay_points=None,
+    def _create_polygon_plot(self, points, values=None, N=None, ax=None, cmap=plt.cm.PuOr, overlay_points=None,
                              annotations=None, title=None, polygon_labels=None, reverse_x=False):
         # get nearest points (without odd voronoi extra regions)
         k = cKDTree(points)
@@ -214,7 +214,7 @@ class DatapackPlotter(object):
         #            ax.annotate(title,xy=(0.8,0.8),xycoords='axes fraction')
         return ax, p
 
-    def _create_image_plot(self, points, values=None, N=None, ax=None, cmap=plt.cm.bone, overlay_points=None,
+    def _create_image_plot(self, points, values=None, N=None, ax=None, cmap=plt.cm.PuOr, overlay_points=None,
                            annotations=None, title=None, reverse_x=False):
         '''
         Create initial plot, with image data instead of polygons.
@@ -365,7 +365,7 @@ class DatapackPlotter(object):
             else:
                 vmin = vmin or np.nanmin(obs)
                 vmax = vmax or np.nanmax(obs)
-                cmap = plt.cm.bone if cmap is None else cmap
+                cmap = plt.cm.PuOr if cmap is None else cmap
 
             norm = plt.Normalize(vmin, vmax)
 
