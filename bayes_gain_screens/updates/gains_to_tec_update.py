@@ -139,7 +139,7 @@ class SolveLossVI(object):
 
     def var_exp(self, m, l, Yreal, Yimag, sigma_real, sigma_imag):
         """
-        Analytic int log p(y | ddtec, sigma^2) N[ddtec | q, Q] dddtec
+        Analytic int log p(y | ddtec, const, sigma^2) N[ddtec | q, Q]  N[const | f, F] dddtec dconst
         :param l:
         :param Yreal:
         :param Yimag:
@@ -148,12 +148,16 @@ class SolveLossVI(object):
         :param k:
         :return:
         """
-        res = -(1. + 2. * Yimag ** 2) / (4. * sigma_imag ** 2)
-        res += -(1. + 2. * Yreal ** 2) / (4. * sigma_real ** 2)
-        res += -np.exp(-2. * self.tec_conv ** 2 * l ** 2) * np.cos(2. * self.tec_conv * m) * (sigma_imag ** 2 - sigma_real ** 2) / (
-                    4. * sigma_imag ** 2 * sigma_real ** 2)
-        res += np.exp(-0.5 * self.tec_conv ** 2 * l ** 2) * (
-                    Yreal * np.cos(self.tec_conv * m) / sigma_real ** 2 + Yimag * np.sin(self.tec_conv * m) / sigma_imag ** 2)
+        a = 1./sigma_real
+        b = 1./sigma_imag
+        phi = self.tec_conv * m
+        theta = self.tec_conv ** 2 * l * l
+        res = -b**2 * (1. + 2. * Yimag ** 2)
+        res += -a**2 * (1. + 2. * Yreal**2)
+        res += -4.*np.log(2.*np.pi/(a*b))
+        res += np.exp(-2. * theta) * (b**2 - a**2) * np.cos(2. * phi)
+        res += 4. * np.exp(-0.5*theta) * (a**2 * Yreal * np.cos(phi) + b**2 * Yimag * np.sin(phi))
+        res /= 4.
         return np.sum(res, axis=-1)
 
     def test_loss_func(self, params):
