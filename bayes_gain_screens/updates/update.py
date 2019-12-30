@@ -2,15 +2,18 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from .. import float_type
 import numpy as np
+from ..misc import rolling_window
 
 class Update(object):
     """
     Class that performs conditioning of a prior on data, and observational/Levy covariances.
     """
-    def __init__(self, *args, S=200, force_diag_Sigma=False, force_diag_Omega=False, **kwargs):
+    def __init__(self, *args, S=200, force_diag_Sigma=False, force_diag_Omega=False, windowed_params=False, stat_window=50, **kwargs):
         self.force_diag_Sigma = force_diag_Sigma
         self.force_diag_Omega = force_diag_Omega
         self.S = S
+        self.stat_window = stat_window
+        self.windowed_params = windowed_params
 
     def __call__(self, t, prior_mu, prior_Gamma, y, Sigma, *serve_values):
         """
@@ -75,14 +78,54 @@ class Update(object):
                                                                      covariance_matrix=post_Gamma_b).sample(self.S)
         # Omega_new = tfp.stats.covariance(samples[:, 1:, :] - samples[:, :-1, :], sample_axis=[0, 1], event_axis=2)
         d_samples = samples[:, 1:, :] - samples[:, :-1, :]
-        # [K, K]
-        Omega_new = tf.reduce_mean(d_samples[:, :, :, None]*d_samples[:, :, None, :], axis=[0,1])
+        def rolling_Omega(d_samples):
+            """
+            :param samples: S, B-1, K
+            :return:
+            """
+            #S, K, B-1
+            d_samples = d_samples.numpy().transpose((0,2,1))
+            #S, K, K, B-1
+            s = d_samples[:, :, None, :]*d_samples[:, None, :, :]
+            s = rolling_window(s, self.stat_window)
+            #K, K, B-1
+            s = np.mean(s, axis=-1).mean(0)
+            #B-1, K, K
+            s = s.T
+            #B, K, K
+            return np.concatenate([s[0:1, :, :], s], axis=0)
+        if self.windowed_params:
+            #B, K, K
+            Omega_new = tf.py_function(rolling_Omega, [d_samples], [d_samples.dtype],name='Omega_new_rolling')
+        else:
+            # [K, K]
+            Omega_new = tf.reduce_mean(d_samples[:, :, :, None]*d_samples[:, :, None, :], axis=[0,1])
+
+
         # S, B, N
         y_pred = self._forward(samples)
-
         residuals = y - y_pred
-        Sigma_new = tf.reduce_mean(residuals[:, :, :, None]*residuals[:, :, None, :], axis=[0,1])
-        # Sigma_new = tfp.stats.covariance(y - y_pred, sample_axis=[0, 1], event_axis=2)
+        def rolling_Sigma(residuals):
+            """
+            :param samples: S, B, N
+            :return:
+            """
+            #S, N, B
+            residuals = residuals.numpy().transpose((0,2,1))
+            #S, N, N, B
+            s = residuals[:, :, None, :]*residuals[:, None, :, :]
+            s = rolling_window(s, self.stat_window)
+            #N, N, B
+            s = np.mean(s, axis=-1).mean(0)
+            #B, N, N
+            return s.T
+        if self.windowed_params:
+            #B, N, N
+            Sigma = tf.py_function(rolling_Sigma, [residuals], [residuals.dtype], name='Sigma_new_rolling')
+        else:
+            #N, N
+            Sigma_new = tf.reduce_mean(residuals[:, :, :, None]*residuals[:, :, None, :], axis=[0,1])
+            # Sigma_new = tfp.stats.covariance(y - y_pred, sample_axis=[0, 1], event_axis=2)
 
         if self.force_diag_Sigma:
             Sigma_new = tf.linalg.diag(tf.linalg.diag_part(Sigma_new))

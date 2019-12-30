@@ -30,6 +30,7 @@ class NLDSSmoother(object):
             Nmax_pl = tf.placeholder(tf.int32, shape=(), name='Nmax')
             # K,K
             Omega_0_pl = tf.placeholder(float_type, shape=[K, K], name='Omega_0')
+            Omega_0 = tf.broadcast_to(Omega_0_pl, [B, K, K])
             # B, N
             y_pl = tf.placeholder(float_type, shape=[None, N], name='y')
             B = tf.shape(y_pl)[0]
@@ -40,6 +41,7 @@ class NLDSSmoother(object):
 
             # N,N
             Sigma_0_pl = tf.placeholder(float_type, shape=[N, N], name='Sigma_0')
+            Sigma_0 = tf.broadcast_to(Sima_0_pl, [B, N, N])
 
             ###
             # Bayesian evidence
@@ -48,6 +50,7 @@ class NLDSSmoother(object):
                 return n < Nmax_pl
 
             def body(n, mu_0_n1, Gamma_0_n1, Sigma_n1, Omega_n1, post_mu_n1, post_Gamma_n1):
+
                 prior_Gamma, post_mu_f, post_Gamma_f = self.forward_filter(y_pl, mu_0_n1, Gamma_0_n1,
                                                                            Sigma_n1, Omega_n1, serve_pl)
 
@@ -76,8 +79,8 @@ class NLDSSmoother(object):
                               [tf.constant(0, tf.int32),
                                mu_0_pl,
                                Gamma_0_pl,
-                               Sigma_0_pl,
-                               Omega_0_pl,
+                               Sigma_0,
+                               Omega_0,
                                tf.zeros([B, K], float_type),
                                tf.zeros([B, K, K], float_type)
                                ])
@@ -246,11 +249,11 @@ class NLDSSmoother(object):
             # get prior
             prior_mu_n = post_mu_n1
             # K,K
-            prior_Gamma_n = post_Gamma_n1 + Omega
+            prior_Gamma_n = post_Gamma_n1 + Omega[n, :, :]
 
             sliced_serve_pl = [v[n, ...] for v in serve_pl]
 
-            post_mu_n, post_Gamma_n = self._update(n, prior_mu_n, prior_Gamma_n, y[n, :], Sigma, *sliced_serve_pl)
+            post_mu_n, post_Gamma_n = self._update(n, prior_mu_n, prior_Gamma_n, y[n, :], Sigma[n, :, :], *sliced_serve_pl)
             post_mu_n.set_shape(post_mu_n1.shape)
             post_Gamma_n.set_shape(post_Gamma_n1.shape)
             return [n + 1, post_mu_n, post_Gamma_n, prior_Gamma_ta.write(n, prior_Gamma_n),
