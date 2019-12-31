@@ -368,7 +368,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         Step('subtract', ['choose_calibrators', 'download_archive'], script_dir=script_dir,
              script_name='sub-sources-outside-region-mod.py', exec_env=lofar_sksp_env),
         Step('subtract_outside_pb', ['choose_calibrators', 'download_archive'], script_dir=script_dir,
-             script_name='sub-sources-outside-pb.py', exec_env=lofar_sksp_env),
+             script_name='sub-sources-outside-pb.py', exec_env=lofar_gain_screens_env),
         Step('solve_dds4', ['subtract'], script_dir=script_dir, script_name='solve_on_subtracted.py',
              exec_env=lofar_sksp_env),
         Step('slow_solve_dds4', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
@@ -433,6 +433,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
             if auto_resume == 2:
                 print("Resuming pipeline with flag setting '2'. Co-existing with old undone/failed work.")
             for step in steps.keys():
+                if steps[step].flag is None:
+                    print("Step {} being skipped.".format(step))
+                    steps[step].flag = 0
                 if steps[step].flag > 0:
                     print("Changing step user requested flag {} : {} -> {}".format(step, steps[step].flag, auto_resume))
                     steps[step].flag = auto_resume
@@ -478,7 +481,6 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('sub_column', 'DATA_SUB')
 
     steps['subtract_outside_pb'].cmd \
-        .add('region_file', region_file) \
         .add('ncpu', ncpu) \
         .add('data_dir', data_dir) \
         .add('predict_column', 'PREDICT_SUB') \
@@ -543,7 +545,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('obs_num', obs_num) \
         .add('data_dir', data_dir) \
         .add('script_dir', script_dir) \
-        .add('use_init_dico', False) \
+        .add('use_init_dico', True) \
         .add('init_dico',os.path.join(steps['download_archive'].working_dir,
                                       'image_full_ampphase_di_m.NS.DATA_SUB.DicoModel'))
 
@@ -563,16 +565,6 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('script_dir', script_dir) \
         .add('use_init_dico', True)
 
-    steps['image_smooth_slow_restricted'].cmd \
-        .add('image_type', 'image_smoothed_slow_restricted') \
-        .add('ncpu', ncpu) \
-        .add('obs_num', obs_num) \
-        .add('data_dir', data_dir) \
-        .add('script_dir', script_dir) \
-        .add('use_init_dico', True) \
-        .add('init_dico', os.path.join(steps['download_archive'].working_dir,
-                                       'image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'))
-
     steps['image_screen'].cmd \
         .add('image_type', 'image_screen') \
         .add('ncpu', ncpu) \
@@ -588,6 +580,16 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('data_dir', data_dir) \
         .add('script_dir', script_dir) \
         .add('use_init_dico', True)
+
+    steps['image_smooth_slow_restricted'].cmd \
+        .add('image_type', 'image_smoothed_slow_restricted') \
+        .add('ncpu', ncpu) \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('script_dir', script_dir) \
+        .add('use_init_dico', True) \
+        .add('init_dico', os.path.join(steps['download_archive'].working_dir,
+                                       'image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'))
 
     steps['image_screen_slow_restricted'].cmd \
         .add('image_type', 'image_screen_slow_restricted') \
