@@ -264,6 +264,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     kwargs['peak_factor'] = 0.001
     kwargs['nfacets'] = 11
     kwargs['robust'] = -0.5
+    kwargs['npix'] = 20000
     if init_dico is None:
         init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
     else:
@@ -281,6 +282,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
         image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA',
                             **kwargs)
     if image_type == 'image_smoothed_slow_restricted':
+        kwargs['npix'] = 10000
         image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
                             **kwargs)
     if image_type == 'image_screen':
@@ -289,6 +291,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA',
                           **kwargs)
     if image_type == 'image_screen_slow_restricted':
+        kwargs['npix'] = 10000
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
                           **kwargs)
     if image_type == 'image_dds4':

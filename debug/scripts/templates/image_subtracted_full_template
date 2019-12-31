@@ -9,7 +9,7 @@ DDF.py \
     --Deconv-MaxMajorIter=5 \
     --Deconv-Mode=SSD \
     --Weight-Robust=-0.5 \
-    --Image-NPix=20000 \
+    --Image-NPix={npix} \
     --CF-wmax=50000 \
     --CF-Nw=100 \
     --Beam-CenterNorm=1 \
@@ -23,7 +23,6 @@ DDF.py \
     --SSDClean-NEnlargeData=0 \
     --Freq-NDegridBand=1 \
     --Deconv-RMSFactor=3.0 \
-    --Deconv-PeakFactor=0.1 \
     --Deconv-FluxThreshold=100.e-6 \
     --Data-Sort=1 \
     --Cache-Dir=. \
