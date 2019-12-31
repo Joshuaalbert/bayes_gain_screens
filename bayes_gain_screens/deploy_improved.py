@@ -57,8 +57,10 @@ class Deployment(object):
         tec_uncert, _ = filter_tec_dir(tec[0, ...], data_directions, init_y_uncert=tec_uncert[0, ...], min_res=8.,
                                        function='multiquadric')
         tec_uncert = tec_uncert[None, ...]
+        logging.info("Saving outlier information.")
+        datapack.weights_tec = tec_uncert
 
-        logging.info("Transposing data to (Nt, Na, Nd")
+        logging.info("Transposing data to (Nt, Na, Nd)")
         # Nd, Na, Nt -> Nt, Na, Nd
         tec = tec[0, ...].transpose((2, 1, 0))
         self.Nt, self.Na, self.Nd = tec.shape
@@ -165,7 +167,7 @@ class Deployment(object):
                     model.set_hyperparams(init_hyperparams)
                 logging.info("Optimising models")
                 model.optimise()
-                # init_hyperparams = model.get_hyperparams()
+                init_hyperparams = model.get_hyperparams()
                 logging.info("Predicting posteriors and averaging")
                 # batch_size, N / block_size, Na, Nd
                 (weights, log_marginal_likelihoods), post_mean, post_var = model.predict_f(X_screen,
