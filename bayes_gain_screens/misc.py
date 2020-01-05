@@ -16,16 +16,30 @@ from .settings import angle_type, dist_type
 from scipy.special import erfinv
 import networkx as nx
 
-def rolling_window(a, window):
-    pad_start = np.zeros(len(a.shape), dtype=np.int32)
-    pad_start[-1] = window//2
-    pad_end = np.zeros(len(a.shape), dtype=np.int32)
-    pad_end[-1] = (window - 1) - pad_start[-1]
-    pad = list(zip(pad_start, pad_end))
-    a = np.pad(a, pad,mode='reflect')
+def rolling_window(a, window,padding='same'):
+    if padding.lower() == 'same':
+        pad_start = np.zeros(len(a.shape), dtype=np.int32)
+        pad_start[-1] = window//2
+        pad_end = np.zeros(len(a.shape), dtype=np.int32)
+        pad_end[-1] = (window - 1) - pad_start[-1]
+        pad = list(zip(pad_start, pad_end))
+        a = np.pad(a, pad,mode='reflect')
     shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+
+
+def apply_rolling_func_strided(func, a, window):
+    # ..., N//window, window
+    rolling_a = rolling_window(a, window, padding='valid')[..., ::window, :]
+    repeat = a.shape[-1] // rolling_a.shape[-2]
+    # ..., N//window
+    b = func(rolling_a)
+    repeats = repeat * np.ones(b.shape[-1], dtype=np.int64)
+    repeats[-1] = a.shape[-1] - (repeat * (b.shape[-1] - 1))
+    # ...,N (hopefully)
+    return np.repeat(b, repeats, axis=-1)
+
 
 def fit_tec_and_noise(freqs, Yreal, Yimag, step=0.5, tec_scale=300., iter_n=2, flags=None):
     """
