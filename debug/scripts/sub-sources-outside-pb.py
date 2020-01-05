@@ -172,6 +172,7 @@ def fix_dico_shape(fulldico, outdico, NPixOut):
     for k, v in dico.items():
         if k == 'Comp':
             DCompOut['Comp'] = {}
+            continue
         DCompOut[k] = v
     DCompOut["Type"] = "SSD"
 
