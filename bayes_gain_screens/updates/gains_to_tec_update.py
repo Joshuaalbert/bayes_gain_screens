@@ -5,10 +5,11 @@ import numpy as np
 import tensorflow as tf
 from scipy.stats import multivariate_normal
 from .. import TEC_CONV
+import numba
 
 
 
-
+@numba.jit(numba.float64(numba.float64, numba.float64, numba.float64), nopython=True)
 def constrain(v, a, b):
     return a + (np.tanh(v) + 1) * (b - a) / 2.
 
@@ -24,7 +25,7 @@ def constrain_cor(v):
 def deconstrain_cor(v):
     return deconstrain(v, -0.999, 0.999)
 
-
+@numba.jit(numba.float64(numba.float64), nopython=True)
 def constrain_tec(v):
     return constrain(v, 0.01, 55.)
 
@@ -65,6 +66,62 @@ def log_mv_gaussian_pdf(dx, L_Sigma):
     log_det = - np.sum(np.log(np.diag(L_Sigma)))
     constant = -0.5 * L_Sigma.shape[0] * np.log(2 * np.pi)
     return maha + log_det + constant
+
+@numba.jit(numba.float64(numba.float64,numba.float64,numba.float64,numba.float64), nopython=True)
+def _scalar_KL( mean, uncert, mean_prior, uncert_prior):
+    # Get KL
+    q_var = np.square(uncert)
+    var_prior = np.square(uncert_prior)
+    trace = q_var / var_prior
+    mahalanobis = np.square(mean - mean_prior) / var_prior
+    constant = -1.
+    logdet_qcov = np.log(var_prior / q_var)
+    twoKL = mahalanobis + constant + logdet_qcov + trace
+    prior_KL = 0.5 * twoKL
+    return prior_KL
+
+@numba.jit(numba.float64(numba.float64,numba.float64,numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:], numba.float64[:]), nopython=True)
+def var_exp(m, l, Yreal, Yimag, sigma_real, sigma_imag, tec_conv):
+    """
+    Analytic int log p(y | ddtec, const, sigma^2) N[ddtec | q, Q]  N[const | f, F] dddtec dconst
+    :param l:
+    :param Yreal:
+    :param Yimag:
+    :param sigma_real:
+    :param sigma_imag:
+    :param k:
+    :return:
+    """
+    a = 1./sigma_real
+    b = 1./sigma_imag
+    phi = tec_conv * m
+    theta = tec_conv ** 2 * l * l
+    res = -b**2 * (1. + 2. * Yimag ** 2)
+    res += -a**2 * (1. + 2. * Yreal**2)
+    res += -4.*np.log(2.*np.pi/(a*b))
+    res += np.exp(-2. * theta) * (b**2 - a**2) * np.cos(2. * phi)
+    res += 4. * np.exp(-0.5*theta) * (a**2 * Yreal * np.cos(phi) + b**2 * Yimag * np.sin(phi))
+    res /= 4.
+    return np.sum(res, axis=-1)
+
+@numba.jit(numba.float64(numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:],numba.float64, numba.float64, numba.float64[:]), nopython=True)
+def loss_func(params, Yreal, Yimag, sigma_real, sigma_imag, tec_mean_prior, tec_uncert_prior, tec_conv):
+    """
+    VI loss
+    :param params: tf.Tensor
+        shapfrom scipy.optimize import brute, fmine [D]
+    :return: tf.Tensor
+        scalar The loss
+    """
+
+    tec_mean, _tec_uncert = params[0], params[1]
+    tec_uncert = constrain_tec(_tec_uncert)
+    _var_exp = var_exp(tec_mean, tec_uncert, Yreal, Yimag, sigma_real, sigma_imag, tec_conv)
+    # Get KL
+    tec_prior_KL = _scalar_KL(tec_mean, tec_uncert, tec_mean_prior, tec_uncert_prior)
+    # scalar
+    loss = np.negative(_var_exp - tec_prior_KL)
+    return loss
 
 
 class SolveLossVI(object):
@@ -216,6 +273,16 @@ class SolveLossVI(object):
         return loss
 
     def loss_func(self, params):
+        tec_mean, _tec_uncert = params[0], params[1]
+        tec_uncert = constrain_tec(_tec_uncert)
+        _var_exp = self.var_exp(tec_mean, tec_uncert, self.Yreal, self.Yimag, self.sigma_real, self.sigma_imag)
+        # Get KL
+        tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
+        # scalar
+        loss = np.negative(_var_exp - tec_prior_KL)
+        return loss
+
+    def loss_func_jit(self, params):
         """
         VI loss
         :param params: tf.Tensor
@@ -223,15 +290,7 @@ class SolveLossVI(object):
         :return: tf.Tensor
             scalar The loss
         """
-
-        tec_mean, _tec_uncert = params[0], params[1]
-        tec_uncert = constrain_tec(_tec_uncert)
-        var_exp = self.var_exp(tec_mean, tec_uncert, self.Yreal, self.Yimag, self.sigma_real, self.sigma_imag)
-        # Get KL
-        tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
-        # scalar
-        loss = np.negative(var_exp - tec_prior_KL)
-        return loss
+        return loss_func(np.array(params), self.Yreal, self.Yimag, self.sigma_real, self.sigma_imag, self.tec_mean_prior, self.tec_uncert_prior, self.tec_conv)
 
 
 class UpdateGainsToTec(UpdatePy):
