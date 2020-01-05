@@ -8,6 +8,8 @@ import pyregion
 from astropy.io import fits
 from astropy.wcs import WCS
 import glob
+from DDFacet.Other import MyPickle
+from DDFacet.ToolsDir.ModToolBox import EstimateNpix
 
 
 def cmd_call(cmd):
@@ -68,23 +70,7 @@ def addextraweights(msfiles):
                     ts.putcol('WEIGHT_SPECTRUM_FROM_IMAGING_WEIGHT', ws_tmp)
 
 
-def mask_region(infilename, ds9region, outfilename):
-    """
-    Make mask that is `infilename` everywhere except in regions specified by `ds9region` which is zero.
-    :param infilename:
-    :param ds9region:
-    :param outfilename:
-    :return:
-    """
-    hdu = fits.open(infilename)
-    hduflat = flatten(hdu)[0]
-    center = (hduflat.data.shape[0]//2,hduflat.data.shape[1]//2)
-    radius = hduflat.data.shape[0]//4
-    r = pyregion.parse("image\nCircle({},{},{})".format(center[0], center[1], radius))
-    # r = pyregion.open(ds9region)
-    manualmask = r.get_mask(hdu=hduflat)
-    hdu[0].data[0][0][np.where(manualmask == True)] = 0.0
-    hdu.writeto(outfilename, overwrite=True)
+
 
 
 def flatten(f):
@@ -127,13 +113,14 @@ def flatten(f):
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
-    parser.add_argument('--region_file', help='boxfile, required argument', required=True, type=str)
     parser.add_argument('--ncpu', help='number of cpu to use, default=34', default=32, type=int)
     parser.add_argument('--keeplongbaselines',
                         help='Use a Selection-UVRangeKm=[0.100000,5000.000000] instead of the DR2 default',
                         type='bool', default=False)
     parser.add_argument('--chunkhours', help='Data-ChunkHours for DDF.py (only used with --h5sols)',
                         default=8.5, type=float)
+    parser.add_argument('--npix_out', help='Requested central box size to keep. Will be adjusted to work.',
+                        default=10000, type=int)
     parser.add_argument('--working_dir', help='Where to perform the subtract.',
                         default=None, type=str, required=True)
     parser.add_argument('--data_dir', help='Where data is.',
@@ -165,7 +152,43 @@ def get_filenames(data_dir):
             mslist.append(line.strip())
     return mslist_file, mslist, fullmask, indico, clustercat
 
-def make_filtered_dico(region_mask, full_dico_model, masked_dico_model):
+def fix_dico_shape(fulldico, outdico, NPixOut):
+
+    # dico_model = 'image_full_ampphase_di_m.NS.DicoModel'
+    # save_dico = dico_model.replace('.DicoModel', '.restricted.DicoModel')
+    # NPixOut = 10000
+
+    dico = MyPickle.Load(fulldico)
+
+    NPix = dico['ModelShape'][-1]
+    NPix0, _ = EstimateNpix(float(NPix), Padding=1)
+    if NPix != NPix0:
+        raise ValueError("NPix != NPix0")
+    print("Changing image size: %i -> %i pixels" % (NPix, NPixOut))
+    xc0 = NPix // 2
+    xc1 = NPixOut // 2
+    dx = xc0 - xc1
+    DCompOut = {}
+    for k, v in dico.items():
+        if k == 'Comp':
+            DCompOut['Comp'] = {}
+        DCompOut[k] = v
+    DCompOut["Type"] = "SSD"
+
+    N, M, _, _ = dico['ModelShape']
+    DCompOut['ModelShape'] = [N, M, NPixOut, NPixOut]
+    for (x0, y0) in dico['Comp'].keys():
+        x1 = x0 - dx
+        y1 = y0 - dx
+        c0 = (x1 >= 0) & (x1 < NPixOut)
+        c1 = (y1 >= 0) & (y1 < NPixOut)
+        if c0 & c1:
+            print("Mapping (%i,%i)->(%i,%i)" % (x0, y0, x1, y1))
+            DCompOut['Comp'][(x1, y1)] = dico['Comp'][(x0, y0)]
+    print("Saving in {}".format(outdico))
+    MyPickle.Save(DCompOut, outdico)
+
+def make_filtered_dico(region_mask, full_dico_model, masked_dico_model,npix_out=10000):
     """
     Filter dico model to only include sources in mask.
 
@@ -174,19 +197,52 @@ def make_filtered_dico(region_mask, full_dico_model, masked_dico_model):
     :param masked_dico_model:
     :return:
     """
+    print("Making dico containing only calibrators: {}".format(masked_dico_model))
     cmd = 'MaskDicoModel.py --MaskName={region_mask} --InDicoModel={full_dico_model} --OutDicoModel={masked_dico_model} --InvertMask=1'.format(
         region_mask=region_mask, full_dico_model=full_dico_model, masked_dico_model=masked_dico_model)
     cmd_call(cmd)
+    if not os.path.isfile(masked_dico_model):
+        raise IOError("Failed to make {}".format(masked_dico_model))
+    fix_dico_shape(masked_dico_model, masked_dico_model, npix_out)
+
+def make_predict_mask(infilename, ds9region, outfilename,npix_out=10000):
+    """
+    Make mask that is `infilename` everywhere except in regions specified by `ds9region` which is zero.
+    :param infilename:
+    :param ds9region:
+    :param outfilename:
+    :return:
+    """
+    print('Making: {}'.format(outfilename))
+    npix_in = getimsize(infilename)
+    s="image;box({},{},{},{},0)".format(npix_in//2, npix_in//2,npix_out, npix_out)
+    with open(ds9region,'w') as f:
+        f.write(s)
+    hdu = fits.open(infilename)
+    hduflat = flatten(hdu)
+    r = pyregion.parse(s)
+    manualmask = r.get_mask(hdu=hduflat)
+    hdu[0].data[0][0][np.where(manualmask == True)] = 0.0
+    hdu.writeto(outfilename, overwrite=True)
+    if not os.path.isfile(outfilename):
+        raise IOError("Did not successfully create {}".format(outfilename))
+
+def make_predict_dico(indico, predict_dico, predict_mask,npix_out=10000):
+    print("Making dico containing all but calibrators: {}".format(predict_dico))
+    cmd_call(
+        "MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(predict_mask, indico, predict_dico))
+    if not os.path.isfile(predict_dico):
+        raise IOError("Failed to make {}".format(predict_dico))
+
 
 def cleanup_working_dir(working_dir):
     print("Deleting cache since we're done.")
     for f in glob.glob(os.path.join(working_dir,"*.ddfcache")):
         cmd_call("rm -r {}".format(f))
 
-def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours, predict_column, sub_column):
+def main(data_dir, working_dir, ncpu, keeplongbaselines, chunkhours, predict_column, sub_column, npix_out):
     data_dir = os.path.abspath(data_dir)
     working_dir = os.path.abspath(working_dir)
-    region_file = os.path.abspath(region_file)
     try:
         os.makedirs(working_dir)
     except:
@@ -200,10 +256,8 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
     mslist_file, mslist, fullmask, indico, clustercat = get_filenames(data_dir)
     predict_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.not_{sub_column}.DicoModel'.format(sub_column=sub_column))
     filtered_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.{sub_column}.DicoModel'.format(sub_column=sub_column))
-
-    predict_mask = os.path.join(data_dir, 'predict_mask_to_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
-    filter_mask = os.path.join(data_dir, 'filter_mask_to_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
-
+    predict_mask = os.path.join(data_dir, 'predict_mask_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
+    region_file = os.path.join(working_dir,'box_subtract_region.reg')
     if keeplongbaselines:
         uvsel = "[0.100000,5000.000000]"
     else:
@@ -213,17 +267,18 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
     data_colname = 'DATA'
     columnchecker(mslist, data_colname)
     imagenpix = getimsize(fullmask)
+    npix_out, _ = EstimateNpix(float(npix_out), Padding=1)
     # predict
     if os.path.isfile(predict_dico):
         os.unlink(predict_dico)
     if os.path.isfile(predict_mask):
         os.unlink(predict_mask)
-    print("Masking region with {}.".format(region_file))
-    mask_region(fullmask, region_file, predict_mask)
-    print("Making dico containing only calibrators")
-    make_filtered_dico(filter_mask, indico, filtered_dico)
-    print("Making dico containing all but calibrators.")
-    cmd_call("MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(predict_mask, indico, predict_dico))
+    if os.path.isfile(filtered_dico):
+        os.unlink(filtered_dico)
+    make_predict_mask(fullmask, region_file, predict_mask, npix_out=npix_out)
+    make_predict_dico(indico, predict_dico, predict_mask, npix_out=npix_out)
+    make_filtered_dico(predict_mask, indico, filtered_dico, npix_out=npix_out)
+
     args = dict(chunkhours=chunkhours, mslist_file=mslist_file, data_colname=data_colname, ncpu=ncpu,
                 clustercat=clustercat,
                 robust=robust, imagenpix=imagenpix, imagecell=imagecell, predict_mask=predict_mask, predict_dico=predict_dico, uvsel=uvsel,
@@ -267,8 +322,22 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
 
     cleanup_working_dir(working_dir)
 
+def test_main():
+    main(data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
+         working_dir='/home/albert/nederrijn_1/screens/root/L562061/subtract_outside_pb',
+         ncpu=56,
+         keeplongbaselines=False,
+         chunkhours=8.5,
+         predict_column='PREDICT_SUB',
+         sub_column='DATA_RESTRICTED',
+         npix_out=10000
+         )
+
 
 if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        test_main()
+        exit(0)
     parser = argparse.ArgumentParser(
         description='Keep soures inside box region, subtract everything else and create new ms',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)

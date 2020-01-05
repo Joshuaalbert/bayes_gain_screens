@@ -4,7 +4,7 @@ DDF.py \
     --Parallel-NCPU={ncpu} \
     --Output-Mode=Clean \
     --Weight-Robust={robust} \
-    --Image-NPix=20000 \
+    --Image-NPix={npix} \
     --CF-wmax=50000 \
     --CF-Nw=100 \
     --Beam-CenterNorm=1 \

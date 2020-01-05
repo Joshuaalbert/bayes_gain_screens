@@ -1,13 +1,11 @@
 import os
 import glob
+import sys
 import argparse
-import pylab as plt
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-import pyregion
 import subprocess
-
 
 def cmd_call(cmd):
     print("{}".format(cmd))
@@ -66,10 +64,6 @@ def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
     kwargs['major_iters'] = 0
     cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_dirty_template'), **kwargs)
     cmd_call(cmd)
-
-    images = glob.glob(os.path.join(working_dir, "{}.app.restored.fits".format(kwargs['output_name'])))
-    if len(images) == 0:
-        raise ValueError("No image found to plot")
 
 def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
@@ -264,6 +258,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     kwargs['peak_factor'] = 0.001
     kwargs['nfacets'] = 11
     kwargs['robust'] = -0.5
+    kwargs['npix'] = 20000
     if init_dico is None:
         init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
     else:
@@ -274,13 +269,14 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     if image_type == 'image_subtract_dirty':
         image_dirty(obs_num=obs_num,
                     data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
-                    data_column='DATA_SUB')
+                    data_column='DATA_SUB',**kwargs)
     if image_type == 'image_smoothed':
         image_smoothed(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_smoothed_slow':
         image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA',
                             **kwargs)
     if image_type == 'image_smoothed_slow_restricted':
+        kwargs['npix'] = 10000
         image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
                             **kwargs)
     if image_type == 'image_screen':
@@ -288,7 +284,18 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     if image_type == 'image_screen_slow':
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA',
                           **kwargs)
+    if image_type == 'image_dirty_restricted_full':
+        kwargs['npix'] = 20000
+        image_dirty(obs_num=obs_num,
+                    data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
+                    data_column='DATA_RESTRICTED',**kwargs)
+    if image_type == 'image_dirty_restricted':
+        kwargs['npix'] = 10000
+        image_dirty(obs_num=obs_num,
+                    data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
+                    data_column='DATA_RESTRICTED',**kwargs)
     if image_type == 'image_screen_slow_restricted':
+        kwargs['npix'] = 10000
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
                           **kwargs)
     if image_type == 'image_dds4':
@@ -300,7 +307,22 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     cleanup_working_dir(working_dir)
 
 
+def test_main():
+    main(image_type='image_dirty_restricted_full',
+         obs_num=562061,
+         data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
+         working_dir='/home/albert/nederrijn_1/screens/root/L562061/image_restricted_dirty_full',
+         script_dir='/home/albert/nederrijn_1/screens/scripts',
+         ncpu=56,
+         use_init_dico=False,
+         init_dico='/home/albert/nederrijn_1/screens/root/L562061/download_archive/image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'
+         )
+
+
 if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        test_main()
+        exit(0)
     parser = argparse.ArgumentParser(
         description='Image with kms sols or h5parm.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)

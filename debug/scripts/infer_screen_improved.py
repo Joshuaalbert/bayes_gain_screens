@@ -40,7 +40,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
 
     animate_datapack(merged_h5parm,os.path.join(working_dir, 'tec_screen_plots'), num_processes=ncpu,
                      solset=deployment.screen_solset,
-                     observable='tec', vmin=-60., vmax=60.,labels_in_radec=True,plot_crosses=False,phase_wrap=False)
+                     observable='tec', vmin=-60., vmax=60.,labels_in_radec=True,plot_crosses=False,phase_wrap=False,
+                     overlay_solset='directionally_referenced')
     # animate_datapack(merged_h5parm, os.path.join(working_dir, 'const_screen_plots'), num_processes=ncpu,
     #                  solset=deployment.screen_solset,
     #                  observable='const', vmin=-np.pi, vmax=np.pi, labels_in_radec=True, plot_crosses=False, phase_wrap=True)

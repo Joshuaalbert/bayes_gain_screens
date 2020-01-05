@@ -255,25 +255,41 @@ class AverageModel(object):
 
     def set_hyperparams(self, hyperparams:dict):
         for m in self.models:
-            m.assign(hyperparams[m.name])
+            m.assign(hyperparams[m.caption])
 
     def get_hyperparams(self):
-        return {m.name : m.read_trainables() for m in self.models}
+        return {m.caption : m.read_trainables() for m in self.models}
 
-    def optimise(self, search=False):
+    def optimise(self, search=False, restart_points = None):
+        """
+        Optimise all models.
+        :param search: not implemented
+        :param restart_points: dict of
+            {model.caption : model_trainables to try starting from, optionally a list of such}
+        :return:
+        """
         if search:
             raise NotImplementedError("Search not implemented")
         for model in self.models:
             logging.info("Optimising model: {}".format(model.caption))
-            opt = ScipyOptimizer()
-            try:
-                opt.minimize(model)
-            except:
-                logging.error("Problem with optimisation!! Will reinitialise and try again.")
-                model.initialize(force=True)
+            init_points = [model.read_trainables()]
+            if restart_points is not None:
+                if isinstance(restart_points[model.caption], (list,tuple)):
+                    init_points = init_points + list(restart_points[model.caption])
+                else:
+                    init_points.append(restart_points[model.caption])
+            end_points = []
+            lml = []
+            for init_point in init_points:
+                model.assign(init_point)
                 ScipyOptimizer().minimize(model)
+                lml.append(model.compute_log_likelihood())
+                end_points.append(model.read_trainables())
+            best = int(np.argmax(lml))
+            model.assign(end_points[best])
             with np.printoptions(precision=2):
-                logging.info("Learned model:\n{}".format(
+                logging.info("Optimised from {} initial points\n\tlog marg. lik.: {}".format(len(init_points), lml))
+                logging.info("Best learned hyper params:\n{}".format(
                     "\n".join(["\t{} -> {}".format(k, v) for (k,v) in model.read_trainables().items()])))
 
 

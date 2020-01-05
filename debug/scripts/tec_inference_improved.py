@@ -17,6 +17,7 @@ import argparse
 from timeit import default_timer
 import tensorflow as tf
 import networkx as nx
+import sys
 
 """
 This script is still being debugged/tested. 
@@ -32,7 +33,7 @@ def stack_complex(y):
     """
     return np.concatenate([y.real, y.imag], axis=-1)
 
-def sequential_solve(Yreal, Yimag, freqs, working_dir):
+def sequential_solve(Yreal, Yimag, freqs, working_dir, debug=False):
     """
     Run on blocks of time.
 
@@ -43,15 +44,17 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
     :return:
         [D, Nt], [D, Nt]
     """
-    debug_dir = os.path.join(working_dir, 'phase_residuals')
-    os.makedirs(debug_dir, exist_ok=True)
+    if debug:
+        debug_dir = os.path.join(working_dir, 'phase_residuals')
+        os.makedirs(debug_dir, exist_ok=True)
 
     D, Nf, N = Yreal.shape
 
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
-    obs_cov_array = np.zeros((D, 2*Nf, 2*Nf))
-    update = UpdateGainsToTec(freqs, S=200, tec_scale=300., spacing=10., force_diag_Sigma=True)
+    Sigma_array = np.zeros((D, N, 2*Nf, 2*Nf))
+    Omega_array = np.zeros((D, N, 1, 1))
+    update = UpdateGainsToTec(freqs, S=200, tec_scale=300., spacing=10., force_diag_Sigma=True, force_diag_Omega=True, windowed_params=True, stat_window=31)
     config = tf.ConfigProto(intra_op_parallelism_threads=1,
                             inter_op_parallelism_threads=1,
                             allow_soft_placement=True,
@@ -66,32 +69,40 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         # warm-up
         # logging.info("On {}: Warming up".format(d))
         # B, Nf
-        Y_warmup = np.transpose(Yreal[d, :, : 50] + 1j * Yimag[d, :, :50])
-        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.9, session=tf.Session(graph=tf.Graph(), config=config)).run(stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0,
-                                                                      Gamma_0, 10)
-        Sigma_0 = res['Sigma']
-        Omega_0 = res['Omega']
-        mu_0 = res['mu_0']
-        Gamma_0 = res['Gamma_0']
+        Y_warmup = np.transpose(Yreal[d, :, : 50] + 1j * Yimag[d, :, : 50])
+        res = NLDSSmoother(2, 2*Nf, update=update, momentum=0.5, session=tf.Session(graph=tf.Graph(), config=config)).run(stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0,
+                                                                      Gamma_0, 4)
+        Sigma_0 = np.maximum(0.01**2, np.mean(res['Sigma'], axis=0))
+        Omega_0 = np.maximum(0.1**2, np.mean(res['Omega'], axis=0))
+        # mu_0 = res['mu_0']
+        # Gamma_0 = res['Gamma_0']
+        # [ print(type(v)) for k,v in res.items()]
         # logging.info("On {}: Full chain".format(d))
         Y = np.transpose(Yreal[d, :, :] + 1j * Yimag[d, :, :])
-        res = NLDSSmoother(2, 2*Nf, N, update=update, momentum=0.1, session=tf.Session(graph=tf.Graph(), config=config)).run(stack_complex(Y), Sigma_0, Omega_0,
-                                                                      mu_0,
-                                                                      Gamma_0, 2)
+        if debug:
+            res = NLDSSmoother(2, 2*Nf, update=update, momentum=0., session=tf.Session(graph=tf.Graph(), config=config)).run(stack_complex(Y), Sigma_0, Omega_0,
+                                                                          mu_0, Gamma_0, 2, logdir=os.path.join(working_dir,'logdir'), step=d)
+        else:
+            res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0.,
+                               session=tf.Session(graph=tf.Graph(), config=config)).run(stack_complex(Y), Sigma_0,
+                                                                                        Omega_0,
+                                                                                        mu_0, Gamma_0, 2)
         tec_mean_array[d, :] = res['post_mu'][:, 0]
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
-        obs_cov_array[d, :, :] = res['Sigma']
-        logging.info("DDTEC Levy uncert: {:.2f} mTECU".format(np.sqrt(res['Omega'][0,0])))
+        Sigma_array[d, :, : , :] = res['Sigma']
+        Omega_array[d, :, :, :] = res['Omega'][:, 0:1, 0:1]
+        logging.info("DDTEC Levy uncert: {:.2f} +- {:.2f} mTECU".format(np.sqrt(np.mean(res['Omega'][:,0,0])), np.sqrt(np.var(res['Omega'][:,0,0]))))
         logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
-        phase_model = tec_mean_array[d, None, :] * TEC_CONV/freqs[:, None]
-        phase_diff = wrap(wrap(phase_model) - np.arctan2(Yimag[d,:, :], Yreal[d, :, :]))
-        plt.imshow(phase_diff,origin='lower', vmin=-0.2, vmax= 0.2,
-                   cmap='coolwarm', aspect='auto',
-                   extent=(0, N, freqs.min(), freqs.max()))
-        plt.xlabel('time')
-        plt.ylabel('freq [Hz]')
-        plt.savefig(os.path.join(debug_dir, 'phase_diff_{:04d}.png'.format(d)))
-        plt.close('all')
+        if debug:
+            phase_model = tec_mean_array[d, None, :] * TEC_CONV/freqs[:, None]
+            phase_diff = wrap(wrap(phase_model) - np.arctan2(Yimag[d,:, :], Yreal[d, :, :]))
+            plt.imshow(phase_diff,origin='lower', vmin=-0.2, vmax= 0.2,
+                       cmap='coolwarm', aspect='auto',
+                       extent=(0, N, freqs.min(), freqs.max()))
+            plt.xlabel('time')
+            plt.ylabel('freq [Hz]')
+            plt.savefig(os.path.join(debug_dir, 'phase_diff_{:04d}.png'.format(d)))
+            plt.close('all')
 
         # plt.imshow(res['Sigma'], origin='lower',
         #            cmap='bone', aspect='auto')
@@ -101,16 +112,17 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir):
         # plt.close('all')
 
 
-    return tec_mean_array, tec_uncert_array, obs_cov_array
+    return tec_mean_array, tec_uncert_array, Sigma_array, Omega_array
 
 def wrap(p):
     return np.arctan2(np.sin(p), np.cos(p))
 
+
 def smoothamps(amps):
     freqkernel = 3
-    timekernel = 31
-    idxh = np.where(amps > 5.)
-    idxl = np.where(amps < 0.15)
+    timekernel = 61
+    idxh = np.where(amps > 2.)
+    idxl = np.where(amps < 0.25)
     median = np.tile(np.nanmedian(amps, axis=-1, keepdims=True), (1, 1, 1, 1, amps.shape[-1]))
     amps[idxh] = median[idxh]
     amps[idxl] = median[idxl]
@@ -122,6 +134,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     os.chdir(working_dir)
     logging.info("Performing TEC and constant variational inference.")
     merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
+    logging.info("Looking for {}".format(merged_h5parm))
     select = dict(pol=slice(0, 1, 1))
     datapack = DataPack(merged_h5parm, readonly=False)
     logging.info("Creating directionally_referenced/tec000+const000")
@@ -144,12 +157,14 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     datapack.current_solset = 'smoothed000'
     datapack.select(**select)
     phase_smooth, axes = datapack.phase
-    amp_smooth, axes = datapack.amplitude
+    amp_smooth = smoothamps(amp_raw)
+    # amp_smooth, axes = datapack.amplitude
 
     tec_conv = TEC_CONV / freqs
     tec_mean_array = np.zeros((Npol, Nd, Na, Nt))
     tec_uncert_array = np.zeros((Npol, Nd, Na, Nt))
-    obs_cov_array = np.zeros((Npol, Nd, Na, 2*Nf, 2*Nf))
+    Sigma_array = np.zeros((Npol, Nd, Na, Nt, 2*Nf, 2*Nf))
+    Omega_array = np.zeros((Npol, Nd, Na, Nt, 1, 1))
     g = nx.complete_graph(radec.shape[0])
     for u, v in g.edges:
         g[u][v]['weight'] = great_circle_sep(*radec[u, :], *radec[v, :])
@@ -187,28 +202,33 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
         logging.info("Finished dask.")
         tec_mean = np.zeros((D, Nt))
         tec_uncert = np.zeros((D, Nt))
-        obs_cov = np.zeros((D, 2*Nf, 2*Nf))
+        Sigma = np.zeros((D, Nt, 2*Nf, 2*Nf))
+        Omega = np.zeros((D, Nt, 1, 1))
 
         for c, i in enumerate(range(0, D, D // num_processes)):
             start = i
             stop = min(i + (D // num_processes), D)
             tec_mean[start:stop, :] = results[c][0]
             tec_uncert[start:stop, :] = results[c][1]
-            obs_cov[start:stop, :, :] = results[c][2]
+            Sigma[start:stop,:, :, :] = results[c][2]
+            Omega[start:stop,:, :, :] = results[c][3]
         tec_mean = tec_mean.reshape((Npol, 1, Na, Nt))
         tec_uncert = tec_uncert.reshape((Npol, 1, Na, Nt))
-        obs_cov = obs_cov.reshape((Npol, 1, Na, 2*Nf, 2*Nf))
+        Sigma = Sigma.reshape((Npol, 1, Na, Nt, 2*Nf, 2*Nf))
+        Omega = Omega.reshape((Npol, 1, Na, Nt, 1, 1))
         if walking_reference:
             logging.info("Re-referencing to {}".format(ref_dir))
             # phase_smooth[:, solve_dir:solve_dir+1, ...] = tec_mean[..., None, :] * tec_conv[:, None] + phase_di
             #Reference to ref_dir 0: tau_ij + tau_jk = tau_ik
             tec_mean_array[:, solve_dir:solve_dir+1,...] = tec_mean + tec_mean_array[:,next_ref_dir:next_ref_dir+1,...]
             tec_uncert_array[:, solve_dir:solve_dir+1, ...] = np.sqrt(tec_uncert**2 + tec_uncert_array[:, next_ref_dir:next_ref_dir+1, ...]**2)
-            obs_cov_array[:, solve_dir:solve_dir+1, ...] = obs_cov
+            Sigma_array[:, solve_dir:solve_dir+1, ...] = Sigma
+            Omega_array[:, solve_dir:solve_dir+1, ...] = Omega
         else:
             tec_mean_array[:, solve_dir:solve_dir + 1, ...] = tec_mean
             tec_uncert_array[:, solve_dir:solve_dir + 1, ...] = tec_uncert
-            obs_cov_array[:, solve_dir:solve_dir + 1, ...] = obs_cov
+            Sigma_array[:, solve_dir:solve_dir + 1, ...] = Sigma
+            Omega_array[:, solve_dir:solve_dir + 1, ...] = Omega
 
     # phase_smooth_uncert = np.abs(tec_conv[:, None] * tec_uncert_array[..., None, :])
     phase_model = tec_mean_array[..., None, :]*tec_conv[:, None] + phase_smooth[:, ref_dir:ref_dir+1, ...]
@@ -221,8 +241,9 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     datapack.select(**select)
     datapack.tec = tec_mean_array
     datapack.weights_tec = tec_uncert_array
-    logging.info("Storing obs. cov.")
-    np.save(os.path.join(working_dir, "observational_covariance.npy"), obs_cov_array)
+    logging.info("Storing HMM params")
+    np.save(os.path.join(working_dir, "Sigma.npy"), Sigma_array)
+    np.save(os.path.join(working_dir, "Omega.npy"), Omega_array)
     logging.info("Done ddtec VI.")
 
     animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
@@ -238,13 +259,13 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
                      flag_outliers=False)
 
     plot_results(Na, Nd, antenna_labels, working_dir, phase_model, phase_raw,
-                 res_imag, res_real, tec_mean_array,obs_cov_array)
+                 res_imag, res_real, tec_mean_array,Sigma_array, Omega_array)
 
 def wrap(p):
     return np.arctan2(np.sin(p), np.cos(p))
 
 def plot_results(Na, Nd, antenna_labels, working_dir, phase_model,
-                 phase_raw, res_imag, res_real, tec_mean_array, obs_cov_array):
+                 phase_raw, res_imag, res_real, tec_mean_array, Sigma_array, Omega_array):
     logging.info("Plotting results.")
     summary_dir = os.path.join(working_dir, 'summaries')
     os.makedirs(summary_dir, exist_ok=True)
@@ -278,10 +299,23 @@ def plot_results(Na, Nd, antenna_labels, working_dir, phase_model,
             axs[1][0].set_title("TEC")
             axs[1][0].set_xlabel('Time')
             axs[1][0].set_ylabel('TEC [mTECU]')
-            vmin = np.min(obs_cov_array[0,j,i,:,:])
-            vmax = np.max(obs_cov_array[0,j,i,:,:])
-            axs[1][1].imshow(obs_cov_array[0,j,i,:,:],origin='lower', vmin=vmin, vmax=vmax, aspect='auto', cmap='bone')
-            axs[1][1].set_title("Obs. cov. est. [{:.2f}, {:.2f}]".format(vmin, vmax))
+            #Nt, Nf
+            _sigma = np.diagonal(Sigma_array[0,j,i,:,:,:], axis1=-2, axis2=-1)
+            _sigma_l = np.exp(np.mean(0.5*np.log(_sigma),axis=-1) - np.std(0.5*np.log(_sigma),axis=-1))
+            _sigma_u = np.exp(np.mean(0.5*np.log(_sigma),axis=-1) + np.std(0.5*np.log(_sigma),axis=-1))
+            _sigma_mean = np.exp(np.mean(0.5*np.log(_sigma),axis=-1))
+            _omega = np.diagonal(Sigma_array[0,j,i,:,:,:], axis1=-2, axis2=-1)
+            # _omega_std = np.exp(np.std(0.5 * np.log(_omega), axis=-1))
+            _omega_mean = np.exp(np.mean(0.5 * np.log(_omega), axis=-1))
+
+            _t = np.arange(len(_sigma))
+            axs[1][1].plot(_t, _sigma_mean, label='sigma')
+            axs[1][1].fill_between(_t, _sigma_l, _sigma_u, alpha=0.5)
+            omega_axis = axs[1][1].twinx()
+            omega_axis.plot(_t, _omega_mean, label='omega')
+            axs[1][1].set_title("sigma and omega")
+            axs[1][1].legend()
+            omega_axis.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(summary_dir, 'summary_{}_dir{:02d}.png'.format(antenna_labels[i].decode(), j)))
             plt.close('all')
@@ -300,10 +334,22 @@ def add_args(parser):
     parser.add_argument('--ref_dir', help='The index of reference dir.',
                         default=0, type=int, required=False)
     parser.add_argument('--walking_reference', help='Whether to remove bias by rereferencing in a minimum distance spanning tree walk.',
-                        default=True, type="bool", required=False)
+                        default=False, type="bool", required=False)
+
+def test_main():
+    main(data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
+         working_dir='/home/albert/nederrijn_1/screens/root/L562061/tec_inference_corr',
+         obs_num=562061,
+         ncpu=50,
+         ref_dir=0,
+         walking_reference=False
+         )
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        test_main()
+        exit(0)
     parser = argparse.ArgumentParser(
         description='Variational inference of DDTEC and a constant term. Updates the smoothed000 solset too.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)

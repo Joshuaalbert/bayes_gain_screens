@@ -144,11 +144,12 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8., **kwargs):
 
     # mean tec over an observation should be zero for dense arrays (not for long baselines of course)
     time_flag = np.tile(np.abs(np.mean(y, axis=-1 ,keepdims=True)) > 16., [1, 1, y.shape[-1]])
-    # jumps in tec in one time step should be less than a banding (~55 mTECU)
-    band_jump = np.abs(np.diff(y, axis=-1)) > 40.
-    time_flag[...,:-1][band_jump] = True
-    # not sure if it was the value before of after that was bad
-    time_flag[...,1:][band_jump] = True
+    logging.info("Found [{}/{}] banding-outliers (temporal mean DDTEC > 16 mTECU)".format(time_flag.sum(), time_flag.size))
+    # # jumps in tec in one time step should be less than a banding (~55 mTECU)
+    # band_jump = np.abs(np.diff(y, axis=-1)) > 40.
+    # time_flag[...,:-1][band_jump] = True
+    # # not sure if it was the value before of after that was bad
+    # time_flag[...,1:][band_jump] = True
 
     # Nd, 2
     X = (directions - np.mean(directions, axis=0)) / np.std(directions, axis=0)
@@ -159,10 +160,12 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8., **kwargs):
         for a in range(Na):
             keep = np.logical_not(time_flag[:,a,t])
             if t > 0:
+                #initialise with OR of previous flags
                 keep = np.logical_or(keep, np.logical_not(final_flags[:, a, t-1]))
+            if keep.sum() < Nd // 2:
+                keep = np.ones(Nd, dtype=np.bool)
             for i in range(maxiter):
-                if keep.sum() < Nd//2:
-                    keep = np.ones(Nd, dtype=np.bool)
+                #TODO: test solving S parallel RBF problems (sampling provides uncertainty) with smooth=0
                 # spatially a smoothed-RBF should do a decent job of describing the TEC
                 svm = Rbf(X[keep, 0], X[keep, 1], y[keep, a, t], smooth=0.3, **kwargs)
                 y_star = svm(X[:,0], X[:,1])
@@ -173,6 +176,9 @@ def filter_tec_dir(y,  directions, init_y_uncert=None, min_res=8., **kwargs):
                     break
                 # print(max_dy)
                 keep = dy < max_dy
+                if keep.sum() < 5:
+                    logging.info("Possible outlier flagging divergence time: {} antenna: {}".format(t, a))
+                    break
 
             reinout_flag = reinout_filter(X[:,0], X[:,1], y[:, a, t])
 

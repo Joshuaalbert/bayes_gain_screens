@@ -9,7 +9,7 @@ DDF.py \
     --Deconv-MaxMajorIter={major_iters} \
     --Deconv-Mode=SSD \
     --Weight-Robust={robust} \
-    --Image-NPix=20000 \
+    --Image-NPix={npix} \
     --CF-wmax=50000 \
     --CF-Nw=100 \
     --Beam-CenterNorm=1 \
