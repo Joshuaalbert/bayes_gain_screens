@@ -85,7 +85,7 @@ def main(data_dir, working_dir, obs_num):
     datapack = DataPack(datapack, readonly=False)
     logging.info("Creating smoothed/phase000+amplitude000")
     make_soltab(datapack, from_solset='sol000', to_solset='smoothed000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000'])
+                to_soltab=['phase000', 'amplitude000'], remake_solset=True)
     logging.info("Getting phase and amplitude data")
     datapack.current_solset = 'sol000'
     datapack.select(**select)
