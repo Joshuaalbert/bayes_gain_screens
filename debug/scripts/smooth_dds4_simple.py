@@ -20,9 +20,9 @@ def wrap(p):
 
 def smoothamps(amps):
     freqkernel = 3
-    timekernel = 31
-    idxh = np.where(amps > 5.)
-    idxl = np.where(amps < 0.15)
+    timekernel = 61
+    idxh = np.where(amps > 2.)
+    idxl = np.where(amps < 0.25)
     median = np.tile(np.nanmedian(amps, axis=-1, keepdims=True), (1, 1, 1, 1, amps.shape[-1]))
     amps[idxh] = median[idxh]
     amps[idxl] = median[idxl]
@@ -115,13 +115,13 @@ def main(data_dir, working_dir, obs_num):
     Yimag_full = Yimag_full.reshape((Nf, Npol, Nd, Na, Nt)).transpose((1,2,3,0,4))
 
     phase_smooth = np.arctan2(Yimag_full, Yreal_full)
-    # amp_smooth =  np.sqrt(Yimag_full**2 + Yreal_full**2)
     logging.info("Storing results in a datapack")
     datapack.current_solset = 'smoothed000'
     # Npol, Nd, Na, Nf, Nt
     datapack.select(**select)
     datapack.phase = phase_smooth
-    datapack.amplitude = amp_smooth
+    logging.info("Storing amplitudes of 1 (meaning that we only take phase information from this step).")
+    datapack.amplitude = np.ones_like(amp_smooth)
     logging.info("Plotting some residuals.")
     diff_phase = wrap(phase_smooth - wrap(phase_raw))
     diff_amp = np.log(amp_smooth) - np.log(amp_raw)
