@@ -311,7 +311,7 @@ def plot_results(Na, Nd, antenna_labels, working_dir, phase_model,
             axs[1][1].plot(_t, _sigma_mean, label='sigma')
             axs[1][1].fill_between(_t, _sigma_mean - _sigma_std, _sigma_mean + _sigma_std, alpha=0.5)
             omega_axis = axs[1][1].twinx()
-            omega_axis.plot(_t, _omega_mean, label='omega')
+            omega_axis.plot(_t, _omega_mean, color='red', label='omega')
             axs[1][1].set_title("sigma and omega")
             axs[1][1].set_ylabel("mean data noise [1]")
             omega_axis.set_ylabel("omega DDTEC [mTECU]")
@@ -339,7 +339,7 @@ def add_args(parser):
 
 def test_main():
     main(data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
-         working_dir='/home/albert/nederrijn_1/screens/root/L562061/tec_inference_rolling',
+         working_dir='/home/albert/nederrijn_1/screens/root/L562061/tec_inference_rolling_2',
          obs_num=562061,
          ncpu=64,
          ref_dir=0,

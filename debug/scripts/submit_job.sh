@@ -35,7 +35,7 @@ no_download=False
 do_download_archive=2
 do_choose_calibrators=2
 do_subtract=2
-do_subtract_outside_pb=0
+do_subtract_outside_pb=2
 do_solve_dds4=2
 do_smooth_dds4=2
 do_slow_solve_dds4=2
@@ -49,10 +49,10 @@ do_image_subtract_dirty=0
 do_image_smooth=0
 do_image_subtract_dds4=0
 do_image_dds4=0
-do_image_smooth_slow=2
+do_image_smooth_slow=0
 do_image_smooth_slow_restricted=0
-do_image_screen_slow=2
-do_image_screen_slow_restricted=0
+do_image_screen_slow=0
+do_image_screen_slow_restricted=2
 do_image_screen=0
 
 ###
