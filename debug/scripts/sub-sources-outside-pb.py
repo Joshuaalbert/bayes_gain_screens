@@ -219,7 +219,7 @@ def make_filtered_dico(fullmask, region_mask, full_dico_model, masked_dico_model
         newf.header = f[0].header
         newf.header.update(w[:, :, trim:-trim, trim:-trim].to_header())
         trimmed_mask = fullmask.replace('.fits', '.restricted.fits')
-        newf.writeto(trimmed_mask)
+        newf.writeto(trimmed_mask, overwrite=True)
         if not os.path.isfile(trimmed_mask):
             raise IOError("Trimmed mask {} not made".format(trimmed_mask))
 
