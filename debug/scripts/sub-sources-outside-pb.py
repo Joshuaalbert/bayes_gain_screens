@@ -295,7 +295,7 @@ def main(data_dir, working_dir, ncpu, keeplongbaselines, chunkhours, predict_col
         os.unlink(filtered_dico)
     make_predict_mask(fullmask, region_file, predict_mask, npix_out=npix_out)
     make_predict_dico(indico, predict_dico, predict_mask, npix_out=npix_out)
-    make_filtered_dico(predict_mask, indico, filtered_dico, npix_out=npix_out)
+    make_filtered_dico(fullmask, predict_mask, indico, filtered_dico, npix_out=npix_out)
 
     args = dict(chunkhours=chunkhours, mslist_file=mslist_file, data_colname=data_colname, ncpu=ncpu,
                 clustercat=clustercat,
