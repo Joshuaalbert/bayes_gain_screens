@@ -189,7 +189,7 @@ def fix_dico_shape(fulldico, outdico, NPixOut):
     print("Saving in {}".format(outdico))
     MyPickle.Save(DCompOut, outdico)
 
-def make_filtered_dico(region_mask, full_dico_model, masked_dico_model,npix_out=10000):
+def make_filtered_dico(fullmask, region_mask, full_dico_model, masked_dico_model,npix_out=10000):
     """
     Filter dico model to only include sources in mask.
 
@@ -205,6 +205,23 @@ def make_filtered_dico(region_mask, full_dico_model, masked_dico_model,npix_out=
     if not os.path.isfile(masked_dico_model):
         raise IOError("Failed to make {}".format(masked_dico_model))
     fix_dico_shape(masked_dico_model, masked_dico_model, npix_out)
+    # make restricted mask for imaging
+    with fits.open(fullmask) as f:
+        w = WCS(f[0].header)
+        newf = fits.PrimaryHDU()
+        npix_in = f[0].data.shape[-1]
+        trim = (npix_in - npix_out)//2
+        if trim < 0:
+            raise ValueError("Npix out {} should be less than npix in {}".format(npix_out, npix_in))
+        if 2*trim + npix_out != npix_in:
+            raise ValueError("Trim {} is not matching up with npix in {} and {}".format(trim, npix_in, npix_out))
+        newf.data = f[0].data[:, :, trim:-trim, trim:-trim]
+        newf.header = f[0].header
+        newf.header.update(w[:, :, trim:-trim, trim:-trim].to_header())
+        trimmed_mask = fullmask.replace('.fits', '.restricted.fits')
+        newf.writeto(trimmed_mask)
+        if not os.path.isfile(trimmed_mask):
+            raise IOError("Trimmed mask {} not made".format(trimmed_mask))
 
 def make_predict_mask(infilename, ds9region, outfilename,npix_out=10000):
     """
@@ -219,12 +236,12 @@ def make_predict_mask(infilename, ds9region, outfilename,npix_out=10000):
     s="image;box({},{},{},{},0)".format(npix_in//2, npix_in//2,npix_out, npix_out)
     with open(ds9region,'w') as f:
         f.write(s)
-    hdu = fits.open(infilename)
-    hduflat = flatten(hdu)
-    r = pyregion.parse(s)
-    manualmask = r.get_mask(hdu=hduflat)
-    hdu[0].data[0][0][np.where(manualmask == True)] = 0.0
-    hdu.writeto(outfilename, overwrite=True)
+    with fits.open(infilename) as hdu:
+        hduflat = flatten(hdu)
+        r = pyregion.parse(s)
+        manualmask = r.get_mask(hdu=hduflat)
+        hdu[0].data[0][0][np.where(manualmask == True)] = 0.0
+        hdu.writeto(outfilename, overwrite=True)
     if not os.path.isfile(outfilename):
         raise IOError("Did not successfully create {}".format(outfilename))
 

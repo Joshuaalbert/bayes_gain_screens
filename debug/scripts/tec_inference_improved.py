@@ -91,7 +91,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir, debug=False):
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
         Sigma_array[d, :, : , :] = res['Sigma']
         Omega_array[d, :, :, :] = res['Omega'][:, 0:1, 0:1]
-        logging.info("DDTEC Levy uncert: {:.2f} +- {:.2f} mTECU".format(np.sqrt(np.mean(res['Omega'][:,0,0])), np.sqrt(np.var(res['Omega'][:,0,0]))))
+        logging.info("DDTEC Levy uncert: {:.2f} +- {:.2f} mTECU".format(np.mean(np.sqrt(res['Omega'][:,0,0])), np.std(np.sqrt(res['Omega'][:,0,0]))))
         logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
         if debug:
             phase_model = tec_mean_array[d, None, :] * TEC_CONV/freqs[:, None]
@@ -338,9 +338,9 @@ def add_args(parser):
 
 def test_main():
     main(data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
-         working_dir='/home/albert/nederrijn_1/screens/root/L562061/tec_inference_corr',
+         working_dir='/home/albert/nederrijn_1/screens/root/L562061/tec_inference_rolling',
          obs_num=562061,
-         ncpu=50,
+         ncpu=64,
          ref_dir=0,
          walking_reference=False
          )

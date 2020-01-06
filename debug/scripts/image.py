@@ -56,7 +56,7 @@ def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
                                                                data_dir=data_dir,
                                                                working_dir=working_dir,
-                                                               mask='image_full_ampphase_di_m.NS.mask01.fits',
+                                                               mask=kwargs['mask'],
                                                                delete_ddfcache=True)
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
@@ -69,7 +69,7 @@ def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
                                                                data_dir=data_dir,
                                                                working_dir=working_dir,
-                                                               mask='image_full_ampphase_di_m.NS.mask01.fits',
+                                                               mask=kwargs['mask'],
                                                                delete_ddfcache=True)
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
@@ -95,7 +95,7 @@ def image_smoothed(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
                                                                data_dir=data_dir,
                                                                working_dir=working_dir,
-                                                               mask='image_full_ampphase_di_m.NS.mask01.fits',
+                                                               mask=kwargs['mask'],
                                                                delete_ddfcache=True)
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
@@ -120,7 +120,7 @@ def image_smoothed_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
                                                                data_dir=data_dir,
                                                                working_dir=working_dir,
-                                                               mask='image_full_ampphase_di_m.NS.mask01.fits',
+                                                               mask=kwargs['mask'],
                                                                delete_ddfcache=True)
     kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
@@ -145,7 +145,7 @@ def image_screen(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
                                                                data_dir=data_dir,
                                                                working_dir=working_dir,
-                                                               mask='image_full_ampphase_di_m.NS.mask01.fits',
+                                                               mask=kwargs['mask'],
                                                                delete_ddfcache=True)
 
     kwargs['output_name'] = os.path.basename(working_dir)
@@ -171,7 +171,7 @@ def image_screen_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
                                                                data_dir=data_dir,
                                                                working_dir=working_dir,
-                                                               mask='image_full_ampphase_di_m.NS.mask01.fits',
+                                                               mask=kwargs['mask'],
                                                                delete_ddfcache=True)
 
     kwargs['output_name'] = os.path.basename(working_dir)
@@ -222,11 +222,8 @@ def prepare_imaging(obs_num, data_dir, working_dir, mask, delete_ddfcache):
         for ms in msfiles:
             f.write("{}\n".format(ms))
     print("Getting mask")
-    mask = os.path.abspath(mask)
     if not os.path.isfile(mask):
-        mask = os.path.join(data_dir, os.path.basename(mask))
-        if not os.path.isfile(mask):
-            raise IOError("Couldn't find a mask matching {}".format(mask))
+        raise IOError("Couldn't find a mask matching {}".format(mask))
     return data_dir, working_dir, mslist_file, mask
 
 
@@ -259,6 +256,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     kwargs['nfacets'] = 11
     kwargs['robust'] = -0.5
     kwargs['npix'] = 20000
+    kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
     if init_dico is None:
         init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
     else:
@@ -277,6 +275,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
                             **kwargs)
     if image_type == 'image_smoothed_slow_restricted':
         kwargs['npix'] = 10000
+        kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
         image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
                             **kwargs)
     if image_type == 'image_screen':
@@ -291,11 +290,13 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
                     data_column='DATA_RESTRICTED',**kwargs)
     if image_type == 'image_dirty_restricted':
         kwargs['npix'] = 10000
+        kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
         image_dirty(obs_num=obs_num,
                     data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
                     data_column='DATA_RESTRICTED',**kwargs)
     if image_type == 'image_screen_slow_restricted':
         kwargs['npix'] = 10000
+        kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
                           **kwargs)
     if image_type == 'image_dds4':
@@ -308,13 +309,13 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
 
 
 def test_main():
-    main(image_type='image_dirty_restricted_full',
+    main(image_type='image_smoothed_slow_restricted',
          obs_num=562061,
          data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
-         working_dir='/home/albert/nederrijn_1/screens/root/L562061/image_restricted_dirty_full',
+         working_dir='/home/albert/nederrijn_1/screens/root/L562061/image_restricted_smoothed_slow',
          script_dir='/home/albert/nederrijn_1/screens/scripts',
          ncpu=56,
-         use_init_dico=False,
+         use_init_dico=True,
          init_dico='/home/albert/nederrijn_1/screens/root/L562061/download_archive/image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'
          )
 
