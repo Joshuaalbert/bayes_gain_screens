@@ -212,9 +212,8 @@ class SolveLossVI(object):
         res = -b**2 * (1. + 2. * Yimag ** 2)
         res += -a**2 * (1. + 2. * Yreal**2)
         res += -4.*np.log(2.*np.pi/(a*b))
-        res += np.exp(-2. * theta) * (b**2 - a**2) * np.cos(2. * phi)
-        res += 4. * np.exp(-0.5*theta) * (a**2 * Yreal * np.cos(phi) + b**2 * Yimag * np.sin(phi))
-        res /= 4.
+        res += np.exp(-2. * theta) * ((b**2 - a**2) * np.cos(2. * phi) + 4.* np.exp(1.5*theta) * (a**2 * Yreal * np.cos(phi) + b**2 * Yimag * np.sin(phi)))
+        res *= 0.25
         return np.sum(res, axis=-1)
 
     def test_loss_func(self, params):
@@ -358,7 +357,7 @@ class UpdateGainsToTec(UpdatePy):
         basin = np.mean(np.abs(np.pi / s.tec_conv))*0.5
         num_basin = int(self.tec_scale/basin)+1
 
-        res = minimize(s.loss_func, np.array([0., deconstrain_tec(5.)]), method='BFGS').x
+        res = minimize(s.loss_func, np.array([prior_mu[0], deconstrain_tec(5.)]), method='BFGS').x
         obj_try = np.stack([s.loss_func([res[0] + i * basin, res[1]]) for i in range(-num_basin, num_basin+1, 1)], axis=0)
         which_basin = np.argmin(obj_try, axis=0)
         x_next = np.array([res[0] + (which_basin - float(num_basin)) * basin, res[1]])
