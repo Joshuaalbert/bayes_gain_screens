@@ -260,6 +260,13 @@ class AverageModel(object):
     def get_hyperparams(self):
         return {m.caption : m.read_trainables() for m in self.models}
 
+    def safe_optimise(self, model, jitter_level = 1e-6):
+        settings.numerics.jitter_level = jitter_level
+        try:
+            ScipyOptimizer().minimize(model)
+        except tf.errors.InvalidArgumentError:
+            self.safe_optimise(model, jitter_level=jitter_level*10.)
+
     def optimise(self, search=False, restart_points = None):
         """
         Optimise all models.
@@ -282,7 +289,7 @@ class AverageModel(object):
             lml = []
             for init_point in init_points:
                 model.assign(init_point)
-                ScipyOptimizer().minimize(model)
+                self.safe_optimise(model, 1e-6)
                 lml.append(model.compute_log_likelihood())
                 end_points.append(model.read_trainables())
             best = int(np.argmax(lml))
