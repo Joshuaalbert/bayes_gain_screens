@@ -470,8 +470,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     steps['choose_calibrators'].cmd \
         .add('region_file', region_file) \
         .add('ref_image_fits', ref_image_fits) \
-        .add('flux_limit', 0.30) \
-        .add('min_spacing_arcmin', 6.)
+        .add('flux_limit', 0.15) \
+        .add('min_spacing_arcmin', 6.) \
+        .add('max_N', 45)
 
     steps['subtract'].cmd \
         .add('region_file', region_file) \
@@ -503,7 +504,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('ncpu', ncpu // 2) \
         .add('data_dir', data_dir) \
         .add('ref_dir', ref_dir) \
-        .add('walking_reference', True)
+        .add('walking_reference', False)
 
     steps['slow_solve_dds4'].cmd \
         .add('ncpu', ncpu) \
@@ -735,7 +736,7 @@ def test_main():
          do_smooth_dds4=0,
          do_slow_solve_dds4=0,
          do_tec_inference=0,
-         do_merge_slow=0,
+         do_merge_slow=2,
          do_infer_screen=2,
          do_image_dds4=0,
          do_image_subtract_dds4=0,
@@ -745,7 +746,7 @@ def test_main():
          do_image_screen_slow=0,
          do_subtract_outside_pb=0,
          do_image_smooth_slow_restricted=0,
-         do_image_screen_slow_restricted=0)
+         do_image_screen_slow_restricted=2)
 
 
 if __name__ == '__main__':
