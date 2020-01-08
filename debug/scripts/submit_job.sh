@@ -144,7 +144,7 @@ python "$script_dir"/pipeline.py \
         --auto_resume="$auto_resume" \
         --ref_dir=0 \
         --ncpu="$ncpu" \
-        --block_size=20 \
+        --block_size=40 \
         --deployment_type=directional \
         --no_download="$no_download" \
         --do_download_archive="$do_download_archive" \
