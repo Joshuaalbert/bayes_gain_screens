@@ -334,6 +334,7 @@ class DatapackPlotter(object):
                 _, flag_directions = self.datapack.get_directions(axes['dir'])
                 logging.info("Flagging observables based on inf uncertanties")
                 flags = weights==np.inf
+                self.datapack.current_solset = solset
             else:
                 flags = obs.copy()
                 overlay_obs = obs.copy()
