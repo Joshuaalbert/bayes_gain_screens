@@ -7,6 +7,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 import subprocess
 
+
 def cmd_call(cmd):
     print("{}".format(cmd))
     exit_status = subprocess.call(cmd, shell=True)
@@ -58,12 +59,12 @@ def image_dirty(obs_num, data_dir, working_dir, script_dir, **kwargs):
                                                                working_dir=working_dir,
                                                                mask=kwargs['mask'],
                                                                delete_ddfcache=True)
-    kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 100e-6
     kwargs['major_iters'] = 0
     cmd = build_image_cmd(working_dir, os.path.join(script_dir, 'templates', 'image_dirty_template'), **kwargs)
     cmd_call(cmd)
+
 
 def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
     data_dir, working_dir, mslist_file, mask = prepare_imaging(obs_num=obs_num,
@@ -71,7 +72,6 @@ def image_DDS4(obs_num, data_dir, working_dir, script_dir, **kwargs):
                                                                working_dir=working_dir,
                                                                mask=kwargs['mask'],
                                                                delete_ddfcache=True)
-    kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 100e-6
     kwargs['major_iters'] = 5
@@ -97,7 +97,6 @@ def image_smoothed(obs_num, data_dir, working_dir, script_dir, **kwargs):
                                                                working_dir=working_dir,
                                                                mask=kwargs['mask'],
                                                                delete_ddfcache=True)
-    kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 100e-6
     kwargs['major_iters'] = 5
@@ -122,7 +121,6 @@ def image_smoothed_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
                                                                working_dir=working_dir,
                                                                mask=kwargs['mask'],
                                                                delete_ddfcache=True)
-    kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 0.
     kwargs['major_iters'] = 5
@@ -148,7 +146,6 @@ def image_screen(obs_num, data_dir, working_dir, script_dir, **kwargs):
                                                                mask=kwargs['mask'],
                                                                delete_ddfcache=True)
 
-    kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 0.
     kwargs['major_iters'] = 5
@@ -174,7 +171,6 @@ def image_screen_slow(obs_num, data_dir, working_dir, script_dir, **kwargs):
                                                                mask=kwargs['mask'],
                                                                delete_ddfcache=True)
 
-    kwargs['output_name'] = os.path.basename(working_dir)
     kwargs['mask'] = mask
     kwargs['fluxthreshold'] = 0.
     kwargs['major_iters'] = 5
@@ -206,8 +202,6 @@ def build_image_cmd(working_dir, template, **kwargs):
 
 def prepare_imaging(obs_num, data_dir, working_dir, mask, delete_ddfcache):
     data_dir = os.path.abspath(data_dir)
-    print("Changing to {}".format(working_dir))
-    os.chdir(working_dir)
     ddfcache = glob.glob(os.path.join(working_dir, '*.ddfcache'))
     if len(ddfcache) > 0 and delete_ddfcache:
         print("Deleting existing ddf cache")
@@ -245,18 +239,23 @@ def add_args(parser):
     parser.add_argument('--init_dico', help='Dico name (inside data dir) to initialise with.',
                         default=None, type=str, required=False)
 
+
 def cleanup_working_dir(working_dir):
     print("Deleting cache since we're done.")
-    for f in glob.glob(os.path.join(working_dir,"*.ddfcache")):
+    for f in glob.glob(os.path.join(working_dir, "*.ddfcache")):
         cmd_call("rm -r {}".format(f))
 
+
 def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_dico, init_dico):
+    print("Changing to {}".format(working_dir))
+    os.chdir(working_dir)
     kwargs = {}
     kwargs['peak_factor'] = 0.001
     kwargs['nfacets'] = 11
     kwargs['robust'] = -0.5
     kwargs['npix'] = 20000
     kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
+    kwargs['output_name'] = "L{}_{}".format(obs_num, os.path.basename(working_dir))
     if init_dico is None:
         init_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DicoModel')
     else:
@@ -267,7 +266,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     if image_type == 'image_subtract_dirty':
         image_dirty(obs_num=obs_num,
                     data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
-                    data_column='DATA_SUB',**kwargs)
+                    data_column='DATA_SUB', **kwargs)
     if image_type == 'image_smoothed':
         image_smoothed(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_smoothed_slow':
@@ -276,7 +275,8 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     if image_type == 'image_smoothed_slow_restricted':
         kwargs['npix'] = 10000
         kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
-        image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
+        image_smoothed_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir,
+                            data_column='DATA_RESTRICTED',
                             **kwargs)
     if image_type == 'image_screen':
         image_screen(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
@@ -287,17 +287,18 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
         kwargs['npix'] = 20000
         image_dirty(obs_num=obs_num,
                     data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
-                    data_column='DATA_RESTRICTED',**kwargs)
+                    data_column='DATA_RESTRICTED', **kwargs)
     if image_type == 'image_dirty_restricted':
         kwargs['npix'] = 10000
         kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
         image_dirty(obs_num=obs_num,
                     data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
-                    data_column='DATA_RESTRICTED',**kwargs)
+                    data_column='DATA_RESTRICTED', **kwargs)
     if image_type == 'image_screen_slow_restricted':
         kwargs['npix'] = 10000
         kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
-        image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA_RESTRICTED',
+        image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir,
+                          data_column='DATA_RESTRICTED',
                           **kwargs)
     if image_type == 'image_dds4':
         image_DDS4(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
