@@ -444,6 +444,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
                     if "END" not in line:
                         continue
                     name = line.split(" ")[-1].strip()
+                    if name == 'endpoint':
+                        continue
                     # split = line.split("|")
                     # if len(split) == 3:
                     #     name = split[1].strip()

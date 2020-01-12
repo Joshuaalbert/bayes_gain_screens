@@ -28,6 +28,7 @@ conda_env=tf_py
 force_conda=
 auto_resume=2
 no_download=False
+mock_run=
 
 ###
 # calibration steps
@@ -86,7 +87,8 @@ L=(obs_num \
     conda_env \
     force_conda \
     no_download \
-    auto_resume)
+    auto_resume \
+    mock_run)
 
 arg_parse_str="help"
 for arg in ${L[@]}; do
@@ -136,7 +138,7 @@ fi
 
 singularity exec -B /tmp,/dev/shm "$simg_dir"/lofar_sksp_ddf.simg CleanSHM.py
 
-python "$script_dir"/pipeline.py \
+cmd='python "$script_dir"/pipeline.py \
         --archive_dir="$archive_dir" \
         --root_working_dir="$root_working_dir" \
         --script_dir="$script_dir" \
@@ -170,5 +172,14 @@ python "$script_dir"/pipeline.py \
         --lofar_sksp_simg="$simg_dir"/lofar_sksp_ddf.simg \
         --lofar_gain_screens_simg="$simg_dir"/lofar_sksp_ddf_gainscreens_premerge.simg \
         --bayes_gain_screens_simg="$bayes_gain_screens_simg" \
-        --bayes_gain_screens_conda_env="$conda_env"
+        --bayes_gain_screens_conda_env="$conda_env"'
+
+if [ -z "$mock_run" ]; then
+  eval $cmd
+else
+  echo $cmd
+  echo Mock run, exitting before run.
+fi
+
+
 
