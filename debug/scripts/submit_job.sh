@@ -138,7 +138,7 @@ fi
 
 singularity exec -B /tmp,/dev/shm "$simg_dir"/lofar_sksp_ddf.simg CleanSHM.py
 
-cmd='python "$script_dir"/pipeline.py \
+cmd="python "$script_dir"/pipeline.py \
         --archive_dir="$archive_dir" \
         --root_working_dir="$root_working_dir" \
         --script_dir="$script_dir" \
@@ -172,7 +172,7 @@ cmd='python "$script_dir"/pipeline.py \
         --lofar_sksp_simg="$simg_dir"/lofar_sksp_ddf.simg \
         --lofar_gain_screens_simg="$simg_dir"/lofar_sksp_ddf_gainscreens_premerge.simg \
         --bayes_gain_screens_simg="$bayes_gain_screens_simg" \
-        --bayes_gain_screens_conda_env="$conda_env"'
+        --bayes_gain_screens_conda_env="$conda_env""
 
 if [ -z "$mock_run" ]; then
   eval $cmd
