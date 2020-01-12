@@ -136,6 +136,42 @@ fi
 
 singularity exec -B /tmp,/dev/shm "$simg_dir"/lofar_sksp_ddf.simg CleanSHM.py
 
+echo python "$script_dir"/pipeline.py \
+        --archive_dir="$archive_dir" \
+        --root_working_dir="$root_working_dir" \
+        --script_dir="$script_dir" \
+        --region_file="$region_file" \
+        --auto_resume="$auto_resume" \
+        --ref_dir=0 \
+        --ncpu="$ncpu" \
+        --block_size=40 \
+        --deployment_type=directional \
+        --no_download="$no_download" \
+        --do_download_archive="$do_download_archive" \
+        --do_choose_calibrators="$do_choose_calibrators" \
+        --do_subtract="$do_subtract" \
+        --do_subtract_outside_pb="$do_subtract_outside_pb" \
+        --do_solve_dds4="$do_solve_dds4" \
+        --do_smooth_dds4="$do_smooth_dds4" \
+        --do_slow_solve_dds4="$do_slow_solve_dds4" \
+        --do_tec_inference="$do_tec_inference" \
+        --do_infer_screen="$do_infer_screen" \
+        --do_merge_slow="$do_merge_slow" \
+        --do_image_smooth="$do_image_smooth" \
+        --do_image_subtract_dds4="$do_image_subtract_dds4" \
+        --do_image_dds4="$do_image_dds4" \
+        --do_image_smooth_slow="$do_image_smooth_slow" \
+        --do_image_smooth_slow_restricted="$do_image_smooth_slow_restricted" \
+        --do_image_screen_slow="$do_image_screen_slow" \
+        --do_image_screen_slow_restricted="$do_image_screen_slow_restricted" \
+        --do_image_screen="$do_image_screen" \
+        --obs_num="$obs_num" \
+        --bind_dirs="$bind_dirs" \
+        --lofar_sksp_simg="$simg_dir"/lofar_sksp_ddf.simg \
+        --lofar_gain_screens_simg="$simg_dir"/lofar_sksp_ddf_gainscreens_premerge.simg \
+        --bayes_gain_screens_simg="$bayes_gain_screens_simg" \
+        --bayes_gain_screens_conda_env="$conda_env"
+
 python "$script_dir"/pipeline.py \
         --archive_dir="$archive_dir" \
         --root_working_dir="$root_working_dir" \
