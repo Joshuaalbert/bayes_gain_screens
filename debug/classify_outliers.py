@@ -501,6 +501,7 @@ if __name__ == '__main__':
 
     import os, glob
     working_dir = os.path.join(os.getcwd(), 'outlier_detection')
+    os.makedirs(working_dir,exist_ok=True)
     datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
     # ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
     ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits']*len(datapacks)
