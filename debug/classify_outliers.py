@@ -377,6 +377,7 @@ def click_through(datapack, ref_image, working_dir, reset = False):
     time_ax = fig.add_subplot(gs[0, :])
     time_ax.set_xlabel('time [hours]')
     time_ax.set_ylabel('DDTEC [mTECU]')
+    vline = time_ax.plot([0,0],[-1,1], c='red', alpha=0.5)[0]
 
     time_plots = [time_ax.plot( np.arange(window*2),  0.*np.arange(window*2), c='black')[0] for _ in range(4)]
 
@@ -458,6 +459,7 @@ def click_through(datapack, ref_image, working_dir, reset = False):
                             time_plot.set_color(cmap(norm(tec[0,closest_idx, a, t])))
                     time_ax.set_xlim(times[t] - window_time, times[t] + window_time)
                     time_ax.set_ylim(tec[0,point,a,start:stop].min()-5., tec[0,point,a,start:stop].max()+5.)
+                    vline.set_data([times[t], times[t]], [tec[0,point,a,start:stop].min()-5., tec[0,point,a,start:stop].max()+5.])
                 fig.canvas.draw()
                 # break
 
