@@ -354,11 +354,11 @@ def click_through(datapack, ref_image, working_dir, reset = False):
     ref_dir = directions[0:1, :]
 
     _, guess_flags = filter_tec_dir(tec[0,...], directions, init_y_uncert=None, min_res=8.)
-    # guess_flags = np.ones([Nd, Na, Nt], np.bool)
     if os.path.isfile(save_file) and not reset:
         human_flags = np.load(save_file)
     else:
         human_flags = -1*np.ones([Nd, Na, Nt], np.int32)
+    guess_flags = np.where(human_flags != -1, human_flags, guess_flags)
 
     # compute Voronoi tesselation
     vor = Voronoi(directions)
@@ -405,20 +405,26 @@ def click_through(datapack, ref_image, working_dir, reset = False):
     dir_ax.set_ylim(vor.min_bound[1] - 0.1*radius, vor.max_bound[1] + 0.1*radius)
 
     def onkeyrelease(event):
+        _, a, t, norm = loc
         print('Pressed {} ({}, {})'.format(event.key, event.xdata, event.ydata))
         if event.key == 'n':
             print("Saving... going to next.")
+            human_flags[:,a,t] = np.where(human_flags[:,a,t] == -1, 0, human_flags[:,a,t])
             np.save(save_file, human_flags)
             next_loc = min(loc[0]+1, len(order))
             load_data(next_loc)
         if event.key == 'b':
             print("Saving... going to back.")
+            human_flags[:, a, t] = np.where(human_flags[:, a, t] == -1, 0, human_flags[:, a, t])
             np.save(save_file, human_flags)
             next_loc = max(loc[0]-1, 0)
             load_data(next_loc)
-        if event.key == 's':
-            print("Saving...")
-            np.save(save_file, human_flags)
+        if event.key == 'x':
+            print("Exit")
+            # np.save(save_file, human_flags)
+            plt.close('all')
+            return save_file
+
 
     def onclick(event):
         _, a, t, norm = loc
@@ -439,7 +445,7 @@ def click_through(datapack, ref_image, working_dir, reset = False):
                         polygons[i].set_edgecolor('green')
                     polygons[i].set_zorder(11)
                     print("to {}".format(human_flags[point, a, t]))
-                if event.button == 3:
+                if event.button == 3 or event.button == 1:
                     start = max(0, t - window)
                     stop = min(Nt, t + window)
                     for n in range(4):
@@ -467,13 +473,14 @@ def click_through(datapack, ref_image, working_dir, reset = False):
             list(len(search_first[0])+np.random.choice(len(search_second[0]), len(search_second[0]), replace=False))
     loc = [0,0,0, plt.Normalize(-1.,1.)]
 
-    def load_data(next_loc):
+    def load_data(next_loc, next_new=False):
         loc[0] = next_loc
         o = order[next_loc]
         a = search[0][o]
         t = search[1][o]
         loc[1] = a
         loc[2] = t
+
         print("Looking at ant{:02d} and time {}".format(a, t))
         vmin, vmax = np.min(tec[0, :, a, t]), np.max(tec[0, :, a, t])
         vmin, vmax = min(vmin, -vmax), max(vmax, -vmin)
@@ -481,13 +488,19 @@ def click_through(datapack, ref_image, working_dir, reset = False):
         loc[3] = norm
         for i, p in enumerate(polygons):
             p.set_facecolor(cmap(norm(tec[0, i, a, t])))
-            if guess_flags[i, a, t]:
+            if np.all(human_flags[i, a, t] == 0):
+                p.set_edgecolor('green')
+                p.set_zorder(11)
+            elif np.all(human_flags[i, a, t] == 1):
+                p.set_edgecolor('red')
+                p.set_zorder(11)
+            elif guess_flags[i, a, t]:
                 p.set_edgecolor('cyan')
                 p.set_zorder(11)
             else:
                 p.set_edgecolor('black')
                 p.set_zorder(10)
-        human_flags[:, a, t] = 0
+        # human_flags[:, a, t] = 0
         fig.canvas.draw()
 
     load_data(0)
