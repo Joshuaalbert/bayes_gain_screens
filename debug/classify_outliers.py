@@ -150,7 +150,7 @@ class Classifier(object):
             self.shard_idx = tf.placeholder(tf.int32, shape=[])
 
             train_dataset = tf.data.Dataset.from_tensor_slices([self.label_files_pl, self.ref_images_pl, self.datapacks_pl])
-            train_dataset = train_dataset.flat_map(self._build_training_dataset, num_parallel_calls=5)
+            train_dataset = train_dataset.flat_map(self._build_training_dataset)
             train_dataset = train_dataset.shard(2,self.shard_idx).shuffle(1000).map(self._augment)\
                 .batch(batch_size=batch_size, drop_remainder=True)
 
@@ -171,7 +171,7 @@ class Classifier(object):
             self.opt = tf.train.AdamOptimizer().minimize(self.loss, global_step=self.global_step)
 
             eval_dataset = tf.data.Dataset.from_tensor_slices(self.label_files_pl)
-            eval_dataset = eval_dataset.flat_map(self._build_eval_dataset, num_parallel_calls=5) \
+            eval_dataset = eval_dataset.flat_map(self._build_eval_dataset) \
                 .batch(batch_size=batch_size, drop_remainder=False)
 
             iterator_tensor = eval_dataset.make_initializable_iterator()
