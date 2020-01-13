@@ -502,7 +502,8 @@ if __name__ == '__main__':
     import os, glob
     working_dir = os.path.join(os.getcwd(), 'outlier_detection')
     datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
-    ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
+    # ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
+    ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits']*len(datapacks)
     label_files = []
     for dp, ref_img in zip(datapacks, ref_images):
         label_files.append(click_through(dp, ref_img, working_dir, reset=False))
