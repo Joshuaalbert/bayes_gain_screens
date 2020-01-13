@@ -13,7 +13,7 @@ from astropy.wcs import WCS
 import tensorflow as tf
 import networkx as nx
 from graph_nets.utils_np import networkxs_to_graphs_tuple
-from sklearn.model_selection import StratifiedShuffleSplit
+# from sklearn.model_selection import StratifiedShuffleSplit
 
 def flatten(f):
     """ Flatten a fits file so that it becomes a 2D image. Return new header and data """
