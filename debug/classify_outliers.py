@@ -154,16 +154,15 @@ class Classifier(object):
             train_dataset = tf.data.Dataset.from_tensor_slices((self.label_files_pl, self.ref_images_pl, self.datapacks_pl))
             train_dataset = train_dataset.map(self._build_training_dataset) \
                 .filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))
-            train_dataset = train_dataset.shard(2,self.shard_idx).shuffle(1000).map(self._augment)\
+            train_dataset = train_dataset.map(self._augment)\
                 .filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))\
                 .batch(batch_size=batch_size, drop_remainder=True)
 
             iterator_tensor = train_dataset.make_initializable_iterator()
             self.train_init = iterator_tensor.initializer
             self.train_inputs, self.train_labels, self.train_mask = iterator_tensor.get_next()
-            print(self.train_inputs)
+
             self.train_inputs.set_shape([None, None, (1+self.K)*2])
-            print(self.train_inputs)
 
             train_outputs = self.build_model(self.train_inputs, output_bias=output_bias)
             labels_ext = tf.broadcast_to(self.train_labels, tf.shape(train_outputs))
