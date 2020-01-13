@@ -150,7 +150,8 @@ class Classifier(object):
             self.shard_idx = tf.placeholder(tf.int32, shape=[])
 
             train_dataset = tf.data.Dataset.from_tensor_slices([self.label_files_pl, self.ref_images_pl, self.datapacks_pl])
-            train_dataset = train_dataset.flat_map(self._build_training_dataset)
+            train_dataset = train_dataset.flat_map(self._build_training_dataset)\
+                .filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))
             train_dataset = train_dataset.shard(2,self.shard_idx).shuffle(1000).map(self._augment)\
                 .batch(batch_size=batch_size, drop_remainder=True)
 
@@ -303,28 +304,13 @@ class Classifier(object):
 
 
 
-def click_through(datapack, ref_image, working_dir, reset = False):
+def click_through(save_file, datapack, ref_image, working_dir, reset = False):
     with fits.open(ref_image) as f:
         hdu = flatten(f)
         data = hdu.data
         wcs = WCS(hdu.header)
     window = 20
 
-
-
-    linked_datapack = os.path.join(working_dir,os.path.basename(os.path.abspath(datapack)))
-    if os.path.islink(linked_datapack):
-        os.unlink(linked_datapack)
-    print("Linking {} -> {}".format(os.path.abspath(datapack), linked_datapack))
-    os.symlink(os.path.abspath(datapack), linked_datapack)
-
-    linked_ref_image = linked_datapack.replace('.h5','.ref_image.fits')
-    if os.path.islink(linked_ref_image):
-        os.unlink(linked_ref_image)
-    print("Linking {} -> {}".format(os.path.abspath(ref_image), linked_ref_image))
-    os.symlink(os.path.abspath(ref_image), linked_ref_image)
-
-    save_file = linked_datapack.replace('.h5','.labels.npy')
 
     dp = DataPack(datapack, readonly=True)
 
@@ -424,7 +410,12 @@ def click_through(datapack, ref_image, working_dir, reset = False):
             print("Exit")
             # np.save(save_file, human_flags)
             plt.close('all')
-            return save_file
+            return False
+        if event.key == 'l':
+            print("Exit")
+            # np.save(save_file, human_flags)
+            plt.close('all')
+            return True
 
 
     def onclick(event):
@@ -507,7 +498,7 @@ def click_through(datapack, ref_image, working_dir, reset = False):
 
     load_data(0)
     plt.show()
-    return save_file
+    return False
 
 if __name__ == '__main__':
     # dp = '/net/nederrijn/data1/albert/screens/root/L562061/download_archive/L562061_DDS4_full_merged.h5'
@@ -521,10 +512,31 @@ if __name__ == '__main__':
     # ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
     ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits']*len(datapacks)
     label_files = []
+    linked_datapacks = []
+    linked_ref_images = []
     for dp, ref_img in zip(datapacks, ref_images):
-        label_files.append(click_through(dp, ref_img, working_dir, reset=False))
+        linked_datapack = os.path.join(working_dir, os.path.basename(os.path.abspath(dp)))
+        if os.path.islink(linked_datapack):
+            os.unlink(linked_datapack)
+        print("Linking {} -> {}".format(os.path.abspath(dp), linked_datapack))
+        os.symlink(os.path.abspath(dp), linked_datapack)
+
+        linked_ref_image = linked_datapack.replace('.h5', '.ref_image.fits')
+        if os.path.islink(linked_ref_image):
+            os.unlink(linked_ref_image)
+        print("Linking {} -> {}".format(os.path.abspath(ref_img), linked_ref_image))
+        os.symlink(os.path.abspath(ref_img), linked_ref_image)
+
+        save_file = linked_datapack.replace('.h5', '.labels.npy')
+        label_files.append(save_file)
+        linked_datapacks.append(linked_datapack)
+        linked_ref_images.append(linked_ref_images)
+        if click_through(save_file, linked_datapack, linked_ref_image, working_dir, reset=False):
+            break
+
+
 
     output_bias, pos_weight = get_output_bias(label_files)
     c = Classifier(L=4, K=3, n_features=16, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    c.train_model(label_files, ref_images, datapacks, epochs=10, working_dir=os.path.join(working_dir, 'model'))
+    c.train_model(label_files, linked_ref_images, linked_datapacks, epochs=10, working_dir=os.path.join(working_dir, 'model'))
 
