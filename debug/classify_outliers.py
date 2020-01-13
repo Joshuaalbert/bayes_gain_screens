@@ -70,6 +70,7 @@ def build_training_dataset(label_file, ref_image, datapack, K=3):
     :return:
     """
 
+    print("Getting data for",label_file, ref_image, datapack, K)
     with fits.open(ref_image) as f:
         hdu = flatten(f)
         data = hdu.data
@@ -135,22 +136,23 @@ def get_output_bias(label_files):
 
 
 class Classifier(object):
-    def __init__(self, L=4, K=3, n_features = 16, batch_size=16, graph=None, output_bias=0., pos_weight = 1.):
+    def __init__(self, L=4, K=3, n_features = 16, batch_size=16, graph=None, output_bias=0., pos_weight = 1., crop_size=60):
         if graph is None:
             graph = tf.Graph()
         self.graph = graph
         self.K = K
         N = (K + 1) * 2
         self.L = L
+        self.crop_size=crop_size
         self.n_features = n_features
         with self.graph.as_default():
             self.label_files_pl = tf.placeholder(tf.string, shape=[None], name='label_files')
             self.datapacks_pl = tf.placeholder(tf.string, shape=[None], name='datapacks')
             self.ref_images_pl = tf.placeholder(tf.string, shape=[None], name='ref_images')
-            self.shard_idx = tf.placeholder(tf.int32, shape=[])
+            self.shard_idx = tf.placeholder(tf.int64, shape=[])
 
-            train_dataset = tf.data.Dataset.from_tensor_slices([self.label_files_pl, self.ref_images_pl, self.datapacks_pl])
-            train_dataset = train_dataset.flat_map(self._build_training_dataset) \
+            train_dataset = tf.data.Dataset.from_tensor_slices((self.label_files_pl, self.ref_images_pl, self.datapacks_pl))
+            train_dataset = train_dataset.map(self._build_training_dataset) \
                 .filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))
             train_dataset = train_dataset.shard(2,self.shard_idx).shuffle(1000).map(self._augment)\
                 .filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))\
@@ -159,33 +161,38 @@ class Classifier(object):
             iterator_tensor = train_dataset.make_initializable_iterator()
             self.train_init = iterator_tensor.initializer
             self.train_inputs, self.train_labels, self.train_mask = iterator_tensor.get_next()
+            print(self.train_inputs)
+            self.train_inputs.set_shape([None, None, (1+self.K)*2])
+            print(self.train_inputs)
 
             train_outputs = self.build_model(self.train_inputs, output_bias=output_bias)
             labels_ext = tf.broadcast_to(self.train_labels, tf.shape(train_outputs))
+            mask_ext = tf.broadcast_to(self.train_mask, tf.shape(train_outputs))
             self.pred_probs = tf.nn.sigmoid(train_outputs)
-            self.conf_mat = tf.math.confusion_matrix(tf.reshape(self.train_labels, (-1,)),
+            self.conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
                                                      tf.reshape(self.pred_probs, (-1,)),
-                                                     weights=tf.reshape(self.train_mask, (-1,)),
+                                                     weights=tf.reshape(mask_ext, (-1,)),
                                                      num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels_ext, logits=train_outputs, pos_weight=pos_weight)
             self.loss = tf.reduce_mean(loss * self.train_mask)
             self.global_step = tf.Variable(0, trainable=False)
             self.opt = tf.train.AdamOptimizer().minimize(self.loss, global_step=self.global_step)
 
-            eval_dataset = tf.data.Dataset.from_tensor_slices(self.label_files_pl)
-            eval_dataset = eval_dataset.flat_map(self._build_eval_dataset) \
+            eval_dataset = tf.data.Dataset.from_tensor_slices((self.ref_images_pl, self.datapacks_pl))
+            eval_dataset = eval_dataset.map(self._build_eval_dataset) \
                 .batch(batch_size=batch_size, drop_remainder=False)
 
             iterator_tensor = eval_dataset.make_initializable_iterator()
             self.eval_init = iterator_tensor.initializer
-            self.eval_inputs = iterator_tensor.get_next()
+            self.eval_inputs, = iterator_tensor.get_next()
+            print(self.eval_inputs)
+            self.eval_inputs.set_shape([None, None, (1+self.K)*2])
+            print(self.eval_inputs)
 
             eval_outputs = self.build_model(self.eval_inputs, output_bias=output_bias)
             self.eval_pred_probs = tf.nn.sigmoid(eval_outputs)
 
-    def _build_training_dataset(self, inputs):
-        print(inputs)
-        label_file, ref_image, datapack = inputs
+    def _build_training_dataset(self, label_file, ref_image, datapack):
         return tf.py_function(lambda label_file, ref_image, datapack:
                        build_training_dataset(label_file.numpy(), ref_image.numpy(), datapack.numpy(), self.K),
                        [label_file, ref_image, datapack],
@@ -210,9 +217,17 @@ class Classifier(object):
         os.makedirs(working_dir, exist_ok=True)
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
-            sess.run(tf.initialize_variables(tf.trainable_variables()))
-            saver.restore(sess, working_dir)
+            print("initialising valiables")
+            sess.run(tf.variables_initializer(tf.trainable_variables()))
+#             print("restoring if possibe")
+#             try:
+#                 saver.restore(sess, os.path.join(working_dir, 'model.ckpt'))
+#             except:
+#                 pass
+            print("Running {} epochs".format(epochs))
             for epoch in range(epochs):
+                print("epoch", epoch)
+                print("init data for training")
                 sess.run(self.train_init,
                          {self.label_files_pl: label_files,
                           self.ref_images_pl: ref_images,
@@ -220,12 +235,13 @@ class Classifier(object):
                           self.shard_idx: 0})
                 conf_mat = np.zeros((2,2))
                 epoch_loss = 0
+                print("Run loop")
                 while True:
                     try:
                         _, loss, _conf_mat, global_step = sess.run([self.opt, self.loss, self.conf_mat, self.global_step])
                         conf_mat = conf_mat + _conf_mat
                         epoch_loss += loss
-                        if global_step % 100 == 0:
+                        if global_step % 1 == 0:
                             with np.printoptions(precision=2):
                                 print("TRAIN: Iter {:04d} loss {}\n\tBatch Conf mat: {}".format(global_step, loss, _conf_mat))
                     except tf.errors.OutOfRangeError:
@@ -245,7 +261,7 @@ class Classifier(object):
                             [self.loss, self.conf_mat, self.global_step])
                         conf_mat = conf_mat + _conf_mat
                         epoch_loss += loss
-                        if global_step % 100 == 0:
+                        if global_step % 1 == 0:
                             with np.printoptions(precision=2):
                                 print("TEST: Iter {:04d} loss {}\n\tBatch Conf mat: {}".format(global_step, loss,
                                                                                                 _conf_mat))
@@ -254,13 +270,13 @@ class Classifier(object):
                 print("TEST: Epoch loss: {}".format(epoch_loss))
                 print("TEST: Epoch Conf mat: {}".format(conf_mat))
                 print('Saving...')
-                saver.save(sess, working_dir, global_step=self.global_step)
+                saver.save(sess, os.path.join(working_dir, 'model.ckpt'), global_step=self.global_step)
 
     def eval_model(self, ref_images, datapacks, working_dir='./training'):
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
-            sess.run(tf.initialize_variables(tf.trainable_variables()))
-            saver.restore(sess, working_dir)
+            sess.run(tf.variables_initializer(tf.trainable_variables()))
+            saver.restore(sess, os.path.join(working_dir, 'model.ckpt'))
             sess.run(self.eval_init,
                      {self.ref_images_pl: ref_images,
                       self.datapacks_pl: datapacks})
@@ -275,14 +291,13 @@ class Classifier(object):
             predictions = np.concatenate(predictions, axis=0)
 
 
-
     def build_model(self, inputs, output_bias=0.):
         with tf.variable_scope('classifier', reuse=tf.AUTO_REUSE):
             num = 0
             features = tf.layers.conv1d(inputs, self.n_features, [1], strides=1, padding='same', activation=None,name='conv_{:02d}'.format(num))
             num += 1
             outputs = []
-            for s in [1, 2, 3, 4]:
+            for s in [1]:
                 for d in [1, 2, 3, 4]:
                     if s > 1 and d > 1:
                         continue
@@ -302,13 +317,13 @@ class Classifier(object):
             num += 1
             return outputs
 
-    def _augment(self, inputs, labels, mask, crop_size):
-        sizes = [inputs.shape.as_list[-1,labels.shape.as_list[-1],mask.shape.as_list[-1]]]
+    def _augment(self, inputs, labels, mask):
+        sizes = [(1+self.K)*2, 1, 1]
         c = np.cumsum(sizes)
         N = sum(sizes)
         large = tf.concat([inputs, labels, mask], axis=-1)
         large = tf.image.random_flip_up_down(
-            tf.image.random_crop(large, (crop_size, N))[..., None])[..., 0]
+            tf.image.random_crop(large, (self.crop_size, N))[..., None])[..., 0]
         inputs, labels, mask = large[..., :c[0]], large[..., c[0]:c[1]], large[..., c[1]:c[2]]
         return [inputs, labels, mask]
 
@@ -516,7 +531,7 @@ if __name__ == '__main__':
     # click_through(dp, ref_img)
 
     import os, glob
-    working_dir = os.path.join(os.getcwd(), 'outlier_detection')
+    working_dir = os.path.join('/home/albert/git/bayes_gain_screens/debug', 'outlier_detection')
     os.makedirs(working_dir,exist_ok=True)
     datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
     # ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
@@ -547,6 +562,8 @@ if __name__ == '__main__':
 
 
     output_bias, pos_weight = get_output_bias(label_files)
+    print("Output bias: {}".format(output_bias))
+    print("Pos weight: {}".format(pos_weight))
     c = Classifier(L=4, K=3, n_features=16, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
     c.train_model(label_files, linked_ref_images, linked_datapacks, epochs=10, working_dir=os.path.join(working_dir, 'model'))
 
