@@ -150,9 +150,10 @@ class Classifier(object):
             self.shard_idx = tf.placeholder(tf.int32, shape=[])
 
             train_dataset = tf.data.Dataset.from_tensor_slices([self.label_files_pl, self.ref_images_pl, self.datapacks_pl])
-            train_dataset = train_dataset.flat_map(self._build_training_dataset)\
+            train_dataset = train_dataset.flat_map(self._build_training_dataset) \
                 .filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))
             train_dataset = train_dataset.shard(2,self.shard_idx).shuffle(1000).map(self._augment)\
+                .filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))\
                 .batch(batch_size=batch_size, drop_remainder=True)
 
             iterator_tensor = train_dataset.make_initializable_iterator()
@@ -182,7 +183,15 @@ class Classifier(object):
             eval_outputs = self.build_model(self.eval_inputs, output_bias=output_bias)
             self.eval_pred_probs = tf.nn.sigmoid(eval_outputs)
 
-    def _build_training_dataset(self, label_file, ref_image, datapack):
+    def _build_training_dataset(self, inputs):
+        label_file, ref_image, datapack = inputs
+        return tf.py_function(lambda label_file, ref_image, datapack:
+                       build_training_dataset(label_file.numpy(), ref_image.numpy(), datapack.numpy(), self.K),
+                       [label_file, ref_image, datapack],
+                       [tf.float32, tf.float32, tf.float32]
+                       )
+
+    def __build_training_dataset(self, label_file, ref_image, datapack):
         return tf.py_function(lambda label_file, ref_image, datapack:
                        build_training_dataset(label_file.numpy(), ref_image.numpy(), datapack.numpy(), self.K),
                        [label_file, ref_image, datapack],
