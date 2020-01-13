@@ -184,6 +184,7 @@ class Classifier(object):
             self.eval_pred_probs = tf.nn.sigmoid(eval_outputs)
 
     def _build_training_dataset(self, inputs):
+        print(inputs)
         label_file, ref_image, datapack = inputs
         return tf.py_function(lambda label_file, ref_image, datapack:
                        build_training_dataset(label_file.numpy(), ref_image.numpy(), datapack.numpy(), self.K),
@@ -540,8 +541,8 @@ if __name__ == '__main__':
         label_files.append(save_file)
         linked_datapacks.append(linked_datapack)
         linked_ref_images.append(linked_ref_images)
-        if click_through(save_file, linked_datapack, linked_ref_image, working_dir, reset=False):
-            break
+        # if click_through(save_file, linked_datapack, linked_ref_image, working_dir, reset=False):
+        #     break
 
 
 
