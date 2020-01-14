@@ -121,9 +121,9 @@ class training_data_gen(object):
                         continue
                     break
                 if np.random.uniform() < 0.5:
-                    yield [inputs[b,start:stop:1,:], labels[b, start:stop:1, :], mask[b, start:stop:1, :]]
+                    yield (inputs[b,start:stop:1,:], labels[b, start:stop:1, :], mask[b, start:stop:1, :])
                 else:
-                    yield [inputs[b,stop:start:-1,:], labels[b, stop:start:-1, :], mask[b, stop:start:-1, :]]
+                    yield (inputs[b,stop:start:-1,:], labels[b, stop:start:-1, :], mask[b, stop:start:-1, :])
         return
 
 class eval_data_gen(object):
@@ -162,7 +162,7 @@ class eval_data_gen(object):
             # Nd*Na,Nt, (K+1)*2
             inputs = np.concatenate(inputs, axis=0)
             for b in range(inputs.shape[0]):
-                yield [inputs[b,:,:]]
+                yield (inputs[b,:,:],)
         return
 
 # def build_training_dataset(label_file, ref_image, datapack, K=3):
@@ -296,10 +296,10 @@ class Classifier(object):
             dataset = dataset.interleave(lambda  label_files, ref_images, datapacks:
                                          tf.data.Dataset.from_generator(
                                              training_data_gen(self.K, self.crop_size),
-                                             output_types=[tf.float32, tf.int32, tf.int32],
-                                             output_shapes=[tf.TensorShape([self.crop_size, N]),
-                                              tf.TensorShape([self.crop_size, 1]),
-                                              tf.TensorShape([self.crop_size, 1])],
+                                             output_types=(tf.float32, tf.int32, tf.int32),
+                                             output_shapes=((self.crop_size, N),
+                                                            (self.crop_size, 1),
+                                                            (self.crop_size, 1),),
                                              args=(label_files, ref_images, datapacks)),
                                          cycle_length=1,
                                          block_length=1
@@ -326,8 +326,8 @@ class Classifier(object):
             dataset = dataset.interleave(lambda label_files, ref_images, datapacks:
                                          tf.data.Dataset.from_generator(
                                              eval_data_gen(self.K),
-                                             output_types=[tf.float32],
-                                             output_shapes=[tf.TensorShape([self.crop_size, N])],
+                                             output_types=(tf.float32,),
+                                             output_shapes=((self.crop_size, N),),
                                              args=(label_files, ref_images, datapacks)),
                                          cycle_length=1,
                                          block_length=1
