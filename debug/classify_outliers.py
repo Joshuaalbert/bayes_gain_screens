@@ -14,6 +14,7 @@ from astropy.wcs import WCS
 import tensorflow.compat.v1 as tf
 import networkx as nx
 from graph_nets.utils_np import networkxs_to_graphs_tuple
+from sklearn.metrics import roc_curve
 
 
 # from sklearn.model_selection import StratifiedShuffleSplit
@@ -384,6 +385,36 @@ class Classifier(object):
             self.global_step = tf.Variable(0, trainable=False)
             self.opt = tf.train.AdamOptimizer().minimize(self.train_loss, global_step=self.global_step)
 
+    def get_ROC(self, ensemble_probs, labels, mask, desired_fnr=0.01):
+        def _fnr_fpr(probs, labels, mask, threshold):
+            conf_mat = tf.math.confusion_matrix(tf.reshape(labels, (-1,)),
+                                                       tf.reshape(probs > threshold, (-1,)),
+                                                       weights=tf.reshape(mask, (-1,)),
+                                                       num_classes=2, dtype=tf.float32)
+            tn = conf_mat[0, 0]
+            fp = conf_mat[0, 1]
+            fn = conf_mat[1, 0]
+            tp = conf_mat[1, 1]
+            T = tp + fn
+            F = tn + fp
+            fpr = fp / F
+            fnr = fn / T
+            return (fpr, fnr)
+        thresholds = tf.linspace(0., 1., 100)
+
+        ensemble_probs = tf.unstack(ensemble_probs)
+        FPR, FNR = [],[]
+        for probs in ensemble_probs:
+            fpr, fnr = tf.map_fn(lambda t: _fnr_fpr(probs, labels, mask, t), thresholds, dtype=(probs.dtype, probs.dtype))
+            FPR.append(fpr)
+            FNR.append(fnr)
+
+        return
+
+
+
+
+
     def conf_mat_to_str(self, conf_mat):
         tn = conf_mat[0, 0]
         fp = conf_mat[0, 1]
@@ -425,16 +456,23 @@ class Classifier(object):
                 epoch_train_loss = []
                 epoch_test_loss = []
                 print("Run loop")
+                epoch_test_preds = []
+                epoch_test_labels = []
+                epoch_test_mask = []
                 batch = 0
                 while True:
                     try:
-                        _, train_loss, train_conf_mat, test_loss, test_conf_mat, global_step = sess.run(
+                        _, train_loss, train_conf_mat, test_loss, test_conf_mat, global_step, test_preds, test_labels, \
+                        test_mask = sess.run(
                             [self.opt, self.train_loss, self.train_conf_mat, self.test_loss, self.test_conf_mat,
-                             self.global_step])
+                             self.global_step, self.test_pred_probs, self.test_labels, self.test_mask])
                         epoch_train_conf_mat += train_conf_mat
                         epoch_test_conf_mat += test_conf_mat
                         epoch_train_loss.append(train_loss)
                         epoch_test_loss.append(test_loss)
+                        epoch_test_preds.append(test_preds)
+                        epoch_test_labels.append(test_labels)
+                        epoch_test_mask.append(test_mask)
                         if global_step % print_freq == 0:
                             with np.printoptions(precision=2):
                                 print("Step {:04d} Epoch {} batch {} train loss {} test loss {}".format(global_step,
@@ -446,6 +484,17 @@ class Classifier(object):
                         batch += 1
                     except tf.errors.OutOfRangeError:
                         break
+                epoch_test_preds = np.concatenate(epoch_test_preds, axis=1)
+                epoch_test_labels = np.concatenate(epoch_test_labels, axis=0)
+                epoch_test_labels = np.where(epoch_test_labels == -1, 0, epoch_test_labels)
+                epoch_test_mask = np.concatenate(epoch_test_mask, axis=0)
+                for m in range(epoch_test_preds.shape[0]):
+                    fpr, tpr, thresholds = roc_curve(epoch_test_labels.flatten(), epoch_test_preds[m,...].flatten(),
+                                                     sample_weight=epoch_test_mask.flatten())
+                    plt.scatter(fpr, tpr)
+                    plt.title(m)
+                    plt.show()
+
                 print("Epoch {} train loss: {} +- {} test loss: {} +- {}".format(epoch, np.mean(epoch_train_loss),
                                                                                  np.std(epoch_train_loss),
                                                                                  np.mean(epoch_test_loss),
