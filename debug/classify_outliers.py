@@ -87,19 +87,12 @@ def build_training_dataset(label_file, ref_image, datapack, K=3):
     tec, axes = dp.tec
     _, Nd, Na, Nt = tec.shape
     tec_uncert, _ = dp.weights_tec
+    tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
     _, directions = dp.get_directions(axes['dir'])
     directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
     directions = wcs.wcs_world2pix(directions, 0)
 
     __, nn_idx = cKDTree(directions).query(directions, k=K + 1)
-
-    dp = DataPack(datapack, readonly=True)
-
-    dp.current_solset = 'directionally_referenced'
-    dp.select(pol=slice(0, 1, 1))
-    tec, axes = dp.tec
-    _, Nd, Na, Nt = tec.shape
-    tec_uncert, _ = dp.weights_tec
 
     if label_file is not None:
         # Nd, Na, Nt
@@ -148,19 +141,12 @@ def build_eval_dataset(ref_image, datapack, K=3):
     tec, axes = dp.tec
     _, Nd, Na, Nt = tec.shape
     tec_uncert, _ = dp.weights_tec
+    tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
     _, directions = dp.get_directions(axes['dir'])
     directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
     directions = wcs.wcs_world2pix(directions, 0)
 
     __, nn_idx = cKDTree(directions).query(directions, k=K + 1)
-
-    dp = DataPack(datapack, readonly=True)
-
-    dp.current_solset = 'directionally_referenced'
-    dp.select(pol=slice(0, 1, 1))
-    tec, axes = dp.tec
-    _, Nd, Na, Nt = tec.shape
-    tec_uncert, _ = dp.weights_tec
 
     inputs = []
     for d in range(Nd):
