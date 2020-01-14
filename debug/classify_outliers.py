@@ -11,7 +11,7 @@ from scipy.spatial import Voronoi, cKDTree
 from scipy.optimize import linprog
 from astropy.io import fits
 from astropy.wcs import WCS
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import networkx as nx
 from graph_nets.utils_np import networkxs_to_graphs_tuple
 
@@ -98,9 +98,11 @@ def build_training_dataset(label_file, ref_image, datapack, K=3):
         # Nd, Na, Nt
         human_flags = np.load(label_file)
         # Nd*Na,Nt, 1
-        labels = human_flags.reshape((Nd * Na, Nt, 1))
-        mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1))
-        labels = np.where(labels == -1, 0, labels)
+        labels = human_flags.reshape((Nd * Na, Nt, 1)).astype(np.int32)
+        mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1)).astype(np.int32)
+        labels = np.where(labels == -1., 0., labels)
+
+    print(np.where(labels < 0))
 
     # tec = np.pad(tec,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
     # tec_uncert = np.pad(tec_uncert,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
@@ -115,9 +117,8 @@ def build_training_dataset(label_file, ref_image, datapack, K=3):
 
     # Nd*Na,Nt, (K+1)*2
     inputs = np.concatenate(inputs, axis=0)
-    if label_file is not None:
-        return [inputs, labels, mask]
-    return [inputs]
+    return [inputs, labels, mask]
+
 
 
 def build_eval_dataset(ref_image, datapack, K=3):
@@ -188,7 +189,6 @@ class Classifier(object):
             self.label_files_pl = tf.placeholder(tf.string, shape=[None], name='label_files')
             self.datapacks_pl = tf.placeholder(tf.string, shape=[None], name='datapacks')
             self.ref_images_pl = tf.placeholder(tf.string, shape=[None], name='ref_images')
-            self.shard_idx = tf.placeholder(tf.int64, shape=[])
 
             ###
             # train/test inputs
