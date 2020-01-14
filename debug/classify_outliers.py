@@ -107,6 +107,7 @@ def build_training_dataset(label_file, ref_image, datapack, K=3):
         # Nd*Na,Nt, 1
         labels = human_flags.reshape((Nd * Na, Nt, 1))
         mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1))
+        labels = np.where(labels == -1, 0, labels)
 
     # tec = np.pad(tec,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
     # tec_uncert = np.pad(tec_uncert,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
@@ -246,7 +247,7 @@ class Classifier(object):
             test_outputs = self.build_model(self.test_inputs, output_bias=output_bias)
             eval_outputs = self.build_model(self.eval_inputs, output_bias=output_bias)
 
-            labels_ext = tf.maximum(0., tf.broadcast_to(self.train_labels, tf.shape(train_outputs)))
+            labels_ext = tf.broadcast_to(self.train_labels, tf.shape(train_outputs))
             mask_ext = tf.broadcast_to(self.train_mask, tf.shape(train_outputs))
             self.train_pred_probs = tf.nn.sigmoid(train_outputs)
             self.train_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
@@ -257,7 +258,7 @@ class Classifier(object):
                                                             pos_weight=pos_weight)
             self.train_loss = tf.reduce_mean(loss * self.train_mask)
 
-            labels_ext = tf.maximum(0., tf.broadcast_to(self.test_labels, tf.shape(test_outputs)))
+            labels_ext = tf.broadcast_to(self.test_labels, tf.shape(test_outputs))
             mask_ext = tf.broadcast_to(self.test_mask, tf.shape(test_outputs))
             self.test_pred_probs = tf.nn.sigmoid(test_outputs)
             self.test_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
