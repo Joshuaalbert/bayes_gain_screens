@@ -80,6 +80,7 @@ class training_data_gen(object):
                 wcs = WCS(hdu.header)
 
             dp = DataPack(datapack, readonly=True)
+            print(dp)
             dp.current_solset = 'directionally_referenced'
             dp.select(pol=slice(0, 1, 1))
             tec, axes = dp.tec
