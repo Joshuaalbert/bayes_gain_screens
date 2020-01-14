@@ -79,15 +79,18 @@ class training_data_gen(object):
                 # data = hdu.data
                 wcs = WCS(hdu.header)
 
-            dp = DataPack(datapack, readonly=True)
-            dp.current_solset = 'directionally_referenced'
-            dp.select(pol=slice(0, 1, 1))
-            tec, axes = dp.tec
+            tec = np.load(datapack)['tec'].copy()
+            tec_uncert = np.load(datapack)['tec_uncert'].copy()
+            directions = np.load(datapack)['directions'].copy()
+            # dp = DataPack(datapack, readonly=True)
+            # dp.current_solset = 'directionally_referenced'
+            # dp.select(pol=slice(0, 1, 1))
+            # tec, axes = dp.tec
             _, Nd, Na, Nt = tec.shape
-            tec_uncert, _ = dp.weights_tec
+            # tec_uncert, _ = dp.weights_tec
             tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
-            _, directions = dp.get_directions(axes['dir'])
-            directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+            # _, directions = dp.get_directions(axes['dir'])
+            # directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
             directions = wcs.wcs_world2pix(directions, 0)
 
             __, nn_idx = cKDTree(directions).query(directions, k=self.K + 1)
@@ -145,15 +148,18 @@ class eval_data_gen(object):
                 # data = hdu.data
                 wcs = WCS(hdu.header)
 
-            dp = DataPack(datapack, readonly=True)
-            dp.current_solset = 'directionally_referenced'
-            dp.select(pol=slice(0, 1, 1))
-            tec, axes = dp.tec
+            tec = np.load(datapack)['tec'].copy()
+            tec_uncert = np.load(datapack)['tec_uncert'].copy()
+            directions = np.load(datapack)['directions'].copy()
+            # dp = DataPack(datapack, readonly=True)
+            # dp.current_solset = 'directionally_referenced'
+            # dp.select(pol=slice(0, 1, 1))
+            # tec, axes = dp.tec
             _, Nd, Na, Nt = tec.shape
-            tec_uncert, _ = dp.weights_tec
+            # tec_uncert, _ = dp.weights_tec
             tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
-            _, directions = dp.get_directions(axes['dir'])
-            directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+            # _, directions = dp.get_directions(axes['dir'])
+            # directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
             directions = wcs.wcs_world2pix(directions, 0)
 
             __, nn_idx = cKDTree(directions).query(directions, k=self.K + 1)
@@ -724,6 +730,7 @@ if __name__ == '__main__':
     label_files = []
     linked_datapacks = []
     linked_ref_images = []
+    linked_datapack_npzs = []
     for dp, ref_img in zip(datapacks, ref_images):
         linked_datapack = os.path.join(working_dir, os.path.basename(os.path.abspath(dp)))
         if os.path.islink(linked_datapack):
@@ -744,10 +751,22 @@ if __name__ == '__main__':
         # if click_through(save_file, linked_datapack, linked_ref_image, working_dir, reset=False):
         #     break
 
+        dp = DataPack(dp, readonly=True)
+        dp.current_solset='directionally_referenced'
+        dp.select(pol=slice(0,1,1))
+        tec, axes = dp.tec
+        tec_uncert, _ = dp.weights_tec
+        _, directions = dp.get_directions(axes['dir'])
+        linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
+        np.savez(linked_datapack_npz, tec=tec, tec_uncert=tec_uncert,
+                 directions=np.stack([directions.ra.deg, directions.dec.deg], axis=1))
+        linked_datapack_npzs.append(linked_datapack_npz)
+
+
     output_bias, pos_weight = get_output_bias(label_files)
     print("Output bias: {}".format(output_bias))
     print("Pos weight: {}".format(pos_weight))
     c = Classifier(L=4, K=3, n_features=16, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    c.train_model(label_files, linked_ref_images, linked_datapacks, epochs=10,
+    c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=10,
                   working_dir=os.path.join(working_dir, 'model'))
 
