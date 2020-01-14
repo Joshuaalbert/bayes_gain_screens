@@ -80,7 +80,6 @@ class training_data_gen(object):
                 wcs = WCS(hdu.header)
 
             dp = DataPack(datapack, readonly=True)
-            print(dp)
             dp.current_solset = 'directionally_referenced'
             dp.select(pol=slice(0, 1, 1))
             tec, axes = dp.tec
@@ -92,6 +91,8 @@ class training_data_gen(object):
             directions = wcs.wcs_world2pix(directions, 0)
 
             __, nn_idx = cKDTree(directions).query(directions, k=self.K + 1)
+
+            print("TEST B")
 
             # Nd, Na, Nt
             human_flags = np.load(label_file)
@@ -113,6 +114,7 @@ class training_data_gen(object):
 
             # Nd*Na,Nt, (K+1)*2
             inputs = np.concatenate(inputs, axis=0)
+            print("TEST A")
             for b in range(inputs.shape[0]):
                 if np.sum(mask[b,:,:]) == 0:
                     print("Skipping", b)
