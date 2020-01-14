@@ -88,7 +88,7 @@ class training_data_gen(object):
             # tec, axes = dp.tec
             _, Nd, Na, Nt = tec.shape
             # tec_uncert, _ = dp.weights_tec
-            tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
+            tec_uncert = np.maximum(0.1, np.where(np.isinf(tec_uncert), 1., tec_uncert))
             # _, directions = dp.get_directions(axes['dir'])
             # directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
             directions = wcs.wcs_world2pix(directions, 0)
@@ -155,7 +155,7 @@ class eval_data_gen(object):
             # tec, axes = dp.tec
             _, Nd, Na, Nt = tec.shape
             # tec_uncert, _ = dp.weights_tec
-            tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
+            tec_uncert = np.maximum(0.1, np.where(np.isinf(tec_uncert), 1., tec_uncert))
             # _, directions = dp.get_directions(axes['dir'])
             # directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
             directions = wcs.wcs_world2pix(directions, 0)
