@@ -398,7 +398,7 @@ class Classifier(object):
         fnr = fn / T
         rel_fnr = (fnr / (0.5 * T / F) - 1.) * 100.
         with np.printoptions(precision=2):
-            return "ACC: {} [{}% baseline] FPR: {} [{}% baseline] FNR: {} [{}% baseline]".format(acc, rel_acc, fpr,
+            return "[{} {} | {} {}] ACC: {} [{}% baseline] FPR: {} [{}% baseline] FNR: {} [{}% baseline]".format(tp, fn, fp, tn, acc, rel_acc, fpr,
                                                                                                  rel_fpr, fnr, rel_fnr)
 
     def train_model(self, label_files, ref_images, datapacks, epochs=10, working_dir='./training'):
@@ -450,8 +450,8 @@ class Classifier(object):
                                                                                  np.std(epoch_train_loss),
                                                                                  np.mean(epoch_test_loss),
                                                                                  np.std(epoch_test_loss)))
-                print("Epoch {} train {} ".format(self.conf_mat_to_str(epoch, epoch_train_conf_mat)))
-                print("Epoch {} test  {} ".format(self.conf_mat_to_str(epoch, epoch_test_conf_mat)))
+                print("Epoch {} train {} ".format(epoch, self.conf_mat_to_str(epoch_train_conf_mat)))
+                print("Epoch {} test  {} ".format(epoch, self.conf_mat_to_str(epoch_test_conf_mat)))
                 print('Saving...')
                 save_path = saver.save(sess, os.path.join(working_dir, 'model.ckpt'), global_step=self.global_step)
                 print("Saved to {}".format(save_path))
@@ -496,11 +496,12 @@ class Classifier(object):
                             u = pool(u, pool_size=3, strides=1, padding='same')
                             h.append(u - h[i])
                     outputs.append(h[-1])
-            # S, Nd*Na, Nt
+            # S, Nd*Na, Nt, 1
             outputs = tf.stack(
                 [tf.layers.conv1d(o, 1, [1], padding='same', name='conv_{:02d}'.format(num), use_bias=False) for o in
                  outputs], axis=0)
-            output_bias = tf.Variable(output_bias, dtype=tf.float32, trainable=True)
+            output_bias = tf.Variable(output_bias, dtype=tf.float32, trainable=False)
+            # outputs -= tf.reduce_mean(outputs, axis=-1,keepdims=True)
             outputs += output_bias
             num += 1
             return outputs
