@@ -353,7 +353,7 @@ class Classifier(object):
                                                            tf.reshape(self.train_pred_probs > 0.5, (-1,)),
                                                            weights=tf.reshape(mask_ext, (-1,)),
                                                            num_classes=2, dtype=tf.float32)
-            loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels_ext, logits=train_outputs,
+            loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, train_outputs.dtype), logits=train_outputs,
                                                             pos_weight=pos_weight)
             self.train_loss = tf.reduce_mean(loss * self.train_mask)
 
@@ -364,7 +364,7 @@ class Classifier(object):
                                                           tf.reshape(self.test_pred_probs > 0.5, (-1,)),
                                                           weights=tf.reshape(mask_ext, (-1,)),
                                                           num_classes=2, dtype=tf.float32)
-            loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels_ext, logits=test_outputs,
+            loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, test_outputs.dtype), logits=test_outputs,
                                                             pos_weight=pos_weight)
             self.test_loss = tf.reduce_mean(loss * self.test_mask)
 
