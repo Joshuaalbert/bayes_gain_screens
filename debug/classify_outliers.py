@@ -385,10 +385,10 @@ class Classifier(object):
             self.opt = tf.train.AdamOptimizer().minimize(self.train_loss, global_step=self.global_step)
 
     def conf_mat_to_str(self, conf_mat):
-        tp = conf_mat[0, 0]
-        fn = conf_mat[0, 1]
-        fp = conf_mat[1, 0]
-        tn = conf_mat[1, 1]
+        tn = conf_mat[0, 0]
+        fp = conf_mat[0, 1]
+        fn = conf_mat[1, 0]
+        tp = conf_mat[1, 1]
         T = tp + fn
         F = tn + fp
         acc = (tp + tn) / (T + F)
