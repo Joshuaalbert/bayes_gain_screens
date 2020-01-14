@@ -355,7 +355,7 @@ class Classifier(object):
                                                            num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, train_outputs.dtype), logits=train_outputs,
                                                             pos_weight=pos_weight)
-            self.train_loss = tf.reduce_mean(loss * self.train_mask)
+            self.train_loss = tf.reduce_mean(loss * tf.cast(self.train_mask, loss.dtype))
 
             labels_ext = tf.broadcast_to(self.test_labels, tf.shape(test_outputs))
             mask_ext = tf.broadcast_to(self.test_mask, tf.shape(test_outputs))
@@ -366,7 +366,7 @@ class Classifier(object):
                                                           num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, test_outputs.dtype), logits=test_outputs,
                                                             pos_weight=pos_weight)
-            self.test_loss = tf.reduce_mean(loss * self.test_mask)
+            self.test_loss = tf.reduce_mean(loss * tf.cast(self.test_mask, loss.dtype))
 
             self.eval_pred_probs = tf.nn.sigmoid(eval_outputs)
 
