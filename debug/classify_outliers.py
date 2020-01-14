@@ -94,15 +94,14 @@ def build_training_dataset(label_file, ref_image, datapack, K=3):
 
     __, nn_idx = cKDTree(directions).query(directions, k=K + 1)
 
-    if label_file is not None:
-        # Nd, Na, Nt
-        human_flags = np.load(label_file)
-        # Nd*Na,Nt, 1
-        labels = human_flags.reshape((Nd * Na, Nt, 1)).astype(np.int32)
-        mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1)).astype(np.int32)
-        labels = np.where(labels == -1., 0., labels)
+    # Nd, Na, Nt
+    human_flags = np.load(label_file)
+    # Nd*Na,Nt, 1
+    labels = human_flags.reshape((Nd * Na, Nt, 1)).astype(np.int32)
+    mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1)).astype(np.int32)
+    labels = np.where(labels == -1., 0., labels)
 
-    print(np.where(labels < 0))
+    assert np.all(labels >= 0)
 
     # tec = np.pad(tec,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
     # tec_uncert = np.pad(tec_uncert,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
@@ -370,6 +369,7 @@ class Classifier(object):
                     except tf.errors.OutOfRangeError:
                         break
                 predictions = np.concatenate(predictions, axis=0)
+                print("{} Predictions: {}".format(datapack, predictions.shape))
 
     def build_model(self, inputs, output_bias=0.):
         with tf.variable_scope('classifier', reuse=tf.AUTO_REUSE):
@@ -402,13 +402,14 @@ class Classifier(object):
             return outputs
 
     def _augment(self, inputs, labels, mask):
-        print(inputs, labels, mask)
         sizes = [(1 + self.K) * 2, 1, 1]
         c = np.cumsum(sizes)
+        print(c)
         N = sum(sizes)
+        #B, Nt, N
         large = tf.concat([inputs, labels, mask], axis=-1)
         large = tf.image.random_flip_left_right(
-            tf.image.random_crop(large, (tf.shape(inputs)[0], self.crop_size, N))[..., None])[..., 0]
+            tf.image.random_crop(large, (tf.shape(inputs)[0], self.crop_size, N)))
         inputs, labels, mask = large[..., :c[0]], large[..., c[0]:c[1]], large[..., c[1]:c[2]]
         return [inputs, labels, mask]
 
