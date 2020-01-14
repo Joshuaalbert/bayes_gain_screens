@@ -115,7 +115,9 @@ class training_data_gen(object):
             inputs = np.concatenate(inputs, axis=0)
             for b in range(inputs.shape[0]):
                 if np.sum(mask[b,:,:]) == 0:
+                    print("Skipping", b)
                     continue
+                print("Reading", b)
                 while True:
                     start = np.random.choice(Nt - self.crop_size)
                     stop = start + self.crop_size
