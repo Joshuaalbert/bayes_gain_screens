@@ -143,6 +143,7 @@ def build_eval_dataset(ref_image, datapack, K=3):
     _, Nd, Na, Nt = tec.shape
     tec_uncert, _ = dp.weights_tec
     tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
+    tec_uncert = np.maximum(tec_uncert, 0.1)
     _, directions = dp.get_directions(axes['dir'])
     directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
     directions = wcs.wcs_world2pix(directions, 0)
@@ -206,12 +207,12 @@ class Classifier(object):
             iterator_tensor = train_dataset.make_initializable_iterator()
             self.train_init = iterator_tensor.initializer
             self.train_inputs, self.train_labels, self.train_mask = iterator_tensor.get_next()
-            self.train_inputs.set_shape([None, None, (1 + self.K) * 2])
+            self.train_inputs.set_shape([None, None, N])
 
             iterator_tensor = test_dataset.make_initializable_iterator()
             self.test_init = iterator_tensor.initializer
             self.test_inputs, self.test_labels, self.test_mask = iterator_tensor.get_next()
-            self.test_inputs.set_shape([None, None, (1 + self.K) * 2])
+            self.test_inputs.set_shape([None, None, N])
 
             ###
             # eval inputs
@@ -224,7 +225,7 @@ class Classifier(object):
             iterator_tensor = eval_dataset.make_initializable_iterator()
             self.eval_init = iterator_tensor.initializer
             self.eval_inputs = iterator_tensor.get_next()
-            self.eval_inputs.set_shape([None, None, (1 + self.K) * 2])
+            self.eval_inputs.set_shape([None, None, N])
 
             ###
             # outputs
@@ -237,7 +238,7 @@ class Classifier(object):
             mask_ext = tf.broadcast_to(self.train_mask, tf.shape(train_outputs))
             self.train_pred_probs = tf.nn.sigmoid(train_outputs)
             self.train_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
-                                                           tf.reshape(self.train_pred_probs, (-1,)),
+                                                           tf.reshape(self.train_pred_probs > 0.5, (-1,)),
                                                            weights=tf.reshape(mask_ext, (-1,)),
                                                            num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels_ext, logits=train_outputs,
@@ -248,7 +249,7 @@ class Classifier(object):
             mask_ext = tf.broadcast_to(self.test_mask, tf.shape(test_outputs))
             self.test_pred_probs = tf.nn.sigmoid(test_outputs)
             self.test_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
-                                                          tf.reshape(self.test_pred_probs, (-1,)),
+                                                          tf.reshape(self.test_pred_probs > 0.5, (-1,)),
                                                           weights=tf.reshape(mask_ext, (-1,)),
                                                           num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels_ext, logits=test_outputs,
