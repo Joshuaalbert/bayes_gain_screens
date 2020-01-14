@@ -95,7 +95,6 @@ class training_data_gen(object):
 
             __, nn_idx = cKDTree(directions).query(directions, k=self.K + 1)
 
-            print("TEST B")
 
             # Nd, Na, Nt
             human_flags = np.load(label_file)
@@ -117,12 +116,11 @@ class training_data_gen(object):
 
             # Nd*Na,Nt, (K+1)*2
             inputs = np.concatenate(inputs, axis=0)
-            print("TEST A")
             for b in range(inputs.shape[0]):
                 if np.sum(mask[b,:,:]) == 0:
-                    print("Skipping", b)
+                    # print("Skipping", b)
                     continue
-                print("Reading", b)
+                # print("Reading", b)
                 while True:
                     start = np.random.choice(Nt - self.crop_size)
                     stop = start + self.crop_size
@@ -452,8 +450,8 @@ class Classifier(object):
                                                                                  np.std(epoch_train_loss),
                                                                                  np.mean(epoch_test_loss),
                                                                                  np.std(epoch_test_loss)))
-                print("Epoch {} train {} ".format(self.conf_mat_to_str(epoch_train_conf_mat)))
-                print("Epoch {} test  {} ".format(self.conf_mat_to_str(epoch_test_conf_mat)))
+                print("Epoch {} train {} ".format(self.conf_mat_to_str(epoch, epoch_train_conf_mat)))
+                print("Epoch {} test  {} ".format(self.conf_mat_to_str(epoch, epoch_test_conf_mat)))
                 print('Saving...')
                 save_path = saver.save(sess, os.path.join(working_dir, 'model.ckpt'), global_step=self.global_step)
                 print("Saved to {}".format(save_path))
@@ -751,15 +749,17 @@ if __name__ == '__main__':
         # if click_through(save_file, linked_datapack, linked_ref_image, working_dir, reset=False):
         #     break
 
-        dp = DataPack(dp, readonly=True)
-        dp.current_solset='directionally_referenced'
-        dp.select(pol=slice(0,1,1))
-        tec, axes = dp.tec
-        tec_uncert, _ = dp.weights_tec
-        _, directions = dp.get_directions(axes['dir'])
         linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
-        np.savez(linked_datapack_npz, tec=tec, tec_uncert=tec_uncert,
-                 directions=np.stack([directions.ra.deg, directions.dec.deg], axis=1))
+        if not os.path.isfile(linked_datapack_npz):
+            dp = DataPack(dp, readonly=True)
+            dp.current_solset='directionally_referenced'
+            dp.select(pol=slice(0,1,1))
+            tec, axes = dp.tec
+            tec_uncert, _ = dp.weights_tec
+            _, directions = dp.get_directions(axes['dir'])
+
+            np.savez(linked_datapack_npz, tec=tec, tec_uncert=tec_uncert,
+                     directions=np.stack([directions.ra.deg, directions.dec.deg], axis=1))
         linked_datapack_npzs.append(linked_datapack_npz)
 
 
