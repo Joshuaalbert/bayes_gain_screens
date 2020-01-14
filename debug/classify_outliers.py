@@ -65,102 +65,201 @@ def in_hull(points, x):
     lp = linprog(c, A_eq=A, b_eq=b)
     return lp.success
 
+class training_data_gen(object):
+    def __init__(self, K, crop_size):
+        self.K = K
+        self.crop_size = crop_size
 
-def build_training_dataset(label_file, ref_image, datapack, K=3):
-    """
+    def __call__(self, label_files, ref_images, datapacks):
+        for label_file, ref_image, datapack in zip(label_files, ref_images, datapacks):
+            print("Getting data for", label_file, ref_image, datapack, self.K)
+            with fits.open(ref_image, mode='readonly') as f:
+                hdu = flatten(f)
+                # data = hdu.data
+                wcs = WCS(hdu.header)
 
-    :param label_file:
-    :param datapack:
-    :return:
-    """
+            dp = DataPack(datapack, readonly=True)
+            dp.current_solset = 'directionally_referenced'
+            dp.select(pol=slice(0, 1, 1))
+            tec, axes = dp.tec
+            _, Nd, Na, Nt = tec.shape
+            tec_uncert, _ = dp.weights_tec
+            tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
+            _, directions = dp.get_directions(axes['dir'])
+            directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+            directions = wcs.wcs_world2pix(directions, 0)
 
-    print("Getting data for", label_file, ref_image, datapack, K)
-    with fits.open(ref_image) as f:
-        hdu = flatten(f)
-        # data = hdu.data
-        wcs = WCS(hdu.header)
+            __, nn_idx = cKDTree(directions).query(directions, k=self.K + 1)
 
-    dp = DataPack(datapack, readonly=True)
+            # Nd, Na, Nt
+            human_flags = np.load(label_file)
+            # Nd*Na,Nt, 1
+            labels = human_flags.reshape((Nd * Na, Nt, 1)).astype(np.int32)
+            mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1)).astype(np.int32)
+            labels = np.where(labels == -1., 0., labels)
 
-    dp.current_solset = 'directionally_referenced'
-    dp.select(pol=slice(0, 1, 1))
-    tec, axes = dp.tec
-    _, Nd, Na, Nt = tec.shape
-    tec_uncert, _ = dp.weights_tec
-    tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
-    _, directions = dp.get_directions(axes['dir'])
-    directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
-    directions = wcs.wcs_world2pix(directions, 0)
+            # tec = np.pad(tec,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
+            # tec_uncert = np.pad(tec_uncert,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
 
-    __, nn_idx = cKDTree(directions).query(directions, k=K + 1)
+            inputs = []
+            for d in range(Nd):
+                # K+1, Na, Nt, 2
+                input = np.stack([tec[0, nn_idx[d, :], :, :] / 10., np.log(tec_uncert[0, nn_idx[d, :], :, :])], axis=-1)
+                # Na, Nt, (K+1)*2
+                input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (self.K + 1) * 2))
+                inputs.append(input)
 
-    # Nd, Na, Nt
-    human_flags = np.load(label_file)
-    # Nd*Na,Nt, 1
-    labels = human_flags.reshape((Nd * Na, Nt, 1)).astype(np.int32)
-    mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1)).astype(np.int32)
-    labels = np.where(labels == -1., 0., labels)
+            # Nd*Na,Nt, (K+1)*2
+            inputs = np.concatenate(inputs, axis=0)
+            for b in range(inputs.shape[0]):
+                if np.sum(mask[b,:,:]) == 0:
+                    continue
+                while True:
+                    start = np.random.choice(Nt - self.crop_size)
+                    stop = start + self.crop_size
+                    if np.sum(mask[b,start:stop,0]) == 0:
+                        continue
+                    break
+                if np.random.uniform() < 0.5:
+                    yield [inputs[b,start:stop:1,:], labels[b, start:stop:1, :], mask[b, start:stop:1, :]]
+                else:
+                    yield [inputs[b,stop:start:-1,:], labels[b, stop:start:-1, :], mask[b, stop:start:-1, :]]
+        return
 
-    assert np.all(labels >= 0)
+class eval_data_gen(object):
+    def __init__(self, K):
+        self.K = K
 
-    # tec = np.pad(tec,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
-    # tec_uncert = np.pad(tec_uncert,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
+    def __call__(self, ref_images, datapacks):
+        for label_file, ref_image, datapack in zip(label_files, ref_images, datapacks):
+            print("Getting data for", label_file, ref_image, datapack, self.K)
+            with fits.open(ref_image, mode='readonly') as f:
+                hdu = flatten(f)
+                # data = hdu.data
+                wcs = WCS(hdu.header)
 
-    inputs = []
-    for d in range(Nd):
-        # K+1, Na, Nt, 2
-        input = np.stack([tec[0, nn_idx[d, :], :, :] / 10., np.log(tec_uncert[0, nn_idx[d, :], :, :])], axis=-1)
-        # Na, Nt, (K+1)*2
-        input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (K + 1) * 2))
-        inputs.append(input)
+            dp = DataPack(datapack, readonly=True)
+            dp.current_solset = 'directionally_referenced'
+            dp.select(pol=slice(0, 1, 1))
+            tec, axes = dp.tec
+            _, Nd, Na, Nt = tec.shape
+            tec_uncert, _ = dp.weights_tec
+            tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
+            _, directions = dp.get_directions(axes['dir'])
+            directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+            directions = wcs.wcs_world2pix(directions, 0)
 
-    # Nd*Na,Nt, (K+1)*2
-    inputs = np.concatenate(inputs, axis=0)
-    return [inputs, labels, mask]
+            __, nn_idx = cKDTree(directions).query(directions, k=self.K + 1)
 
+            inputs = []
+            for d in range(Nd):
+                # K+1, Na, Nt, 2
+                input = np.stack([tec[0, nn_idx[d, :], :, :] / 10., np.log(tec_uncert[0, nn_idx[d, :], :, :])], axis=-1)
+                # Na, Nt, (K+1)*2
+                input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (self.K + 1) * 2))
+                inputs.append(input)
 
+            # Nd*Na,Nt, (K+1)*2
+            inputs = np.concatenate(inputs, axis=0)
+            for b in range(inputs.shape[0]):
+                yield [inputs[b,:,:]]
+        return
 
-def build_eval_dataset(ref_image, datapack, K=3):
-    """
-
-    :param label_file:
-    :param datapack:
-    :return:
-    """
-
-    print("Getting data for", ref_image, datapack, K)
-    with fits.open(ref_image) as f:
-        hdu = flatten(f)
-        # data = hdu.data
-        wcs = WCS(hdu.header)
-
-    dp = DataPack(datapack, readonly=True)
-
-    dp.current_solset = 'directionally_referenced'
-    dp.select(pol=slice(0, 1, 1))
-    tec, axes = dp.tec
-    _, Nd, Na, Nt = tec.shape
-    tec_uncert, _ = dp.weights_tec
-    tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
-    tec_uncert = np.maximum(tec_uncert, 0.1)
-    _, directions = dp.get_directions(axes['dir'])
-    directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
-    directions = wcs.wcs_world2pix(directions, 0)
-
-    __, nn_idx = cKDTree(directions).query(directions, k=K + 1)
-
-    inputs = []
-    for d in range(Nd):
-        # K+1, Na, Nt, 2
-        input = np.stack([tec[0, nn_idx[d, :], :, :] / 10., np.log(tec_uncert[0, nn_idx[d, :], :, :])], axis=-1)
-        # Na, Nt, (K+1)*2
-        input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (K + 1) * 2))
-        inputs.append(input)
-
-    # Nd*Na,Nt, (K+1)*2
-    inputs = np.concatenate(inputs, axis=0)
-
-    return [inputs]
+# def build_training_dataset(label_file, ref_image, datapack, K=3):
+#     """
+#
+#     :param label_file:
+#     :param datapack:
+#     :return:
+#     """
+#
+#     print("Getting data for", label_file, ref_image, datapack, K)
+#     with fits.open(ref_image, mode='readonly') as f:
+#         hdu = flatten(f)
+#         # data = hdu.data
+#         wcs = WCS(hdu.header)
+#
+#     dp = DataPack(datapack, readonly=True)
+#
+#     dp.current_solset = 'directionally_referenced'
+#     dp.select(pol=slice(0, 1, 1))
+#     tec, axes = dp.tec
+#     _, Nd, Na, Nt = tec.shape
+#     tec_uncert, _ = dp.weights_tec
+#     tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
+#     _, directions = dp.get_directions(axes['dir'])
+#     directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+#     directions = wcs.wcs_world2pix(directions, 0)
+#
+#     __, nn_idx = cKDTree(directions).query(directions, k=K + 1)
+#
+#     # Nd, Na, Nt
+#     human_flags = np.load(label_file)
+#     # Nd*Na,Nt, 1
+#     labels = human_flags.reshape((Nd * Na, Nt, 1)).astype(np.int32)
+#     mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1)).astype(np.int32)
+#     labels = np.where(labels == -1., 0., labels)
+#
+#     assert np.all(labels >= 0)
+#
+#     # tec = np.pad(tec,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
+#     # tec_uncert = np.pad(tec_uncert,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
+#
+#     inputs = []
+#     for d in range(Nd):
+#         # K+1, Na, Nt, 2
+#         input = np.stack([tec[0, nn_idx[d, :], :, :] / 10., np.log(tec_uncert[0, nn_idx[d, :], :, :])], axis=-1)
+#         # Na, Nt, (K+1)*2
+#         input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (K + 1) * 2))
+#         inputs.append(input)
+#
+#     # Nd*Na,Nt, (K+1)*2
+#     inputs = np.concatenate(inputs, axis=0)
+#     return [inputs, labels, mask]
+#
+#
+#
+# def build_eval_dataset(ref_image, datapack, K=3):
+#     """
+#
+#     :param label_file:
+#     :param datapack:
+#     :return:
+#     """
+#
+#     print("Getting data for", ref_image, datapack, K)
+#     with fits.open(ref_image, mode='readonly') as f:
+#         hdu = flatten(f)
+#         # data = hdu.data
+#         wcs = WCS(hdu.header)
+#
+#     dp = DataPack(datapack, readonly=True)
+#
+#     dp.current_solset = 'directionally_referenced'
+#     dp.select(pol=slice(0, 1, 1))
+#     tec, axes = dp.tec
+#     _, Nd, Na, Nt = tec.shape
+#     tec_uncert, _ = dp.weights_tec
+#     tec_uncert = np.where(np.isinf(tec_uncert), np.nanmean(tec_uncert), tec_uncert)
+#     tec_uncert = np.maximum(tec_uncert, 0.1)
+#     _, directions = dp.get_directions(axes['dir'])
+#     directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+#     directions = wcs.wcs_world2pix(directions, 0)
+#
+#     __, nn_idx = cKDTree(directions).query(directions, k=K + 1)
+#
+#     inputs = []
+#     for d in range(Nd):
+#         # K+1, Na, Nt, 2
+#         input = np.stack([tec[0, nn_idx[d, :], :, :] / 10., np.log(tec_uncert[0, nn_idx[d, :], :, :])], axis=-1)
+#         # Na, Nt, (K+1)*2
+#         input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (K + 1) * 2))
+#         inputs.append(input)
+#
+#     # Nd*Na,Nt, (K+1)*2
+#     inputs = np.concatenate(inputs, axis=0)
+#
+#     return [inputs]
 
 
 def get_output_bias(label_files):
@@ -193,10 +292,17 @@ class Classifier(object):
             ###
             # train/test inputs
 
-            dataset = tf.data.Dataset.from_tensor_slices((self.label_files_pl, self.ref_images_pl, self.datapacks_pl))
-            dataset = dataset.map(self._build_training_dataset, num_parallel_calls=1) \
-                .flat_map(lambda inputs, labels, mask: tf.data.Dataset.from_tensor_slices((inputs, labels, mask)))
-            dataset = dataset.filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))
+            dataset = tf.data.Dataset.from_tensors((self.label_files_pl, self.ref_images_pl, self.datapacks_pl))
+            dataset = dataset.interleave(lambda  label_files, ref_images, datapacks:
+                                         tf.data.Dataset.from_generator(
+                                             training_data_gen(self.K, self.crop_size),
+                                             [tf.float32, tf.int32, tf.int32],
+                                             [tf.TensorShape([self.crop_size, N]), tf.TensorShape([self.crop_size, 1]),
+                                              tf.TensorShape([self.crop_size, 1])],
+                                             args=(label_files, ref_images, datapacks)),
+                                         cycle_length=1,
+                                         block_length=1
+                                         )
             train_dataset = dataset.shard(2, 0).shuffle(1000)
             train_dataset = train_dataset.batch(batch_size=batch_size, drop_remainder=True)
 
@@ -206,25 +312,31 @@ class Classifier(object):
             iterator_tensor = train_dataset.make_initializable_iterator()
             self.train_init = iterator_tensor.initializer
             self.train_inputs, self.train_labels, self.train_mask = iterator_tensor.get_next()
-            self.train_inputs.set_shape([None, None, N])
+            # self.train_inputs.set_shape([None, None, N])
 
             iterator_tensor = test_dataset.make_initializable_iterator()
             self.test_init = iterator_tensor.initializer
             self.test_inputs, self.test_labels, self.test_mask = iterator_tensor.get_next()
-            self.test_inputs.set_shape([None, None, N])
+            # self.test_inputs.set_shape([None, None, N])
 
             ###
             # eval inputs
 
-            dataset = tf.data.Dataset.from_tensor_slices((self.ref_images_pl, self.datapacks_pl))
-            dataset = dataset.map(self._build_eval_dataset, num_parallel_calls=1) \
-                .flat_map(lambda inputs: tf.data.Dataset.from_tensor_slices((inputs)))
+            dataset = dataset.interleave(lambda label_files, ref_images, datapacks:
+                                         tf.data.Dataset.from_generator(
+                                             eval_data_gen(self.K),
+                                             [tf.float32],
+                                             [tf.TensorShape([self.crop_size, N])],
+                                             args=(label_files, ref_images, datapacks)),
+                                         cycle_length=1,
+                                         block_length=1
+                                         )
             eval_dataset = dataset.batch(batch_size=batch_size, drop_remainder=False)
 
             iterator_tensor = eval_dataset.make_initializable_iterator()
             self.eval_init = iterator_tensor.initializer
-            self.eval_inputs = iterator_tensor.get_next()
-            self.eval_inputs.set_shape([None, None, N])
+            self.eval_inputs, = iterator_tensor.get_next()
+            # self.eval_inputs.set_shape([None, None, N])
 
             ###
             # outputs
@@ -236,11 +348,10 @@ class Classifier(object):
             labels_ext = tf.broadcast_to(self.train_labels, tf.shape(train_outputs))
             mask_ext = tf.broadcast_to(self.train_mask, tf.shape(train_outputs))
             self.train_pred_probs = tf.nn.sigmoid(train_outputs)
-            with tf.control_dependencies([tf.print(tf.where(labels_ext<0))]):
-                self.train_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
-                                                               tf.reshape(self.train_pred_probs > 0.5, (-1,)),
-                                                               weights=tf.reshape(mask_ext, (-1,)),
-                                                               num_classes=2, dtype=tf.float32)
+            self.train_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
+                                                           tf.reshape(self.train_pred_probs > 0.5, (-1,)),
+                                                           weights=tf.reshape(mask_ext, (-1,)),
+                                                           num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels_ext, logits=train_outputs,
                                                             pos_weight=pos_weight)
             self.train_loss = tf.reduce_mean(loss * self.train_mask)
@@ -248,11 +359,10 @@ class Classifier(object):
             labels_ext = tf.broadcast_to(self.test_labels, tf.shape(test_outputs))
             mask_ext = tf.broadcast_to(self.test_mask, tf.shape(test_outputs))
             self.test_pred_probs = tf.nn.sigmoid(test_outputs)
-            with tf.control_dependencies([tf.print(tf.where(labels_ext < 0))]):
-                self.test_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
-                                                              tf.reshape(self.test_pred_probs > 0.5, (-1,)),
-                                                              weights=tf.reshape(mask_ext, (-1,)),
-                                                              num_classes=2, dtype=tf.float32)
+            self.test_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
+                                                          tf.reshape(self.test_pred_probs > 0.5, (-1,)),
+                                                          weights=tf.reshape(mask_ext, (-1,)),
+                                                          num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels_ext, logits=test_outputs,
                                                             pos_weight=pos_weight)
             self.test_loss = tf.reduce_mean(loss * self.test_mask)
@@ -261,24 +371,6 @@ class Classifier(object):
 
             self.global_step = tf.Variable(0, trainable=False)
             self.opt = tf.train.AdamOptimizer().minimize(self.train_loss, global_step=self.global_step)
-
-    def _build_training_dataset(self, label_file, ref_image, datapack):
-        inputs, labels, mask = tf.py_function(lambda label_file, ref_image, datapack:
-                                              build_training_dataset(label_file.numpy().decode(),
-                                                                     ref_image.numpy().decode(),
-                                                                     datapack.numpy().decode(), self.K),
-                                              [label_file, ref_image, datapack],
-                                              [tf.float32, tf.float32, tf.float32]
-                                              )
-        return self._augment(inputs, labels, mask)
-
-    def _build_eval_dataset(self, ref_image, datapack):
-        inputs, = tf.py_function(lambda ref_image, datapack:
-                                 build_eval_dataset(ref_image.numpy().decode(), datapack.numpy().decode(), self.K),
-                                 [ref_image, datapack],
-                                 [tf.float32]
-                                 )
-        return [inputs]
 
     def conf_mat_to_str(self, conf_mat):
         tp = conf_mat[0, 0]
