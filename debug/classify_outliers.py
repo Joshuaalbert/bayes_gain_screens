@@ -77,7 +77,7 @@ def build_training_dataset(label_file, ref_image, datapack, K=3):
     print("Getting data for", label_file, ref_image, datapack, K)
     with fits.open(ref_image) as f:
         hdu = flatten(f)
-        data = hdu.data
+        # data = hdu.data
         wcs = WCS(hdu.header)
 
     dp = DataPack(datapack, readonly=True)
@@ -131,7 +131,7 @@ def build_eval_dataset(ref_image, datapack, K=3):
     print("Getting data for", ref_image, datapack, K)
     with fits.open(ref_image) as f:
         hdu = flatten(f)
-        data = hdu.data
+        # data = hdu.data
         wcs = WCS(hdu.header)
 
     dp = DataPack(datapack, readonly=True)
@@ -194,7 +194,7 @@ class Classifier(object):
             # train/test inputs
 
             dataset = tf.data.Dataset.from_tensor_slices((self.label_files_pl, self.ref_images_pl, self.datapacks_pl))
-            dataset = dataset.map(self._build_training_dataset) \
+            dataset = dataset.map(self._build_training_dataset, num_parallel_calls=1) \
                 .flat_map(lambda inputs, labels, mask: tf.data.Dataset.from_tensor_slices((inputs, labels, mask)))
             dataset = dataset.filter(lambda *x: tf.logical_not(tf.reduce_all(tf.equal(x[2], -1.))))
             train_dataset = dataset.shard(2, 0).shuffle(1000)
@@ -217,7 +217,7 @@ class Classifier(object):
             # eval inputs
 
             dataset = tf.data.Dataset.from_tensor_slices((self.ref_images_pl, self.datapacks_pl))
-            dataset = dataset.map(self._build_eval_dataset) \
+            dataset = dataset.map(self._build_eval_dataset, num_parallel_calls=1) \
                 .flat_map(lambda inputs: tf.data.Dataset.from_tensor_slices((inputs)))
             eval_dataset = dataset.batch(batch_size=batch_size, drop_remainder=False)
 
