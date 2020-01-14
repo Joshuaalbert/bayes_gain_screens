@@ -296,8 +296,9 @@ class Classifier(object):
             dataset = dataset.interleave(lambda  label_files, ref_images, datapacks:
                                          tf.data.Dataset.from_generator(
                                              training_data_gen(self.K, self.crop_size),
-                                             [tf.float32, tf.int32, tf.int32],
-                                             [tf.TensorShape([self.crop_size, N]), tf.TensorShape([self.crop_size, 1]),
+                                             output_types=[tf.float32, tf.int32, tf.int32],
+                                             output_shapes=[tf.TensorShape([self.crop_size, N]),
+                                              tf.TensorShape([self.crop_size, 1]),
                                               tf.TensorShape([self.crop_size, 1])],
                                              args=(label_files, ref_images, datapacks)),
                                          cycle_length=1,
@@ -325,8 +326,8 @@ class Classifier(object):
             dataset = dataset.interleave(lambda label_files, ref_images, datapacks:
                                          tf.data.Dataset.from_generator(
                                              eval_data_gen(self.K),
-                                             [tf.float32],
-                                             [tf.TensorShape([self.crop_size, N])],
+                                             output_types=[tf.float32],
+                                             output_shapes=[tf.TensorShape([self.crop_size, N])],
                                              args=(label_files, ref_images, datapacks)),
                                          cycle_length=1,
                                          block_length=1
