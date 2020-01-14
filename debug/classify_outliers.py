@@ -72,6 +72,7 @@ class training_data_gen(object):
 
     def __call__(self, label_files, ref_images, datapacks):
         for label_file, ref_image, datapack in zip(label_files, ref_images, datapacks):
+            label_file, ref_image, datapack = label_file.decode(), ref_image.decode(), datapack.decode()
             print("Getting data for", label_file, ref_image, datapack, self.K)
             with fits.open(ref_image, mode='readonly') as f:
                 hdu = flatten(f)
@@ -131,8 +132,9 @@ class eval_data_gen(object):
         self.K = K
 
     def __call__(self, ref_images, datapacks):
-        for label_file, ref_image, datapack in zip(label_files, ref_images, datapacks):
-            print("Getting data for", label_file, ref_image, datapack, self.K)
+        for ref_image, datapack in zip(ref_images, datapacks):
+            ref_image, datapack = ref_image.decode(), datapack.decode()
+            print("Getting data for", ref_image, datapack, self.K)
             with fits.open(ref_image, mode='readonly') as f:
                 hdu = flatten(f)
                 # data = hdu.data
