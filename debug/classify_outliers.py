@@ -401,7 +401,7 @@ class Classifier(object):
             return "[{} {} | {} {}] ACC: {} [{}% baseline] FPR: {} [{}% baseline] FNR: {} [{}% baseline]".format(tp, fn, fp, tn, acc, rel_acc, fpr,
                                                                                                  rel_fpr, fnr, rel_fnr)
 
-    def train_model(self, label_files, ref_images, datapacks, epochs=10, working_dir='./training'):
+    def train_model(self, label_files, ref_images, datapacks, epochs=10, print_freq=100, working_dir='./training'):
         os.makedirs(working_dir, exist_ok=True)
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
@@ -409,7 +409,7 @@ class Classifier(object):
             sess.run(tf.initialize_variables(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)))
             #             print("restoring if possibe")
             #             try:
-            #                 saver.restore(sess, os.path.join(working_dir, 'model.ckpt'))
+            #                 saver.restore(sess, self.save_path(working_dir))
             #             except:
             #                 pass
             print("Running {} epochs".format(epochs))
@@ -435,7 +435,7 @@ class Classifier(object):
                         epoch_test_conf_mat += test_conf_mat
                         epoch_train_loss.append(train_loss)
                         epoch_test_loss.append(test_loss)
-                        if global_step % 1 == 0:
+                        if global_step % print_freq == 0:
                             with np.printoptions(precision=2):
                                 print("Step {:04d} Epoch {} batch {} train loss {} test loss {}".format(global_step,
                                                                                                         epoch, batch,
@@ -453,13 +453,18 @@ class Classifier(object):
                 print("Epoch {} train {} ".format(epoch, self.conf_mat_to_str(epoch_train_conf_mat)))
                 print("Epoch {} test  {} ".format(epoch, self.conf_mat_to_str(epoch_test_conf_mat)))
                 print('Saving...')
-                save_path = saver.save(sess, os.path.join(working_dir, 'model.ckpt'), global_step=self.global_step)
+                save_path = saver.save(sess, self.save_path(working_dir), global_step=self.global_step)
                 print("Saved to {}".format(save_path))
+
+    def save_path(self, working_dir):
+        return os.path.join(working_dir, 'model-K{:02d}.ckpt'.format(self.K))
+
+
 
     def eval_model(self, ref_images, datapacks, working_dir='./training'):
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
-            saver.restore(sess, os.path.join(working_dir, 'model.ckpt'))
+            saver.restore(sess,self.save_path(working_dir))
             for ref_image, datapack in zip(ref_images, datapacks):
                 sess.run(self.eval_init,
                          {self.ref_images_pl: [ref_image],
@@ -767,7 +772,7 @@ if __name__ == '__main__':
     output_bias, pos_weight = get_output_bias(label_files)
     print("Output bias: {}".format(output_bias))
     print("Pos weight: {}".format(pos_weight))
-    c = Classifier(L=4, K=3, n_features=16, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=10,
+    c = Classifier(L=4, K=4, n_features=16, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
+    c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
                   working_dir=os.path.join(working_dir, 'model'))
 
