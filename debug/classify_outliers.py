@@ -521,6 +521,9 @@ class Classifier(object):
                         break
                 predictions = np.concatenate(predictions, axis=0)
                 print("{} Predictions: {}".format(datapack, predictions.shape))
+                print("Predicted [{}/{}] outliers ({:.2f}%} in {}".format(np.sum(predictions),predictions.size,
+                                                                          np.sum(predictions)/predictions.size,
+                                                                          datapack))
                 all_predictions.append(predictions)
             return all_predictions
 
@@ -844,7 +847,17 @@ if __name__ == '__main__':
     print("Output bias: {}".format(output_bias))
     print("Pos weight: {}".format(pos_weight))
     c = Classifier(L=5, K=7, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
-                  working_dir=os.path.join(working_dir, 'model_upgrade'))
-    # c.eval_model(linked_ref_images, linked_datapack_npzs,working_dir=os.path.join(working_dir, 'model'))
+    # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=30, print_freq=100,
+    #               working_dir=os.path.join(working_dir, 'model_upgrade'))
+    predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, working_dir=os.path.join(working_dir, 'model_upgrade'))
+    for i, datapack in enumerate(linked_datapacks):
+        dp = DataPack(datapack, readonly=True)
+        dp.current_solset = 'directionally_referenced'
+        dp.select(pol=slice(0, 1, 1))
+        tec_uncert, _ = dp.weights_tec
+        _, Nd, Na, Nt = tec_uncert.shape
+        tec_uncert = np.where(np.isinf(tec_uncert), 1., tec_uncert)
+        tec_uncert = np.where(predictions[i].reshape((1, Nd, Na, Nt)) == 1, np.inf, tec_uncert)
+
+
 
