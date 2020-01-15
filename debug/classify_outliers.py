@@ -499,7 +499,7 @@ class Classifier(object):
     def eval_model(self, ref_images, datapacks, working_dir='./training'):
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
-            saver.restore(sess,self.save_path(working_dir))
+            saver.restore(sess,tf.train.latest_checkpoint(working_dir))
             for ref_image, datapack in zip(ref_images, datapacks):
                 sess.run(self.eval_init,
                          {self.ref_images_pl: [ref_image],
