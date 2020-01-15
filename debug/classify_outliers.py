@@ -679,10 +679,12 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
             pred = classifier.eval_model([ref_image], [datapack.replace('.h5', '.npz')],
                                          working_dir=model_dir)[0]
             guess_flags[...] = pred.reshape((Nd, Na, Nt))
+            load_data(loc[0])
 
         if event.key == 'c':
             print("Copying over predicted...")
-            human_flags[:, a, t] = np.where(human_flags[:, a, t] == -1, guess_flags, human_flags[:, a, t])
+            human_flags[:, a, t] = np.where(human_flags[:, a, t] == -1, guess_flags[:, a, t], human_flags[:, a, t])
+            load_data(loc[0])
 
 
     def onclick(event):
