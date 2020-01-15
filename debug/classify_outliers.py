@@ -680,6 +680,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
                                          working_dir=model_dir)[0]
             guess_flags[...] = pred.reshape((Nd, Na, Nt))
             search, order = rebuild_order()
+            loc[0] = 0
             loc[4] = search
             loc[5] = order
             load_data(loc[0])
