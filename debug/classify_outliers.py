@@ -122,16 +122,16 @@ class training_data_gen(object):
                     # print("Skipping", b)
                     continue
                 # print("Reading", b)
-                while True:
-                    start = np.random.choice(Nt - self.crop_size)
+                for start in range(0, Nt, self.crop_size):
                     stop = start + self.crop_size
+                    if stop > Nt:
+                        continue
                     if np.sum(mask[b,start:stop,0]) == 0:
                         continue
-                    break
-                if np.random.uniform() < 0.5:
-                    yield (inputs[b,start:stop:1,:], labels[b, start:stop:1, :], mask[b, start:stop:1, :])
-                else:
-                    yield (inputs[b,stop:start:-1,:], labels[b, stop:start:-1, :], mask[b, stop:start:-1, :])
+                    if np.random.uniform() < 0.5:
+                        yield (inputs[b,start:stop:1,:], labels[b, start:stop:1, :], mask[b, start:stop:1, :])
+                    else:
+                        yield (inputs[b,stop:start:-1,:], labels[b, stop:start:-1, :], mask[b, stop:start:-1, :])
         return
 
 class eval_data_gen(object):
@@ -314,7 +314,7 @@ class Classifier(object):
                                                             (self.crop_size, 1),),
                                              args=(label_files, ref_images, datapacks)),
                                          cycle_length=1,
-                                         block_length=2
+                                         block_length=1
                                          )
             train_dataset = dataset.shard(2, 0).shuffle(1000)
             train_dataset = train_dataset.batch(batch_size=batch_size, drop_remainder=True)
