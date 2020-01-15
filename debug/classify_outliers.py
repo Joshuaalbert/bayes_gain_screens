@@ -358,11 +358,13 @@ class Classifier(object):
             test_outputs = self.build_model(self.test_inputs, output_bias=output_bias)
             eval_outputs = self.build_model(self.eval_inputs, output_bias=output_bias)
 
+            self.thresholds = tf.placeholder(tf.float32, shape=[None])
+
             labels_ext = tf.broadcast_to(self.train_labels, tf.shape(train_outputs))
             mask_ext = tf.broadcast_to(self.train_mask, tf.shape(train_outputs))
             self.train_pred_probs = tf.nn.sigmoid(train_outputs)
             self.train_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
-                                                           tf.reshape(self.train_pred_probs > 0.5, (-1,)),
+                                                           tf.reshape(self.train_pred_probs > self.thresholds[:, None, None, None], (-1,)),
                                                            weights=tf.reshape(mask_ext, (-1,)),
                                                            num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, train_outputs.dtype), logits=train_outputs,
@@ -373,7 +375,7 @@ class Classifier(object):
             mask_ext = tf.broadcast_to(self.test_mask, tf.shape(test_outputs))
             self.test_pred_probs = tf.nn.sigmoid(test_outputs)
             self.test_conf_mat = tf.math.confusion_matrix(tf.reshape(labels_ext, (-1,)),
-                                                          tf.reshape(self.test_pred_probs > 0.5, (-1,)),
+                                                          tf.reshape(self.test_pred_probs > self.thresholds[:, None, None, None], (-1,)),
                                                           weights=tf.reshape(mask_ext, (-1,)),
                                                           num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, test_outputs.dtype), logits=test_outputs,
@@ -444,6 +446,7 @@ class Classifier(object):
             #             except:
             #                 pass
             print("Running {} epochs".format(epochs))
+            opt_thresholds = [0.5]
             for epoch in range(epochs):
                 print("epoch", epoch)
                 print("init data for training")
@@ -465,7 +468,7 @@ class Classifier(object):
                         _, train_loss, train_conf_mat, test_loss, test_conf_mat, global_step, test_preds, test_labels, \
                         test_mask = sess.run(
                             [self.opt, self.train_loss, self.train_conf_mat, self.test_loss, self.test_conf_mat,
-                             self.global_step, self.test_pred_probs, self.test_labels, self.test_mask])
+                             self.global_step, self.test_pred_probs, self.test_labels, self.test_mask], {self.thresholds:opt_thresholds})
                         epoch_train_conf_mat += train_conf_mat
                         epoch_test_conf_mat += test_conf_mat
                         epoch_train_loss.append(train_loss)
@@ -495,15 +498,18 @@ class Classifier(object):
                                                                                  np.std(epoch_test_loss)))
                 print("Epoch {} train {} ".format(epoch, self.conf_mat_to_str(epoch_train_conf_mat)))
                 print("Epoch {} test  {} ".format(epoch, self.conf_mat_to_str(epoch_test_conf_mat)))
+                opt_thresholds = []
                 for m in range(epoch_test_preds.shape[0]):
                     fpr, tpr, thresholds = roc_curve(epoch_test_labels.flatten(), epoch_test_preds[m,...].flatten(),
                                                      sample_weight=epoch_test_mask.flatten())
                     which =  np.argmax(tpr - fpr)
-                    plt.scatter(fpr, tpr)
-                    plt.scatter(fpr[which], tpr[which], c='red')
-                    plt.title("Model 0: {}".format(thresholds[which]))
-                    plt.show()
-                    plt.close('all')
+                    opt_thresholds.append(thresholds[which])
+                    # plt.scatter(fpr, tpr)
+                    # plt.scatter(fpr[which], tpr[which], c='red')
+                    # plt.title("Model {]: {}".format(m, thresholds[which]))
+                    # plt.show()
+                    # plt.close('all')
+                print("New opt thresholds: {}".format(opt_thresholds))
                 print('Saving...')
                 save_path = saver.save(sess, self.save_path(working_dir), global_step=self.global_step)
                 print("Saved to {}".format(save_path))
