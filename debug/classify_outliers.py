@@ -334,8 +334,8 @@ class Classifier(object):
 
             ###
             # eval inputs
-
-            dataset = dataset.interleave(lambda label_files, ref_images, datapacks:
+            dataset = tf.data.Dataset.from_tensors((self.ref_images_pl, self.datapacks_pl))
+            dataset = dataset.interleave(lambda ref_images, datapacks:
                                          tf.data.Dataset.from_generator(
                                              eval_data_gen(self.K),
                                              output_types=(tf.float32,),
