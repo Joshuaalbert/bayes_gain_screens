@@ -488,12 +488,6 @@ class Classifier(object):
                 epoch_test_labels = np.concatenate(epoch_test_labels, axis=0)
                 epoch_test_labels = np.where(epoch_test_labels == -1, 0, epoch_test_labels)
                 epoch_test_mask = np.concatenate(epoch_test_mask, axis=0)
-                for m in range(epoch_test_preds.shape[0]):
-                    fpr, tpr, thresholds = roc_curve(epoch_test_labels.flatten(), epoch_test_preds[m,...].flatten(),
-                                                     sample_weight=epoch_test_mask.flatten())
-                    plt.scatter(fpr, tpr)
-                    plt.title(m)
-                    plt.show()
 
                 print("Epoch {} train loss: {} +- {} test loss: {} +- {}".format(epoch, np.mean(epoch_train_loss),
                                                                                  np.std(epoch_train_loss),
@@ -501,6 +495,15 @@ class Classifier(object):
                                                                                  np.std(epoch_test_loss)))
                 print("Epoch {} train {} ".format(epoch, self.conf_mat_to_str(epoch_train_conf_mat)))
                 print("Epoch {} test  {} ".format(epoch, self.conf_mat_to_str(epoch_test_conf_mat)))
+                for m in range(epoch_test_preds.shape[0]):
+                    fpr, tpr, thresholds = roc_curve(epoch_test_labels.flatten(), epoch_test_preds[m,...].flatten(),
+                                                     sample_weight=epoch_test_mask.flatten())
+                    which =  np.argmax(tpr - fpr)
+                    plt.scatter(fpr, tpr)
+                    plt.scatter(fpr[which], tpr[which], c='red')
+                    plt.title("Model 0: {}".format(thresholds[which]))
+                    plt.show()
+                    plt.close('all')
                 print('Saving...')
                 save_path = saver.save(sess, self.save_path(working_dir), global_step=self.global_step)
                 print("Saved to {}".format(save_path))
