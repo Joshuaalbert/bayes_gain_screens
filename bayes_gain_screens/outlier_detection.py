@@ -1,29 +1,17 @@
-import os
-os.environ['OMP_NUM_THREADS'] = "1"
-import numpy as np
 from scipy.interpolate import Rbf
 from scipy.ndimage import median_filter
-from scipy.spatial import cKDTree
-from bayes_gain_screens.misc import make_coord_array, rolling_window
+from bayes_gain_screens.misc import make_coord_array
 from bayes_gain_screens import logging
-from bayes_gain_screens.misc import voronoi_finite_polygons_2d
 from dask.multiprocessing import get
-import pylab as plt
 from timeit import default_timer
-from scipy.spatial import Voronoi
 
 import sys
 
-import tensorflow as tf
-from bayes_gain_screens.plotting import plot_vornoi_map
-
 import numpy as np
-from bayes_gain_screens.outlier_detection import filter_tec_dir
 import glob, os
 from bayes_gain_screens.datapack import DataPack
-from bayes_gain_screens.misc import voronoi_finite_polygons_2d, get_coordinates
+from bayes_gain_screens.misc import voronoi_finite_polygons_2d
 import matplotlib
-
 matplotlib.use('tkagg')
 import pylab as plt
 from scipy.spatial import Voronoi, cKDTree
@@ -31,8 +19,6 @@ from scipy.optimize import linprog
 from astropy.io import fits
 from astropy.wcs import WCS
 import tensorflow.compat.v1 as tf
-import networkx as nx
-from graph_nets.utils_np import networkxs_to_graphs_tuple
 from sklearn.metrics import roc_curve
 
 def filter_const(y, init_y_uncert):
