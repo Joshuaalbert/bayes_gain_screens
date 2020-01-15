@@ -807,7 +807,7 @@ if __name__ == '__main__':
     output_bias, pos_weight = get_output_bias(label_files)
     print("Output bias: {}".format(output_bias))
     print("Pos weight: {}".format(pos_weight))
-    c = Classifier(L=4, K=5, n_features=16, crop_size=960, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
+    c = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
     c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
                   working_dir=os.path.join(working_dir, 'model'))
 
