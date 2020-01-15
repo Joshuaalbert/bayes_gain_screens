@@ -789,75 +789,85 @@ def click_through(save_file, datapack, ref_image, model_dir, reset=False):
 
 
 if __name__ == '__main__':
-    # dp = '/net/nederrijn/data1/albert/screens/root/L562061/download_archive/L562061_DDS4_full_merged.h5'
-    # ref_img = '/net/nederrijn/data1/albert/screens/root/L562061/download_archive/image_full_ampphase_di_m.NS.mask01.fits'
-    # click_through(dp, ref_img)
-
-    import os, glob
-
-    working_dir = os.path.join('/home/albert/git/bayes_gain_screens/debug', 'outlier_detection')
-    os.makedirs(working_dir, exist_ok=True)
+    from bayes_gain_screens.outlier_detection import remove_outliers
     datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
-    # ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
     ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits'] * len(datapacks)
-    label_files = []
-    linked_datapacks = []
-    linked_ref_images = []
-    linked_datapack_npzs = []
+    remove_outliers(do_clicking=True, do_training=True, do_evaluation=True,
+                    datapacks=datapacks,
+                    ref_images=ref_images,
+                    working_dir='/home/albert/git/bayes_gain_screens/debug/outlier_detection',
+                    L=5, K=7, n_features=24, crop_size=250, batch_size=16, epochs=30)
 
-
-
-    for dp, ref_img in zip(datapacks, ref_images):
-        linked_datapack = os.path.join(working_dir, os.path.basename(os.path.abspath(dp)))
-        if os.path.islink(linked_datapack):
-            os.unlink(linked_datapack)
-        print("Linking {} -> {}".format(os.path.abspath(dp), linked_datapack))
-        os.symlink(os.path.abspath(dp), linked_datapack)
-
-        linked_ref_image = linked_datapack.replace('.h5', '.ref_image.fits')
-        if os.path.islink(linked_ref_image):
-            os.unlink(linked_ref_image)
-        print("Linking {} -> {}".format(os.path.abspath(ref_img), linked_ref_image))
-        os.symlink(os.path.abspath(ref_img), linked_ref_image)
-
-        save_file = linked_datapack.replace('.h5', '.labels.npy')
-        label_files.append(save_file)
-        linked_datapacks.append(linked_datapack)
-        linked_ref_images.append(linked_ref_image)
-
-        # if click_through(save_file, linked_datapack, linked_ref_image,
-        #                  model_dir=os.path.join(working_dir, 'model_upgrade'), reset=False):
-        #     break
-
-        linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
-        if not os.path.isfile(linked_datapack_npz):
-            dp = DataPack(dp, readonly=True)
-            dp.current_solset='directionally_referenced'
-            dp.select(pol=slice(0,1,1))
-            tec, axes = dp.tec
-            tec_uncert, _ = dp.weights_tec
-            _, directions = dp.get_directions(axes['dir'])
-
-            np.savez(linked_datapack_npz, tec=tec, tec_uncert=tec_uncert,
-                     directions=np.stack([directions.ra.deg, directions.dec.deg], axis=1))
-        linked_datapack_npzs.append(linked_datapack_npz)
-
-
-    output_bias, pos_weight = get_output_bias(label_files)
-    print("Output bias: {}".format(output_bias))
-    print("Pos weight: {}".format(pos_weight))
-    c = Classifier(L=5, K=7, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=30, print_freq=100,
-    #               working_dir=os.path.join(working_dir, 'model_upgrade'))
-    predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, working_dir=os.path.join(working_dir, 'model_upgrade'))
-    for i, datapack in enumerate(linked_datapacks):
-        dp = DataPack(datapack, readonly=True)
-        dp.current_solset = 'directionally_referenced'
-        dp.select(pol=slice(0, 1, 1))
-        tec_uncert, _ = dp.weights_tec
-        _, Nd, Na, Nt = tec_uncert.shape
-        tec_uncert = np.where(np.isinf(tec_uncert), 1., tec_uncert)
-        tec_uncert = np.where(predictions[i].reshape((1, Nd, Na, Nt)) == 1, np.inf, tec_uncert)
+    # # dp = '/net/nederrijn/data1/albert/screens/root/L562061/download_archive/L562061_DDS4_full_merged.h5'
+    # # ref_img = '/net/nederrijn/data1/albert/screens/root/L562061/download_archive/image_full_ampphase_di_m.NS.mask01.fits'
+    # # click_through(dp, ref_img)
+    #
+    # import os, glob
+    #
+    # working_dir = os.path.join('/home/albert/git/bayes_gain_screens/debug', 'outlier_detection')
+    # os.makedirs(working_dir, exist_ok=True)
+    # datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
+    # # ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
+    # ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits'] * len(datapacks)
+    # label_files = []
+    # linked_datapacks = []
+    # linked_ref_images = []
+    # linked_datapack_npzs = []
+    #
+    #
+    #
+    # for dp, ref_img in zip(datapacks, ref_images):
+    #     linked_datapack = os.path.join(working_dir, os.path.basename(os.path.abspath(dp)))
+    #     if os.path.islink(linked_datapack):
+    #         os.unlink(linked_datapack)
+    #     print("Linking {} -> {}".format(os.path.abspath(dp), linked_datapack))
+    #     os.symlink(os.path.abspath(dp), linked_datapack)
+    #
+    #     linked_ref_image = linked_datapack.replace('.h5', '.ref_image.fits')
+    #     if os.path.islink(linked_ref_image):
+    #         os.unlink(linked_ref_image)
+    #     print("Linking {} -> {}".format(os.path.abspath(ref_img), linked_ref_image))
+    #     os.symlink(os.path.abspath(ref_img), linked_ref_image)
+    #
+    #     save_file = linked_datapack.replace('.h5', '.labels.npy')
+    #     label_files.append(save_file)
+    #     linked_datapacks.append(linked_datapack)
+    #     linked_ref_images.append(linked_ref_image)
+    #
+    #     # if click_through(save_file, linked_datapack, linked_ref_image,
+    #     #                  model_dir=os.path.join(working_dir, 'model_upgrade'), reset=False):
+    #     #     break
+    #
+    #     linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
+    #     if not os.path.isfile(linked_datapack_npz):
+    #         dp = DataPack(dp, readonly=True)
+    #         dp.current_solset='directionally_referenced'
+    #         dp.select(pol=slice(0,1,1))
+    #         tec, axes = dp.tec
+    #         tec_uncert, _ = dp.weights_tec
+    #         _, directions = dp.get_directions(axes['dir'])
+    #
+    #         np.savez(linked_datapack_npz, tec=tec, tec_uncert=tec_uncert,
+    #                  directions=np.stack([directions.ra.deg, directions.dec.deg], axis=1))
+    #     linked_datapack_npzs.append(linked_datapack_npz)
+    #
+    #
+    # output_bias, pos_weight = get_output_bias(label_files)
+    # print("Output bias: {}".format(output_bias))
+    # print("Pos weight: {}".format(pos_weight))
+    # c = Classifier(L=5, K=7, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
+    # # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=30, print_freq=100,
+    # #               working_dir=os.path.join(working_dir, 'model_upgrade'))
+    # predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, working_dir=os.path.join(working_dir, 'model_upgrade'))
+    # for i, datapack in enumerate(linked_datapacks):
+    #     dp = DataPack(datapack, readonly=True)
+    #     dp.current_solset = 'directionally_referenced'
+    #     dp.select(pol=slice(0, 1, 1))
+    #     tec_uncert, _ = dp.weights_tec
+    #     _, Nd, Na, Nt = tec_uncert.shape
+    #     tec_uncert = np.where(np.isinf(tec_uncert), 1., tec_uncert)
+    #     tec_uncert = np.where(predictions[i].reshape((1, Nd, Na, Nt)) == 1, np.inf, tec_uncert)
+    #     dp.weights_tec = tec_uncert
 
 
 
