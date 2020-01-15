@@ -648,7 +648,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
     dir_ax.set_ylim(vor.min_bound[1] - 0.1 * radius, vor.max_bound[1] + 0.1 * radius)
 
     def onkeyrelease(event):
-        _, a, t, norm = loc
+        _, a, t, norm, _, _ = loc
         print('Pressed {} ({}, {})'.format(event.key, event.xdata, event.ydata))
         if event.key == 'n':
             print("Saving... going to next.")
@@ -679,6 +679,9 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
             pred = classifier.eval_model([ref_image], [datapack.replace('.h5', '.npz')],
                                          working_dir=model_dir)[0]
             guess_flags[...] = pred.reshape((Nd, Na, Nt))
+            search, order = rebuild_order()
+            loc[4] = search
+            loc[5] = order
             load_data(loc[0])
 
         if event.key == 'c':
@@ -688,7 +691,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
 
 
     def onclick(event):
-        _, a, t, norm = loc
+        _, a, t, norm, _, _ = loc
         print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
               ('double' if event.dblclick else 'single', event.button,
                event.x, event.y, event.xdata, event.ydata))
@@ -729,15 +732,22 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
 
     # Na, Nt
 
-    search_first = np.where(np.any(guess_flags, axis=0))
-    search_second = np.where(np.any(np.logical_not(guess_flags), axis=0))
-    search = [list(sf) + list(ss) for sf, ss in zip(search_first, search_second)]
-    order = list(np.random.choice(len(search_first[0]), len(search_first[0]), replace=False)) + \
-            list(len(search_first[0]) + np.random.choice(len(search_second[0]), len(search_second[0]), replace=False))
-    loc = [0, 0, 0, plt.Normalize(-1., 1.)]
+    def rebuild_order():
+        mask = np.logical_and(np.any(guess_flags, axis=0), np.logical_not(np.any(human_flags>=0)))
+        search_first = np.where(mask)
+        search_second = np.where(np.logical_not(mask))
+        search = [list(sf) + list(ss) for sf, ss in zip(search_first, search_second)]
+        order = list(np.random.choice(len(search_first[0]), len(search_first[0]), replace=False)) + \
+                list(len(search_first[0]) + np.random.choice(len(search_second[0]), len(search_second[0]), replace=False))
+        return search, order
+
+    search, order = rebuild_order()
+    loc = [0, 0, 0, plt.Normalize(-1., 1.), search, order]
 
     def load_data(next_loc):
         loc[0] = next_loc
+        search = loc[4]
+        order = loc[5]
         o = order[next_loc]
         a = search[0][o]
         t = search[1][o]
