@@ -339,7 +339,7 @@ class Classifier(object):
                                          tf.data.Dataset.from_generator(
                                              eval_data_gen(self.K),
                                              output_types=(tf.float32,),
-                                             output_shapes=((self.crop_size, N),),
+                                             output_shapes=((None, N),),
                                              args=(ref_images, datapacks)),
                                          cycle_length=1,
                                          block_length=1
