@@ -666,11 +666,11 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
             print("Exit")
             # np.save(save_file, human_flags)
             plt.close('all')
-        if event.key == 'l':
+        if event.key == 'L':
             print("Learning one epoch")
             classifier.train_model([save_file], [ref_image], [datapack.replace('.h5', '.npz')], epochs=1, print_freq=100,
                           working_dir=model_dir)
-        if event.key == 'p':
+        if event.key == 'P':
             print("Predicting with neural net...")
             # c = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias,
             #                pos_weight=pos_weight)
