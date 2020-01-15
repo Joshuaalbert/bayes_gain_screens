@@ -565,7 +565,7 @@ class Classifier(object):
                             num += 1
                             u = pool(u, pool_size=3, strides=1, padding='same')
                             h.append(u - h[i])
-                    outputs.append(h[-1])
+                        outputs.append(h[-1])
             # S, Nd*Na, Nt, 1
             outputs = tf.stack(
                 [tf.layers.conv1d(o, 1, [1], padding='same', name='conv_{:02d}'.format(num), use_bias=False) for o in
