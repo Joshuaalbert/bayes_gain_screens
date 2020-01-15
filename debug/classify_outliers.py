@@ -522,7 +522,7 @@ class Classifier(object):
                 predictions = np.concatenate(predictions, axis=0)
                 print("{} Predictions: {}".format(datapack, predictions.shape))
                 print("Predicted [{}/{}] outliers ({:.2f}%} in {}".format(np.sum(predictions),predictions.size,
-                                                                          np.sum(predictions)/predictions.size,
+                                                                          100.*np.sum(predictions)/predictions.size,
                                                                           datapack))
                 all_predictions.append(predictions)
             return all_predictions
