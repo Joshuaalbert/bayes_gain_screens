@@ -844,7 +844,7 @@ if __name__ == '__main__':
     print("Output bias: {}".format(output_bias))
     print("Pos weight: {}".format(pos_weight))
     c = Classifier(L=5, K=7, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
+    c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=15, print_freq=100,
                   working_dir=os.path.join(working_dir, 'model_upgrade'))
     # c.eval_model(linked_ref_images, linked_datapack_npzs,working_dir=os.path.join(working_dir, 'model'))
 
