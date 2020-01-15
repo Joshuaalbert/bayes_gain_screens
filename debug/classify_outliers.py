@@ -668,7 +668,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
             plt.close('all')
         if event.key == 'l':
             print("Learning one epoch")
-            c.train_model([save_file], [ref_image], [datapacks.replace('.h5', '.npz')], epochs=1, print_freq=100,
+            c.train_model([save_file], [ref_image], [datapack.replace('.h5', '.npz')], epochs=1, print_freq=100,
                           working_dir=model_dir)
         if event.key == 'p':
             print("Predicting with neural net...")
@@ -676,7 +676,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
             #                pos_weight=pos_weight)
             # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
             #               working_dir=os.path.join(working_dir, 'model'))
-            pred = classifier.eval_model(ref_image, datapacks.replace('.h5', '.npz'),
+            pred = classifier.eval_model(ref_image, datapack.replace('.h5', '.npz'),
                                          working_dir=model_dir)[0]
             guess_flags[...] = pred.reshape((Nd, Na, Nt))
 
