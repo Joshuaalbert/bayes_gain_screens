@@ -370,8 +370,8 @@ class Classifier(object):
 
             self.train_conf_mat = tf.math.confusion_matrix(tf.reshape(self.train_labels, (-1,)),
                                                            tf.reshape(
-                                                               tf.reduce_mean(self.train_pred_probs > self.thresholds[:, None, None,
-                                                                                       None], 0) >= 0.5, (-1,)),
+                                                               tf.reduce_mean(tf.cast(self.train_pred_probs > self.thresholds[:, None, None,
+                                                                                       None], tf.float32), 0) >= 0.5, (-1,)),
                                                            weights=tf.reshape(self.train_mask, (-1,)),
                                                            num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, train_outputs.dtype), logits=train_outputs,
@@ -382,7 +382,7 @@ class Classifier(object):
             # mask_ext = tf.broadcast_to(self.test_mask, tf.shape(test_outputs))
             self.test_pred_probs = tf.nn.sigmoid(test_outputs)
             self.test_conf_mat = tf.math.confusion_matrix(tf.reshape(self.test_labels, (-1,)),
-                                                          tf.reshape(tf.reduce_mean(self.test_pred_probs > self.thresholds[:, None, None, None], 0)>=0.5, (-1,)),
+                                                          tf.reshape(tf.reduce_mean(tf.cast(self.test_pred_probs > self.thresholds[:, None, None, None], tf.float32), 0)>=0.5, (-1,)),
                                                           weights=tf.reshape(self.train_mask, (-1,)),
                                                           num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, test_outputs.dtype), logits=test_outputs,
