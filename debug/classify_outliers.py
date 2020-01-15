@@ -822,9 +822,9 @@ if __name__ == '__main__':
         linked_datapacks.append(linked_datapack)
         linked_ref_images.append(linked_ref_image)
 
-        if click_through(save_file, linked_datapack, linked_ref_image,
-                         model_dir=os.path.join(working_dir, 'model'), reset=False):
-            break
+        # if click_through(save_file, linked_datapack, linked_ref_image,
+        #                  model_dir=os.path.join(working_dir, 'model_upgrade'), reset=False):
+        #     break
 
         linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
         if not os.path.isfile(linked_datapack_npz):
@@ -840,11 +840,11 @@ if __name__ == '__main__':
         linked_datapack_npzs.append(linked_datapack_npz)
 
 
-    # output_bias, pos_weight = get_output_bias(label_files)
-    # print("Output bias: {}".format(output_bias))
-    # print("Pos weight: {}".format(pos_weight))
-    # c = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
-    #               working_dir=os.path.join(working_dir, 'model'))
+    output_bias, pos_weight = get_output_bias(label_files)
+    print("Output bias: {}".format(output_bias))
+    print("Pos weight: {}".format(pos_weight))
+    c = Classifier(L=5, K=7, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
+    c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
+                  working_dir=os.path.join(working_dir, 'model_upgrade'))
     # c.eval_model(linked_ref_images, linked_datapack_npzs,working_dir=os.path.join(working_dir, 'model'))
 
