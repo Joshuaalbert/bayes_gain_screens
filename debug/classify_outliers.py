@@ -567,7 +567,7 @@ class Classifier(object):
         return [inputs, labels, mask]
 
 
-def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=False):
+def click_through(save_file, datapack, ref_image, model_dir, reset=False):
     with fits.open(ref_image) as f:
         hdu = flatten(f)
         wcs = WCS(hdu.header)
@@ -668,14 +668,17 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
             plt.close('all')
         if event.key == 'L':
             print("Learning one epoch")
+            output_bias, pos_weight = get_output_bias([save_file])
+            classifier = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias,
+                                    pos_weight=pos_weight)
             classifier.train_model([save_file], [ref_image], [datapack.replace('.h5', '.npz')], epochs=1, print_freq=100,
                           working_dir=model_dir)
         if event.key == 'P':
             print("Predicting with neural net...")
-            # c = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias,
-            #                pos_weight=pos_weight)
-            # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
-            #               working_dir=os.path.join(working_dir, 'model'))
+            output_bias, pos_weight = get_output_bias([save_file])
+            classifier = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias,
+                                    pos_weight=pos_weight)
+
             pred = classifier.eval_model([ref_image], [datapack.replace('.h5', '.npz')],
                                          working_dir=model_dir)[0]
             guess_flags[...] = pred.reshape((Nd, Na, Nt))
@@ -799,8 +802,7 @@ if __name__ == '__main__':
     linked_ref_images = []
     linked_datapack_npzs = []
 
-    classifier = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=0.,
-                           pos_weight=0.)
+
 
     for dp, ref_img in zip(datapacks, ref_images):
         linked_datapack = os.path.join(working_dir, os.path.basename(os.path.abspath(dp)))
@@ -821,7 +823,7 @@ if __name__ == '__main__':
         linked_ref_images.append(linked_ref_image)
 
         if click_through(save_file, linked_datapack, linked_ref_image,
-                         model_dir=os.path.join(working_dir, 'model'), classifier=classifier, reset=False):
+                         model_dir=os.path.join(working_dir, 'model'), reset=False):
             break
 
         linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
