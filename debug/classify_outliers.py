@@ -849,7 +849,7 @@ if __name__ == '__main__':
     c = Classifier(L=5, K=7, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
     # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=30, print_freq=100,
     #               working_dir=os.path.join(working_dir, 'model_upgrade'))
-    predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, working_dir=os.path.join(working_dir, 'model'))
+    predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, working_dir=os.path.join(working_dir, 'model_upgrade'))
     for i, datapack in enumerate(linked_datapacks):
         dp = DataPack(datapack, readonly=True)
         dp.current_solset = 'directionally_referenced'
