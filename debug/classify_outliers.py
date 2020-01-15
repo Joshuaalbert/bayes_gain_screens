@@ -786,7 +786,7 @@ if __name__ == '__main__':
     linked_ref_images = []
     linked_datapack_npzs = []
 
-    classifer = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=0.,
+    classifier = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=0.,
                            pos_weight=0.)
 
     for dp, ref_img in zip(datapacks, ref_images):
@@ -808,7 +808,7 @@ if __name__ == '__main__':
         linked_ref_images.append(linked_ref_image)
 
         if click_through(save_file, linked_datapack, linked_ref_image,
-                         model_dir=os.path.join(working_dir, 'model'), classifer=classifer, reset=False):
+                         model_dir=os.path.join(working_dir, 'model'), classifier=classifier, reset=False):
             break
 
         linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
