@@ -358,7 +358,11 @@ class Classifier(object):
             test_outputs = self.build_model(self.test_inputs, output_bias=output_bias)
             eval_outputs = self.build_model(self.eval_inputs, output_bias=output_bias)
 
-            self.thresholds = tf.placeholder(tf.float32, shape=[None])
+            num_models = len(tf.unstack(train_outputs))
+
+            self.thresholds = tf.Variable(0.5*np.ones(num_models), shape=[num_models], dtype=tf.float32)
+            self.thresholds_pl = tf.placeholder(tf.float32, [num_models])
+            self.assign_thresholds = tf.assign(self.thresholds, self.thresholds_pl)
 
             labels_ext = tf.broadcast_to(self.train_labels, tf.shape(train_outputs))
             # mask_ext = tf.broadcast_to(self.train_mask, tf.shape(train_outputs))
@@ -390,6 +394,8 @@ class Classifier(object):
             self.test_loss = tf.reduce_mean(loss * tf.cast(self.test_mask, loss.dtype))
 
             self.eval_pred_probs = tf.nn.sigmoid(eval_outputs)
+            self.eval_pred_labels = tf.reduce_mean(tf.cast(self.eval_pred_probs > self.thresholds[:, None, None, None],
+                                                          tf.float32), 0) >= 0.5
 
             self.global_step = tf.Variable(0, trainable=False)
             self.opt = tf.train.AdamOptimizer().minimize(self.train_loss, global_step=self.global_step)
@@ -423,7 +429,7 @@ class Classifier(object):
             #             except:
             #                 pass
             print("Running {} epochs".format(epochs))
-            opt_thresholds = [0.5]
+
             for epoch in range(epochs):
                 print("epoch", epoch)
                 print("init data for training")
@@ -445,7 +451,7 @@ class Classifier(object):
                         _, train_loss, train_conf_mat, test_loss, test_conf_mat, global_step, test_preds, test_labels, \
                         test_mask = sess.run(
                             [self.opt, self.train_loss, self.train_conf_mat, self.test_loss, self.test_conf_mat,
-                             self.global_step, self.test_pred_probs, self.test_labels, self.test_mask], {self.thresholds:opt_thresholds})
+                             self.global_step, self.test_pred_probs, self.test_labels, self.test_mask])
                         epoch_train_conf_mat += train_conf_mat
                         epoch_test_conf_mat += test_conf_mat
                         epoch_train_loss.append(train_loss)
@@ -487,6 +493,7 @@ class Classifier(object):
                     # plt.show()
                     # plt.close('all')
                 print("New opt thresholds: {}".format(opt_thresholds))
+                sess.run(self.assign_thresholds,{self.thresholds_pl:opt_thresholds})
                 print('Saving...')
                 save_path = saver.save(sess, self.save_path(working_dir), global_step=self.global_step)
                 print("Saved to {}".format(save_path))
@@ -500,6 +507,7 @@ class Classifier(object):
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
             saver.restore(sess,tf.train.latest_checkpoint(working_dir))
+            all_predictions = []
             for ref_image, datapack in zip(ref_images, datapacks):
                 sess.run(self.eval_init,
                          {self.ref_images_pl: [ref_image],
@@ -507,13 +515,14 @@ class Classifier(object):
                 predictions = []
                 while True:
                     try:
-                        probs = sess.run(self.eval_pred_probs)
-                        winner = np.mean(probs, axis=0)
+                        winner = sess.run(self.eval_pred_labels)
                         predictions.append(winner)
                     except tf.errors.OutOfRangeError:
                         break
                 predictions = np.concatenate(predictions, axis=0)
                 print("{} Predictions: {}".format(datapack, predictions.shape))
+                all_predictions.append(predictions)
+            return all_predictions
 
     def build_model(self, inputs, output_bias=0.):
         with tf.variable_scope('classifier', reuse=tf.AUTO_REUSE):
@@ -549,7 +558,6 @@ class Classifier(object):
     def _augment(self, inputs, labels, mask):
         sizes = [(1 + self.K) * 2, 1, 1]
         c = np.cumsum(sizes)
-        print(c)
         N = sum(sizes)
         #B, Nt, N
         large = tf.concat([inputs, labels, mask], axis=-1)
@@ -559,10 +567,9 @@ class Classifier(object):
         return [inputs, labels, mask]
 
 
-def click_through(save_file, datapack, ref_image, working_dir, reset=False):
+def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=False):
     with fits.open(ref_image) as f:
         hdu = flatten(f)
-        data = hdu.data
         wcs = WCS(hdu.header)
     window = 20
 
@@ -602,10 +609,6 @@ def click_through(save_file, datapack, ref_image, working_dir, reset=False):
     # compute Voronoi tesselation
     vor = Voronoi(directions)
 
-    point_to_region_map = vor.point_region
-    region_to_point_map = np.argsort(vor.point_region)
-    print(point_to_region_map)
-    print(region_to_point_map)
     __, nn_idx = cKDTree(directions).query(directions, k=4)
 
     regions, vertices = voronoi_finite_polygons_2d(vor, radius)
@@ -663,12 +666,24 @@ def click_through(save_file, datapack, ref_image, working_dir, reset=False):
             print("Exit")
             # np.save(save_file, human_flags)
             plt.close('all')
-            return False
         if event.key == 'l':
-            print("Exit")
-            # np.save(save_file, human_flags)
-            plt.close('all')
-            return True
+            print("Learning one epoch")
+            c.train_model([save_file], [ref_image], [datapacks.replace('.h5', '.npz')], epochs=1, print_freq=100,
+                          working_dir=model_dir)
+        if event.key == 'p':
+            print("Predicting with neural net...")
+            # c = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias,
+            #                pos_weight=pos_weight)
+            # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
+            #               working_dir=os.path.join(working_dir, 'model'))
+            pred = classifier.eval_model(ref_image, datapacks.replace('.h5', '.npz'),
+                                         working_dir=model_dir)[0]
+            guess_flags[...] = pred.reshape((Nd, Na, Nt))
+
+        if event.key == 'c':
+            print("Copying over predicted...")
+            human_flags[:, a, t] = np.where(human_flags[:, a, t] == -1, guess_flags, human_flags[:, a, t])
+
 
     def onclick(event):
         _, a, t, norm = loc
@@ -719,7 +734,7 @@ def click_through(save_file, datapack, ref_image, working_dir, reset=False):
             list(len(search_first[0]) + np.random.choice(len(search_second[0]), len(search_second[0]), replace=False))
     loc = [0, 0, 0, plt.Normalize(-1., 1.)]
 
-    def load_data(next_loc, next_new=False):
+    def load_data(next_loc):
         loc[0] = next_loc
         o = order[next_loc]
         a = search[0][o]
@@ -734,10 +749,10 @@ def click_through(save_file, datapack, ref_image, working_dir, reset=False):
         loc[3] = norm
         for i, p in enumerate(polygons):
             p.set_facecolor(cmap(norm(tec[0, i, a, t])))
-            if np.all(human_flags[i, a, t] == 0):
+            if human_flags[i, a, t] == 0:
                 p.set_edgecolor('green')
-                p.set_zorder(11)
-            elif np.all(human_flags[i, a, t] == 1):
+                p.set_zorder(10)
+            elif human_flags[i, a, t] == 1:
                 p.set_edgecolor('red')
                 p.set_zorder(11)
             elif guess_flags[i, a, t]:
@@ -770,6 +785,10 @@ if __name__ == '__main__':
     linked_datapacks = []
     linked_ref_images = []
     linked_datapack_npzs = []
+
+    classifer = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=0.,
+                           pos_weight=0.)
+
     for dp, ref_img in zip(datapacks, ref_images):
         linked_datapack = os.path.join(working_dir, os.path.basename(os.path.abspath(dp)))
         if os.path.islink(linked_datapack):
@@ -787,8 +806,10 @@ if __name__ == '__main__':
         label_files.append(save_file)
         linked_datapacks.append(linked_datapack)
         linked_ref_images.append(linked_ref_image)
-        # if click_through(save_file, linked_datapack, linked_ref_image, working_dir, reset=False):
-        #     break
+
+        if click_through(save_file, linked_datapack, linked_ref_image,
+                         model_dir=os.path.join(working_dir, 'model'), classifer=classifer, reset=False):
+            break
 
         linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
         if not os.path.isfile(linked_datapack_npz):
@@ -804,11 +825,11 @@ if __name__ == '__main__':
         linked_datapack_npzs.append(linked_datapack_npz)
 
 
-    output_bias, pos_weight = get_output_bias(label_files)
-    print("Output bias: {}".format(output_bias))
-    print("Pos weight: {}".format(pos_weight))
-    c = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
-    # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
-    #               working_dir=os.path.join(working_dir, 'model'))
-    c.eval_model(linked_ref_images, linked_datapack_npzs,working_dir=os.path.join(working_dir, 'model'))
+    # output_bias, pos_weight = get_output_bias(label_files)
+    # print("Output bias: {}".format(output_bias))
+    # print("Pos weight: {}".format(pos_weight))
+    # c = Classifier(L=5, K=6, n_features=24, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
+    # # c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
+    # #               working_dir=os.path.join(working_dir, 'model'))
+    # c.eval_model(linked_ref_images, linked_datapack_npzs,working_dir=os.path.join(working_dir, 'model'))
 
