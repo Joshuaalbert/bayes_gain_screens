@@ -1,0 +1,6 @@
+model_checkpoint_path: "/home/albert/git/bayes_gain_screens/debug/outlier_detection/model_upgrade/model-K07.ckpt-24290"
+all_model_checkpoint_paths: "/home/albert/git/bayes_gain_screens/debug/outlier_detection/model_upgrade/model-K07.ckpt-21514"
+all_model_checkpoint_paths: "/home/albert/git/bayes_gain_screens/debug/outlier_detection/model_upgrade/model-K07.ckpt-22208"
+all_model_checkpoint_paths: "/home/albert/git/bayes_gain_screens/debug/outlier_detection/model_upgrade/model-K07.ckpt-22902"
+all_model_checkpoint_paths: "/home/albert/git/bayes_gain_screens/debug/outlier_detection/model_upgrade/model-K07.ckpt-23596"
+all_model_checkpoint_paths: "/home/albert/git/bayes_gain_screens/debug/outlier_detection/model_upgrade/model-K07.ckpt-24290"
