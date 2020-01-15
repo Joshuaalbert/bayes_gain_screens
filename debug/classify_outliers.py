@@ -394,36 +394,6 @@ class Classifier(object):
             self.global_step = tf.Variable(0, trainable=False)
             self.opt = tf.train.AdamOptimizer().minimize(self.train_loss, global_step=self.global_step)
 
-    def get_ROC(self, ensemble_probs, labels, mask, desired_fnr=0.01):
-        def _fnr_fpr(probs, labels, mask, threshold):
-            conf_mat = tf.math.confusion_matrix(tf.reshape(labels, (-1,)),
-                                                       tf.reshape(probs > threshold, (-1,)),
-                                                       weights=tf.reshape(mask, (-1,)),
-                                                       num_classes=2, dtype=tf.float32)
-            tn = conf_mat[0, 0]
-            fp = conf_mat[0, 1]
-            fn = conf_mat[1, 0]
-            tp = conf_mat[1, 1]
-            T = tp + fn
-            F = tn + fp
-            fpr = fp / F
-            fnr = fn / T
-            return (fpr, fnr)
-        thresholds = tf.linspace(0., 1., 100)
-
-        ensemble_probs = tf.unstack(ensemble_probs)
-        FPR, FNR = [],[]
-        for probs in ensemble_probs:
-            fpr, fnr = tf.map_fn(lambda t: _fnr_fpr(probs, labels, mask, t), thresholds, dtype=(probs.dtype, probs.dtype))
-            FPR.append(fpr)
-            FNR.append(fnr)
-
-        return
-
-
-
-
-
     def conf_mat_to_str(self, conf_mat):
         tn = conf_mat[0, 0]
         fp = conf_mat[0, 1]
@@ -837,7 +807,7 @@ if __name__ == '__main__':
     output_bias, pos_weight = get_output_bias(label_files)
     print("Output bias: {}".format(output_bias))
     print("Pos weight: {}".format(pos_weight))
-    c = Classifier(L=4, K=4, n_features=16, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
+    c = Classifier(L=4, K=4, n_features=16, crop_size=250, batch_size=16, output_bias=output_bias, pos_weight=pos_weight)
     c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=100, print_freq=100,
                   working_dir=os.path.join(working_dir, 'model'))
 
