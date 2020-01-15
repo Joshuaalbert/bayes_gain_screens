@@ -648,7 +648,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
     dir_ax.set_ylim(vor.min_bound[1] - 0.1 * radius, vor.max_bound[1] + 0.1 * radius)
 
     def onkeyrelease(event):
-        _, a, t, norm, _, _ = loc
+        _, a, t, norm, search, order = loc
         print('Pressed {} ({}, {})'.format(event.key, event.xdata, event.ydata))
         if event.key == 'n':
             print("Saving... going to next.")
@@ -680,6 +680,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
                                          working_dir=model_dir)[0]
             guess_flags[...] = pred.reshape((Nd, Na, Nt))
             search, order = rebuild_order()
+            loc[0] = 0
             loc[4] = search
             loc[5] = order
             load_data(loc[0])
@@ -691,7 +692,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
 
 
     def onclick(event):
-        _, a, t, norm, _, _ = loc
+        _, a, t, norm, search, order = loc
         print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
               ('double' if event.dblclick else 'single', event.button,
                event.x, event.y, event.xdata, event.ydata))
@@ -733,7 +734,7 @@ def click_through(save_file, datapack, ref_image, model_dir, classifier, reset=F
     # Na, Nt
 
     def rebuild_order():
-        mask = np.logical_and(np.any(guess_flags, axis=0), np.logical_not(np.any(human_flags>=0)))
+        mask = np.logical_and(np.any(guess_flags, axis=0), np.logical_not(np.any(human_flags>=0, axis=0)))
         search_first = np.where(mask)
         search_second = np.where(np.logical_not(mask))
         search = [list(sf) + list(ss) for sf, ss in zip(search_first, search_second)]
