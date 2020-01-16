@@ -95,6 +95,7 @@ class Update(object):
                         #S, K, K, B-1
                         s = d_samples[:, :, None, :]*d_samples[:, None, :, :]
                     # K, (K,) B-1
+                    print(self.stat_window)
                     s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window)
                     #B-1, (K,) K
                     s = s.T
