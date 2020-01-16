@@ -761,7 +761,7 @@ class Classifier(object):
         print("Looking in {}".format(model_dir))
         latest_model = self.save_path(model_dir)
 
-        if not os.path.isfile(latest_model):
+        if len(glob.glob("{}*".format(latest_model))) == 0:
             print("Could not find {}".format(latest_model))
             latest_model = tf.train.latest_checkpoint(model_dir)
             if latest_model is None:
