@@ -1170,24 +1170,36 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
         linked_datapack_npzs.append(linked_datapack_npz)
 
 
-    output_bias, pos_weight = get_output_bias(label_files)
-    print("Output bias: {}".format(output_bias))
-    print("Pos weight: {}".format(pos_weight))
 
-    c = Classifier(L=model_kwargs.get('L'),
-                    K=model_kwargs.get('K'),
-                    n_features=model_kwargs.get('n_features'),
-                    crop_size=model_kwargs.get('crop_size'),
-                    batch_size=model_kwargs.get('batch_size'),
-                    output_bias=output_bias,
-                    pos_weight=pos_weight)
     if do_training:
         print("Doing training")
+        output_bias, pos_weight = get_output_bias(label_files)
+        print("Output bias: {}".format(output_bias))
+        print("Pos weight: {}".format(pos_weight))
+
+        c = Classifier(L=model_kwargs.get('L'),
+                       K=model_kwargs.get('K'),
+                       n_features=model_kwargs.get('n_features'),
+                       crop_size=model_kwargs.get('crop_size'),
+                       batch_size=model_kwargs.get('batch_size'),
+                       output_bias=output_bias,
+                       pos_weight=pos_weight)
+
         c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=model_kwargs.get('epochs'),
                       print_freq=100,
                       model_dir=os.path.join(working_dir, 'train'))
     if do_evaluation:
         print("Doing evaluation on all data")
+        output_bias, pos_weight = 0., 1.
+
+        c = Classifier(L=model_kwargs.get('L'),
+                       K=model_kwargs.get('K'),
+                       n_features=model_kwargs.get('n_features'),
+                       crop_size=model_kwargs.get('crop_size'),
+                       batch_size=model_kwargs.get('batch_size'),
+                       output_bias=output_bias,
+                       pos_weight=pos_weight)
+
         if eval_dir is None:
             eval_dir = os.path.join(working_dir, 'train')
         predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, model_dir=eval_dir)
