@@ -760,10 +760,13 @@ class Classifier(object):
     def get_model_file(self, model_dir):
         print("Looking in {}".format(model_dir))
         latest_model = self.save_path(model_dir)
+
         if not os.path.isfile(latest_model):
+            print("Could not find {}".format(latest_model))
             latest_model = tf.train.latest_checkpoint(model_dir)
             if latest_model is None:
                 raise IOError("No model to load")
+        print("Found model {}".format(latest_model))
         return latest_model
 
     def eval_model(self, ref_images, datapacks, model_dir=None):
