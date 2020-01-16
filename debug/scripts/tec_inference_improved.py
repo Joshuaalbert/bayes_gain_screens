@@ -54,7 +54,7 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir, debug=False):
     tec_uncert_array = np.zeros((D, N))
     Sigma_array = np.zeros((D, N, 2*Nf, 2*Nf))
     Omega_array = np.zeros((D, N, 1, 1))
-    update = UpdateGainsToTec(freqs, S=200, tec_scale=300., spacing=10., force_diag_Sigma=True, force_diag_Omega=True, windowed_params=True, stat_window=31)
+    update = UpdateGainsToTec(freqs, S=200, tec_scale=300., spacing=10., force_diag_Sigma=True, force_diag_Omega=True, windowed_params=True, stat_window=61)
     config = tf.ConfigProto(intra_op_parallelism_threads=1,
                             inter_op_parallelism_threads=1,
                             allow_soft_placement=True,
@@ -104,12 +104,6 @@ def sequential_solve(Yreal, Yimag, freqs, working_dir, debug=False):
             plt.savefig(os.path.join(debug_dir, 'phase_diff_{:04d}.png'.format(d)))
             plt.close('all')
 
-        # plt.imshow(res['Sigma'], origin='lower',
-        #            cmap='bone', aspect='auto')
-        # plt.colorbar()
-        # plt.savefig(os.path.join(debug_dir, 'obs_cov_{:04d}.png'.format(d)))
-        #
-        # plt.close('all')
 
 
     return tec_mean_array, tec_uncert_array, Sigma_array, Omega_array
