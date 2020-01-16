@@ -1,5 +1,5 @@
 from .update import Update
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from .. import float_type
 from ..misc import diagonal_jitter
 from scipy.special import hermite, jacobi

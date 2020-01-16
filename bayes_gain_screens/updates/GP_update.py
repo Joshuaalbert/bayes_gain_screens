@@ -9,7 +9,7 @@ from gpflow.kernels import Kernel
 from typing import List
 
 float_type = settings.float_type
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import tensorflow_probability as tfp
 import numpy as np
 from collections import namedtuple

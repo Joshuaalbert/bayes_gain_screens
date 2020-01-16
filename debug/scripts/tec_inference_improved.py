@@ -332,10 +332,10 @@ def add_args(parser):
                         default=False, type="bool", required=False)
 
 def test_main():
-    main(data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
-         working_dir='/home/albert/nederrijn_1/screens/root/L562061/tec_inference_rolling_2',
-         obs_num=562061,
-         ncpu=64,
+    main(data_dir='/home/albert/store/root_dense/L667218/download_archive',
+         working_dir='/home/albert/store/root_dense/L667218/tec_inference_tf_1.15',
+         obs_num=667218,
+         ncpu=32,
          ref_dir=0,
          walking_reference=False
          )

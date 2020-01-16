@@ -3,7 +3,7 @@ from gpflow.likelihoods import Gaussian
 from gpflow import DataHolder, name_scope, params_as_tensors, autoflow
 from gpflow import settings
 float_type = settings.float_type
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import numpy as np
 from typing import List
 from scipy.special import logsumexp

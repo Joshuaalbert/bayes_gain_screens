@@ -1,7 +1,5 @@
-import tensorflow as tf
-
+import tensorflow.compat.v1 as tf
 float_type = tf.float64
-import tensorflow as tf
 
 
 class NLDSSmoother(object):

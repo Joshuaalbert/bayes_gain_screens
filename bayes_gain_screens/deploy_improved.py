@@ -1,15 +1,13 @@
 from .model import AverageModel
 from .datapack import DataPack
-from typing import List, Union
-from .coord_transforms import ITRSToENUWithReferences_v2
-from . import logging, angle_type, dist_type, float_type
+from typing import Union
+from . import logging
 from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, get_coordinates
 from .outlier_detection import remove_outliers, Classifier
 from . import TEC_CONV
-from scipy.ndimage import median_filter
 from timeit import default_timer
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import os, glob
 
 
