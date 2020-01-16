@@ -563,7 +563,6 @@ class Classifier(object):
         self.L = L
         self.crop_size = crop_size
         self.n_features = n_features
-        self.model_path = self.save_path(self.flagging_models)
         with self.graph.as_default():
             self.label_files_pl = tf.placeholder(tf.string, shape=[None], name='label_files')
             self.datapacks_pl = tf.placeholder(tf.string, shape=[None], name='datapacks')
@@ -676,7 +675,7 @@ class Classifier(object):
             return "[{} {} | {} {}] ACC: {} [{}% baseline] FPR: {} [{}% baseline] FNR: {} [{}% baseline]".format(tp, fn, fp, tn, acc, rel_acc, fpr,
                                                                                                  rel_fpr, fnr, rel_fnr)
 
-    def train_model(self, label_files, ref_images, datapacks, epochs=10, print_freq=100, model_dir='./models'):
+    def train_model(self, label_files, ref_images, datapacks, epochs=10, print_freq=100, model_dir='./'):
         os.makedirs(model_dir, exist_ok=True)
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
@@ -755,12 +754,21 @@ class Classifier(object):
     def save_path(self, model_dir):
         return os.path.join(model_dir, 'model-K{:02d}-F{:02d}-L{:02d}.ckpt'.format(self.K, self.n_features, self.L))
 
+    def get_model_file(self, model_dir):
+        latest_model = self.save_path(model_dir)
+        if not os.path.isfile(latest_model):
+            latest_model = tf.train.latest_checkpoint(model_dir)
+            if latest_model is None:
+                raise IOError("No model to load")
+        return latest_model
 
-
-    def eval_model(self, ref_images, datapacks, model_dir='./models'):
+    def eval_model(self, ref_images, datapacks, model_dir=None):
+        if model_dir is None:
+            model_dir = self.flagging_models
+        model_file = self.get_model_file(model_dir)
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
-            saver.restore(sess,tf.train.latest_checkpoint(model_dir))
+            saver.restore(sess,model_file)
             all_predictions = []
             for ref_image, datapack in zip(ref_images, datapacks):
                 sess.run(self.eval_init,
@@ -812,7 +820,7 @@ class Classifier(object):
             return outputs
 
 
-def click_through(save_file, datapack, ref_image, model_dir, reset=False, model_kwargs=None):
+def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
     """
     Creates clickable app to find outliers.
 
@@ -885,10 +893,11 @@ def click_through(save_file, datapack, ref_image, model_dir, reset=False, model_
     ref_dir = directions[0:1, :]
 
     _, guess_flags = filter_tec_dir(tec[0, ...], directions, init_y_uncert=None, min_res=8.)
-    if os.path.isfile(save_file) and not reset:
+    if os.path.isfile(save_file):
         human_flags = np.load(save_file)
     else:
         human_flags = -1 * np.ones([Nd, Na, Nt], np.int32)
+
     guess_flags = np.where(human_flags != -1, human_flags, guess_flags)
 
     # compute Voronoi tesselation
@@ -1085,7 +1094,8 @@ def click_through(save_file, datapack, ref_image, model_dir, reset=False, model_
     plt.show()
     return False
 
-def remove_outliers(do_clicking, do_training, do_evaluation, datapacks, ref_images, working_dir,
+def remove_outliers(do_clicking, do_training, do_evaluation,
+                    datapacks, ref_images, working_dir, eval_dir,
                    L=5, K=7, n_features=24, crop_size=250, batch_size=16, epochs=30):
     """
 
@@ -1107,7 +1117,7 @@ def remove_outliers(do_clicking, do_training, do_evaluation, datapacks, ref_imag
     :return:
     """
     print("Training for outliers.")
-    working_dir = os.path.abspath(working_dir)
+    working_dir = os.path.join(os.path.abspath(working_dir), 'click')
     os.makedirs(working_dir, exist_ok=True)
     print('Using working dir {}'.format(working_dir))
     # datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
@@ -1139,7 +1149,8 @@ def remove_outliers(do_clicking, do_training, do_evaluation, datapacks, ref_imag
         linked_ref_images.append(linked_ref_image)
         if do_clicking:
             if click_through(save_file, linked_datapack, linked_ref_image,
-                             model_dir=os.path.join(working_dir, 'model'), reset=False, model_kwargs=model_kwargs):
+                             model_dir=os.path.join(working_dir, 'click'),
+                             model_kwargs=model_kwargs):
                 break
 
         linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
@@ -1171,10 +1182,12 @@ def remove_outliers(do_clicking, do_training, do_evaluation, datapacks, ref_imag
         print("Doing training")
         c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=model_kwargs.get('epochs'),
                       print_freq=100,
-                      model_dir=os.path.join(working_dir, 'model'))
+                      model_dir=os.path.join(working_dir, 'train'))
     if do_evaluation:
         print("Doing evaluation on all data")
-        predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, model_dir=os.path.join(working_dir, 'model'))
+        if eval_dir is None:
+            eval_dir = os.path.join(working_dir, 'train')
+        predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, model_dir=eval_dir)
         for i, datapack in enumerate(linked_datapacks):
             dp = DataPack(datapack, readonly=True)
             dp.current_solset = 'directionally_referenced'

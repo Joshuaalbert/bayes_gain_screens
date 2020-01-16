@@ -4,7 +4,7 @@ from typing import List, Union
 from .coord_transforms import ITRSToENUWithReferences_v2
 from . import logging, angle_type, dist_type, float_type
 from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, get_coordinates
-from .outlier_detection import filter_tec_dir
+from .outlier_detection import remove_outliers, Classifier
 from . import TEC_CONV
 from scipy.ndimage import median_filter
 from timeit import default_timer
@@ -31,6 +31,17 @@ class Deployment(object):
         self.working_dir = working_dir
 
         logging.info("Using working directory {}".format(working_dir))
+        logging.info("Flagging outliers in TEC")
+        remove_outliers(False, False, True,
+                        [datapack],
+                        [ref_image_fits],
+                        self.working_dir,
+                        Classifier.flagging_models,
+                        K=7,
+                        L=5,
+                        n_features=24,
+                        batch_size=16
+                        )
 
         if isinstance(datapack, DataPack):
             datapack = datapack.filename
@@ -50,24 +61,14 @@ class Deployment(object):
         tec_uncert, _ = datapack.weights_tec
         tec_uncert = tec_uncert.astype(np.float64)
 
-        _, data_directions = datapack.get_directions(axes['dir'])
-        data_directions = np.stack([data_directions.ra.rad, data_directions.dec.rad],
-                                   axis=1)
-        logging.info("Flagging outliers in TEC")
-        tec_uncert, _ = filter_tec_dir(tec[0, ...], data_directions, init_y_uncert=tec_uncert[0, ...], min_res=8.,
-                                       function='multiquadric')
-        tec_uncert = tec_uncert[None, ...]
-        logging.info("Saving outlier information.")
-        datapack.weights_tec = tec_uncert
-
         logging.info("Transposing data to (Nt, Na, Nd)")
         # Nd, Na, Nt -> Nt, Na, Nd
         tec = tec[0, ...].transpose((2, 1, 0))
         self.Nt, self.Na, self.Nd = tec.shape
         tec_uncert = tec_uncert[0, ...].transpose((2, 1, 0))
 
-        logging.info("Setting clipping tec uncertainty to at least to 0.5 mTECU")
-        tec_uncert = np.maximum(tec_uncert, 0.5)
+        logging.info("Setting clipping tec uncertainty to at least to 0.1 mTECU")
+        tec_uncert = np.maximum(tec_uncert, 0.1)
 
         logging.info("Checking finiteness")
         if np.any(np.logical_not(np.isfinite(tec))):
