@@ -1208,7 +1208,7 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
             eval_dir = os.path.join(working_dir, 'train')
         predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, model_dir=eval_dir)
         for i, datapack in enumerate(linked_datapacks):
-            dp = DataPack(datapack, readonly=True)
+            dp = DataPack(datapack, readonly=False)
             dp.current_solset = 'directionally_referenced'
             dp.select(pol=slice(0, 1, 1))
             tec_uncert, _ = dp.weights_tec
