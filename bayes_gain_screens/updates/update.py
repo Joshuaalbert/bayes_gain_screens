@@ -132,6 +132,7 @@ class Update(object):
                         #S, N, N, B
                         s = residuals[:, :, None, :]*residuals[:, None, :, :]
                     #N, (N,) B
+                    print(self.stat_window)
                     s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window)
                     #B, (N,) N
                     return s.T

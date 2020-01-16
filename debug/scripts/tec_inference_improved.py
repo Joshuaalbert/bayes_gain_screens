@@ -15,7 +15,7 @@ from bayes_gain_screens import TEC_CONV
 from dask.multiprocessing import get
 import argparse
 from timeit import default_timer
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import networkx as nx
 import sys
 
