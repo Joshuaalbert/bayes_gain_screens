@@ -151,8 +151,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     datapack.current_solset = 'smoothed000'
     datapack.select(**select)
     phase_smooth, axes = datapack.phase
-    # amp_smooth = smoothamps(amp_raw)
-    # TODO:undo
+    amp_smooth = smoothamps(amp_raw)
     amp_smooth = amp_raw
 
     # amp_smooth, axes = datapack.amplitude

@@ -115,9 +115,9 @@ def rolling_window(a, window,padding='same'):
 
 
 def apply_rolling_func_strided(func, a, window):
+    #handles case when window larger
+    window = min(a.shape[-1], window)
     # ..., N//window, window
-    print(a.shape)
-    print(window)
     rolling_a = rolling_window(a, window, padding='valid')[..., ::window, :]
     repeat = a.shape[-1] // rolling_a.shape[-2]
     # ..., N//window
