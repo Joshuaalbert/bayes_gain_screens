@@ -758,6 +758,7 @@ class Classifier(object):
         return os.path.join(model_dir, 'model-K{:02d}-F{:02d}-L{:02d}.ckpt'.format(self.K, self.n_features, self.L))
 
     def get_model_file(self, model_dir):
+        print("Looking in {}".format(model_dir))
         latest_model = self.save_path(model_dir)
         if not os.path.isfile(latest_model):
             latest_model = tf.train.latest_checkpoint(model_dir)
