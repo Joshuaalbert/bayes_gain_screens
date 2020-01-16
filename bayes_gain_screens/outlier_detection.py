@@ -12,7 +12,10 @@ import glob, os
 from bayes_gain_screens.datapack import DataPack
 from bayes_gain_screens.misc import voronoi_finite_polygons_2d
 import matplotlib
-matplotlib.use('tkagg')
+try:
+    matplotlib.use('tkagg')
+except:
+    pass
 import pylab as plt
 from scipy.spatial import Voronoi, cKDTree
 from scipy.optimize import linprog
