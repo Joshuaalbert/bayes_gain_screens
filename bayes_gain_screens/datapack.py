@@ -12,11 +12,10 @@ import re
 from . import deprecated
 
 
-
 def _load_array_file(array_file):
     '''Loads a csv where each row is x,y,z in geocentric ITRS coords of the antennas'''
 
-    types = np.dtype({'names': ['station','X_ITRS', 'Y_ITRS', 'Z_ITRS'],
+    types = np.dtype({'names': ['station', 'X_ITRS', 'Y_ITRS', 'Z_ITRS'],
                       'formats': ['S16', np.double, np.double, np.double, np.double]})
     d = np.genfromtxt(array_file, comments='#', delimiter=',', dtype=types)
     labels = np.array(d['station'].astype(str))
@@ -24,7 +23,6 @@ def _load_array_file(array_file):
     Nantenna = int(np.size(d['X_ITRS']))
     diameters = None
     return np.array(labels).astype(np.str_), locs.cartesian.xyz.to(au.m).value.transpose()
-
 
 
 def update_h5parm(old_h5parm, new_h5parm):
@@ -68,7 +66,7 @@ def update_h5parm(old_h5parm, new_h5parm):
         for soltab in soltabs:
             if soltab in new.soltabs:
                 new.delete_soltab(soltab)
-            axes = {k:v for (v, k) in zip(*old.soltab_axes(soltab))}
+            axes = {k: v for (v, k) in zip(*old.soltab_axes(soltab))}
 
             antenna_labels, antennas = old.get_antennas(axes['ant'])
             patch_names, directions = old.get_directions(axes['dir'])
@@ -78,19 +76,22 @@ def update_h5parm(old_h5parm, new_h5parm):
             weight_vals, _ = old.get_soltab(soltab, weight=True)
             if 'freq' in axes.keys():
                 freq_labels, freqs = old.get_freqs(axes['freq'])
-                new.add_soltab(soltab, values=vals, weights=weight_vals, weightDtype='f16', time=times.mjd * 86400., pol=pol_labels,
+                new.add_soltab(soltab, values=vals, weights=weight_vals, weightDtype='f16', time=times.mjd * 86400.,
+                               pol=pol_labels,
                                ant=antenna_labels,
                                dir=patch_names, freq=freqs)
             else:
-                new.add_soltab(soltab, values=vals, weights=weight_vals, weightDtype='f16', time=times.mjd * 86400., pol=pol_labels,
-                                    ant=antenna_labels,
-                                    dir=patch_names)
+                new.add_soltab(soltab, values=vals, weights=weight_vals, weightDtype='f16', time=times.mjd * 86400.,
+                               pol=pol_labels,
+                               ant=antenna_labels,
+                               dir=patch_names)
 
 
 class DataPack(object):
     # _H: tb.File
     _arrays = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
     lofar_array = os.path.join(_arrays, 'arrays/lofar.antenna.cfg')
+
     # lofar_array_hba = os.path.join(_arrays, 'arrays/lofar.hba.antenna.cfg')
     # lofar_cycle0_array = os.path.join(_arrays, 'arrays/lofar.cycle0.hba.antenna.cfg')
     # gmrt_array = os.path.join(_arrays, 'arrays/gmrtPos.csv')
@@ -106,12 +107,12 @@ class DataPack(object):
         self._contexts_open = 0
         self._selection = None
         self._current_solset = None
-        self.axes_order = ['pol','dir','ant','freq','time']
-        self.axes_atoms = {'pol':(np.str_,tb.StringAtom(16)),
-                           'dir':(np.str_,tb.StringAtom(128)),
-                           'ant':(np.str_,tb.StringAtom(16)),
-                           'freq':(np.float64,tb.Float64Atom()),
-                           'time':(np.float64,tb.Float64Atom())}
+        self.axes_order = ['pol', 'dir', 'ant', 'freq', 'time']
+        self.axes_atoms = {'pol': (np.str_, tb.StringAtom(16)),
+                           'dir': (np.str_, tb.StringAtom(128)),
+                           'ant': (np.str_, tb.StringAtom(16)),
+                           'freq': (np.float64, tb.Float64Atom()),
+                           'time': (np.float64, tb.Float64Atom())}
         if len(self.solsets) > 0:
             self.current_solset = self.solsets[0]
 
@@ -121,11 +122,11 @@ class DataPack(object):
 
     @axes_order.setter
     def axes_order(self, axes):
-        if not isinstance(axes,(tuple, list)):
+        if not isinstance(axes, (tuple, list)):
             raise ValueError("axes should be a list or tuple. {}".format(type(axes)))
         order = []
         for axis in axes:
-            if axis not in ['ant','dir','freq','pol','time']:
+            if axis not in ['ant', 'dir', 'freq', 'pol', 'time']:
                 raise ValueError("Axis {} not a valid axis.".format(axis))
             if axis in order:
                 raise ValueError("Found duplicate in ordering. {}".format(axes))
@@ -155,7 +156,6 @@ class DataPack(object):
             self._H = None
         self._contexts_open -= 1
 
-
     @property
     def current_solset(self):
         return self._current_solset
@@ -176,7 +176,7 @@ class DataPack(object):
     @property
     def solsets(self):
         with self:
-            return [k for k,v in self._H.root._v_groups.items()]
+            return [k for k, v in self._H.root._v_groups.items()]
 
     @property
     def soltabs(self):
@@ -186,14 +186,14 @@ class DataPack(object):
             solset_group = self._H.root._v_groups[self.current_solset]
             return [k for k, v in solset_group._v_groups.items()]
 
-
     @deprecated("Use current_solset and add_solset")
-    def switch_solset(self,solset, antenna_labels=None, antennas=None, array_file=None, directions=None,
+    def switch_solset(self, solset, antenna_labels=None, antennas=None, array_file=None, directions=None,
                       patch_names=None):
         self.add_solset(solset, antenna_labels, antennas, array_file, directions,
-                      patch_names)
+                        patch_names)
 
-    def add_solset(self,solset, antenna_labels = None, antennas=None, array_file=None, patch_names=None, directions=None):
+    def add_solset(self, solset, antenna_labels=None, antennas=None, array_file=None, patch_names=None,
+                   directions=None):
         """
         Create a solset.
 
@@ -222,7 +222,7 @@ class DataPack(object):
                 self.set_directions(patch_names, directions)
             logging.info("Created solset {}.".format(solset))
 
-    def add_soltab(self,soltab, values=None, weights=None, weightDtype='f16', **axes):
+    def add_soltab(self, soltab, values=None, weights=None, weightDtype='f16', **axes):
         if soltab in self.soltabs:
             logging.warn('Soltab {} already exists.'.format(soltab))
             return
@@ -241,7 +241,8 @@ class DataPack(object):
                     continue
                 shape.append(len(axes[axis_name]))
                 ordered_axes.append(axis_name)
-                self._H.create_array(soltab_group, axis_name,obj=np.array(axes[axis_name]),title='Axis: {}'.format(axis_name))#,atom=self.axes_atoms[axis_name][1])
+                self._H.create_array(soltab_group, axis_name, obj=np.array(axes[axis_name]),
+                                     title='Axis: {}'.format(axis_name))  # ,atom=self.axes_atoms[axis_name][1])
             if values is None:
                 values = np.zeros(shape)
             self._H.create_array(soltab_group, 'val', obj=values.astype(np.float64), atom=tb.Float64Atom())
@@ -252,11 +253,14 @@ class DataPack(object):
             if weights is None:
                 weights = np.ones(shape)
             if weightDtype == 'f16':
-                self._H.create_array(soltab_group, 'weight', obj=weights.astype(np.float16), title='Weights',atom=tb.Float16Atom())
+                self._H.create_array(soltab_group, 'weight', obj=weights.astype(np.float16), title='Weights',
+                                     atom=tb.Float16Atom())
             elif weightDtype == 'f32':
-                self._H.create_array(soltab_group, 'weight', obj=weights.astype(np.float32), title='Weights',atom=tb.Float32Atom())
+                self._H.create_array(soltab_group, 'weight', obj=weights.astype(np.float32), title='Weights',
+                                     atom=tb.Float32Atom())
             elif weightDtype == 'f64':
-                self._H.create_array(soltab_group, 'weight', obj=weights.astype(np.float64), title='Weights',atom=tb.Float64Atom())
+                self._H.create_array(soltab_group, 'weight', obj=weights.astype(np.float64), title='Weights',
+                                     atom=tb.Float64Atom())
             weight_leaf = soltab_group._v_leaves['weight']
             weight_leaf.attrs['AXES'] = ','.join(ordered_axes)
             logging.info("Created soltab {}/{}".format(self.current_solset, soltab))
@@ -269,7 +273,7 @@ class DataPack(object):
             soltab_group = solset_group._v_groups[soltab]
             soltab_group._f_remove(recursive=True)
 
-    def delete_solset(self,solset):
+    def delete_solset(self, solset):
         if solset not in self.solsets:
             raise ValueError("Solset {} appears not to exist.".format(solset))
         with self:
@@ -285,14 +289,15 @@ class DataPack(object):
             if self.current_solset is None:
                 raise ValueError("Current solset is None.")
             solset_group = self._H.root._v_groups[self.current_solset]
+
             class Antenna(tb.IsDescription):
                 name = tb.StringCol(16, pos=1)
-                position = tb.Float64Col(shape=3,dflt=0.0, pos=2)
-                #tb.Col(np.float64,3, np.zeros(3, dtype=np.float64),pos=2)
+                position = tb.Float64Col(shape=3, dflt=0.0, pos=2)
+                # tb.Col(np.float64,3, np.zeros(3, dtype=np.float64),pos=2)
 
             # descriptor = np.dtype([('name', np.str_, 16), ('position', np.float64, 3)])
             self._H.create_table(solset_group, 'antenna', Antenna,
-                                         title='Antenna names and positions', expectedrows=62)
+                                 title='Antenna names and positions', expectedrows=62)
             logging.info("Created antenna table.")
 
     def add_directions_table(self):
@@ -303,14 +308,13 @@ class DataPack(object):
 
             class Direction(tb.IsDescription):
                 name = tb.StringCol(128, pos=1)
-                dir = tb.Float64Col(shape=2,dflt=0.0, pos=2)
-                #tb.Col(np.float64, 2, np.zeros(2, dtype=np.float64), pos=2)
+                dir = tb.Float64Col(shape=2, dflt=0.0, pos=2)
+                # tb.Col(np.float64, 2, np.zeros(2, dtype=np.float64), pos=2)
 
             # descriptor = np.dtype([('name', np.str_, 16), ('position', np.float64, 3)])
             self._H.create_table(solset_group, 'source', Direction,
                                  title='Direction names and directions', expectedrows=35)
             logging.info("Created direction table.")
-
 
     def set_antennas(self, antenna_labels, antennas):
         with self:
@@ -356,10 +360,11 @@ class DataPack(object):
             i = 0
             while i < Na:
                 f.write(
-                    '{0:1.9e}\t{1:1.9e}\t{2:1.9e}\t{3:d}\t{4}'.format(locs[i][0], locs[i][1], locs[i][2], labels[i]))
+                    '{0:1.9e}\t{1:1.9e}\t{2:1.9e}\t{4}'.format(locs[i][0], locs[i][1], locs[i][2], labels[i]))
                 if i < Na - 1:
                     f.write('\n')
                 i += 1
+
     @property
     def antennas(self):
         with self:
@@ -388,6 +393,7 @@ class DataPack(object):
             "grouper(3, 'ABCDEFG', 'x') --> ABC DEF Gxx"
             args = [iter(iterable)] * n
             return itertools.zip_longest(*args, fillvalue=fillvalue)
+
         _temp_solset = self.current_solset
         info = "==== DataPack: {} ====\n".format(os.path.abspath(self.filename))
         for solset in self.solsets:
@@ -399,7 +405,7 @@ class DataPack(object):
 
             info += "\nStations: \n"
             for i, ant1 in enumerate(zip(*self.antennas)):
-                info += "{} -> {}\t{}\n".format(i, ant1[0],list(ant1[1]))
+                info += "{} -> {}\t{}\n".format(i, ant1[0], list(ant1[1]))
             for soltab in self.soltabs:
                 info += "== soltab: {} ==\n".format(soltab)
                 shape = [len(axis_vals) for axis_vals, axis in zip(*self.soltab_axes(soltab))]
@@ -411,7 +417,7 @@ class DataPack(object):
         self.current_solset = _temp_solset
         return info
 
-    def select(self,**axes):
+    def select(self, **axes):
         self._selection = {}
         for axis_name in self.axes_order:
             if axis_name not in axes.keys():
@@ -428,7 +434,7 @@ class DataPack(object):
     def allowed_soltabs(self):
         return ['phase', 'amplitude', 'tec', 'clock', 'const']
 
-    def soltab_axes(self,soltab):
+    def soltab_axes(self, soltab):
         with self:
             if soltab not in self.soltabs:
                 logging.warn('Soltab {} does not exist.'.format(soltab))
@@ -453,7 +459,7 @@ class DataPack(object):
                     type.append(np.array(axis_vals).dtype)
                 return vals, axes
 
-    def get_selection(self,soltab):
+    def get_selection(self, soltab):
         if self._selection is None:
             self._selection = {}
         if soltab not in self.soltabs:
@@ -466,7 +472,7 @@ class DataPack(object):
         for axis_val, axis in zip(*self.soltab_axes(soltab)):
             axis_selection = self._selection.get(axis, None)
             if axis_selection is None:
-                selection.append(slice(None,None,None))
+                selection.append(slice(None, None, None))
             elif isinstance(axis_selection, slice):
                 selection.append(axis_selection)
             elif isinstance(axis_selection, (tuple, list)):
@@ -474,7 +480,8 @@ class DataPack(object):
                 for element in axis_selection:
                     if isinstance(element, int):
                         if element >= len(axis_val):
-                            raise ValueError("Selecting index greater than length of axis {} {}".format(element, axis_val))
+                            raise ValueError(
+                                "Selecting index greater than length of axis {} {}".format(element, axis_val))
                         list_select.append(element)
                     else:
                         idx = np.where(axis_val.astype(type(element)) == element)[0]
@@ -499,15 +506,15 @@ class DataPack(object):
                 if sel[0] != np.min(sel) or sel[-1] != np.max(sel):
                     break
                 if len(sel) == 1:
-                    _sel = slice(sel[0], sel[0]+1, 1)
+                    _sel = slice(sel[0], sel[0] + 1, 1)
                 else:
-                    try_slice = slice(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1))
-                    comp_list = list(range(sel[0], sel[-1]+1, (sel[-1] - sel[0])//(len(sel) - 1)))
+                    try_slice = slice(sel[0], sel[-1] + 1, (sel[-1] - sel[0]) // (len(sel) - 1))
+                    comp_list = list(range(sel[0], sel[-1] + 1, (sel[-1] - sel[0]) // (len(sel) - 1)))
                     if comp_list == sel:
                         _sel = try_slice
             corrected_selection.append(_sel)
 
-        num_lists = sum([1 if isinstance(sel,list) else 0 for sel in corrected_selection])
+        num_lists = sum([1 if isinstance(sel, list) else 0 for sel in corrected_selection])
         if num_lists > 1:
             raise IndexError("Due to a limitation, only one fancy indexing can be applied per pytables getattr.")
         return tuple(corrected_selection)
@@ -581,7 +588,6 @@ class DataPack(object):
 
             leaf.__setitem__(selection, value.transpose(perm))
 
-
     def __getattr__(self, tab):
         """
         Get a value in allowed soltabs or pass on to underlying.
@@ -620,11 +626,13 @@ class DataPack(object):
                         leaf = soltab_group._v_leaves['weight']
                     else:
                         leaf = soltab_group._v_leaves['val']
-                    out_axes = {name:np.array(vals)[selection[i]] for i,(vals,name) in enumerate(zip(soltab_axes_vals,soltab_axes))}
+                    out_axes = {name: np.array(vals)[selection[i]] for i, (vals, name) in
+                                enumerate(zip(soltab_axes_vals, soltab_axes))}
                     out_vals = leaf.__getitem__(selection).transpose(perm)
                     return out_vals, out_axes
                 else:
-                    out_axes = {name:np.array(vals)[selection[i]] for i,(vals,name) in enumerate(zip(soltab_axes_vals, soltab_axes))}
+                    out_axes = {name: np.array(vals)[selection[i]] for i, (vals, name) in
+                                enumerate(zip(soltab_axes_vals, soltab_axes))}
                     return out_axes
         else:
             return object.__getattribute__(self, tab)
@@ -676,7 +684,7 @@ class DataPack(object):
                     leaf.__setitem__(selection, value.transpose(perm))
                 else:
                     if not isinstance(value, dict):
-                        raise("Axes must come in dict of 'name':vals")
+                        raise ("Axes must come in dict of 'name':vals")
                     for i, (k, v) in enumerate(value.items()):
                         axis_vals = soltab_group._v_leaves[k]
                         axis_vals[selection[i]] = v
@@ -694,7 +702,7 @@ class DataPack(object):
     def array_center(self):
         with self:
             _, antennas = self.get_antennas(None)
-            center = antennas.cartesian.xyz[:,0]
+            center = antennas.cartesian.xyz[:, 0]
             center = ac.SkyCoord(x=center[0], y=center[1], z=center[2], frame='itrs')
             return center
 
@@ -721,7 +729,8 @@ class DataPack(object):
                     lookup.append(np.where(a == antenna_labels)[0][0])
             antennas = antennas[lookup, :]
             return antenna_labels[lookup], ac.SkyCoord(antennas[:, 0] * au.m, antennas[:, 1] * au.m,
-                                                        antennas[:, 2] * au.m, frame='itrs')
+                                                       antennas[:, 2] * au.m, frame='itrs')
+
     @property
     def pointing_center(self):
         with self:
@@ -746,7 +755,6 @@ class DataPack(object):
             directions = directions[lookup, :]
             return patch_names[lookup], ac.SkyCoord(directions[:, 0] * au.rad, directions[:, 1] * au.rad, frame='icrs')
 
-
     def get_times(self, times):
         """
         times are stored as mjs
@@ -761,9 +769,3 @@ class DataPack(object):
     def get_pols(self, pols):
         with self:
             return pols, np.arange(len(pols), dtype=np.int32)
-
-
-
-
-
-

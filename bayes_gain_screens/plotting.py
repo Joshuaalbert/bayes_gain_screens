@@ -1,5 +1,6 @@
 import matplotlib
 from matplotlib.colorbar import ColorbarBase
+
 matplotlib.use('Agg')
 import numpy as np
 import os
@@ -23,17 +24,18 @@ try:
 except ImportError:
     phase_cmap = plt.cm.hsv
 
-def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.PuOr, relim=False):
 
+def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.PuOr,
+                    relim=False):
     if cmap is 'phase':
         cmap = phase_cmap
 
     if norm is None:
-        norm = plt.Normalize(np.nanmin(colors) if vmin is not None else vmin, np.nanmax(colors) if vmax is not None else vmax)
+        norm = plt.Normalize(np.nanmin(colors) if vmin is not None else vmin,
+                             np.nanmax(colors) if vmax is not None else vmax)
 
     if radius is None:
         radius = np.max(np.linalg.norm(points - np.mean(points, axis=0), axis=1))
-
 
     def voronoi_finite_polygons_2d(vor, radius=radius):
         """
@@ -97,7 +99,7 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
 
                 # Compute the missing endpoint of an infinite ridge
 
-                t = vor.points[p2] - vor.points[p1] # tangent
+                t = vor.points[p2] - vor.points[p1]  # tangent
                 t /= np.linalg.norm(t)
                 n = np.array([-t[1], t[0]])  # normal
 
@@ -111,7 +113,7 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
             # sort region counterclockwise
             vs = np.asarray([new_vertices[v] for v in new_region])
             c = vs.mean(axis=0)
-            angles = np.arctan2(vs[:,1] - c[1], vs[:,0] - c[0])
+            angles = np.arctan2(vs[:, 1] - c[1], vs[:, 0] - c[0])
             new_region = np.array(new_region)[np.argsort(angles)]
 
             # finish
@@ -126,9 +128,9 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
     regions, vertices = voronoi_finite_polygons_2d(vor)
 
     if ax is None:
-        fig, ax = plt.subplots(1,1)
+        fig, ax = plt.subplots(1, 1)
     # colorize
-    for color,region in zip(colors,regions):
+    for color, region in zip(colors, regions):
         if np.size(color) == 1:
             if norm is None:
                 color = cmap(color)
@@ -137,10 +139,10 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
         polygon = vertices[region]
         ax.fill(*zip(*polygon), color=color, alpha=alpha)
 
-    #plt.plot(points[:,0], points[:,1], 'ko')
+    # plt.plot(points[:,0], points[:,1], 'ko')
     if relim:
-        ax.set_xlim(vor.min_bound[0] - 0.1*radius, vor.max_bound[0] + 0.1*radius)
-        ax.set_ylim(vor.min_bound[1] - 0.1*radius, vor.max_bound[1] + 0.1*radius)
+        ax.set_xlim(vor.min_bound[0] - 0.1 * radius, vor.max_bound[0] + 0.1 * radius)
+        ax.set_ylim(vor.min_bound[1] - 0.1 * radius, vor.max_bound[1] + 0.1 * radius)
     return ax
 
 
@@ -316,9 +318,9 @@ class DatapackPlotter(object):
                 "Applying selection: ant={},time={},freq={},dir={},pol={}".format(ant_sel, time_sel, freq_sel, dir_sel,
                                                                                   pol_sel))
             self.datapack.select(ant=ant_sel, time=time_sel, freq=freq_sel, dir=None, pol=pol_sel)
-            axes = self.datapack.__getattr__("axes_"+observable if 'weights_' not in observable else observable.replace('weights_','axes_'))
+            axes = self.datapack.__getattr__(
+                "axes_" + observable if 'weights_' not in observable else observable.replace('weights_', 'axes_'))
             full_patch_names, _ = self.datapack.get_directions(axes['dir'])
-
 
             self.datapack.select(ant=ant_sel, time=time_sel, freq=freq_sel, dir=dir_sel, pol=pol_sel)
             obs, axes = self.datapack.__getattr__(observable)
@@ -329,11 +331,11 @@ class DatapackPlotter(object):
                 phase_wrap = False
             if plot_overlay:
                 self.datapack.current_solset = overlay_solset
-                overlay_obs, axes = self.datapack.__getattr__(observable)
-                weights, axes = self.datapack.__getattr__("weights_"+observable)
-                _, flag_directions = self.datapack.get_directions(axes['dir'])
+                overlay_obs, overlay_axes = self.datapack.__getattr__(observable)
+                weights, _ = self.datapack.__getattr__("weights_" + observable)
+                _, flag_directions = self.datapack.get_directions(overlay_axes['dir'])
                 logging.info("Flagging observables based on inf uncertanties")
-                flags = weights==np.inf
+                flags = weights == np.inf
                 self.datapack.current_solset = solset
             else:
                 flags = obs.copy()
@@ -343,7 +345,7 @@ class DatapackPlotter(object):
                 # plot only first pol selected
                 obs = obs[0, ...]
                 flags = flags[0, ...]
-                overlay_obs = overlay_obs[0,...]
+                overlay_obs = overlay_obs[0, ...]
 
             # obs is dir, ant, freq, time
             antenna_labels, antennas = self.datapack.get_antennas(axes['ant'])
@@ -356,7 +358,7 @@ class DatapackPlotter(object):
             except:
                 freq_dep = False
                 obs = obs[:, :, None, :]
-                overlay_obs = overlay_obs[:,:,None,:]
+                overlay_obs = overlay_obs[:, :, None, :]
                 flags = flags[:, :, None, :]
                 freq_labels, freqs = [""], [None]
 
@@ -447,8 +449,7 @@ class DatapackPlotter(object):
         if mode == 'perantenna':
 
             M = int(np.ceil(np.sqrt(Na)))
-            fig, axs = plt.subplots(nrows=M, ncols=M, sharex='col', sharey='row', squeeze=False, \
-                                    figsize=(4 * M, 4 * M))
+            fig, axs = plt.subplots(nrows=M, ncols=M, sharex='col', sharey='row', squeeze=False, figsize=(4 * M, 4 * M))
             fig.subplots_adjust(wspace=0., hspace=0.)
             axes_patches = []
             axes_overlay = []
@@ -481,8 +482,9 @@ class DatapackPlotter(object):
                                                          title="{} {:.1f}km".format(title, ref_dist[c]),
                                                          reverse_x=labels_in_radec)
                     if plot_overlay:
-                        sc = ax.scatter(flag_directions.ra.deg, flag_directions.dec.deg, s=50*np.ones(len(flag_directions)), ec=cmap(np.ones(len(flag_directions))),
-                                        linewidths=1.*np.ones(len(flag_directions)),
+                        sc = ax.scatter(flag_directions.ra.deg, flag_directions.dec.deg,
+                                        s=50 * np.ones(len(flag_directions)), ec=cmap(np.ones(len(flag_directions))),
+                                        linewidths=1. * np.ones(len(flag_directions)),
                                         fc=cmap(np.ones(len(flag_directions))))
                         axes_overlay.append(sc)
                     axes_patches.append(p)
@@ -512,16 +514,16 @@ class DatapackPlotter(object):
                         norm = plt.Normalize(vmin, vmax)
                     colors = cmap(norm(datum))
                     if plot_overlay:
-                        lws = 1.*np.ones(flagum.size)
+                        lws = 1. * np.ones(flagum.size)
                         lws[flagum] = 2.
                         s = 50. * np.ones(flagum.size)
                         s[flagum] = 100.
                         ecolors = cmap(norm(overlay_datum))
                         fcolors = cmap(norm(overlay_datum))
-                        ecolors[...,0][flagum] = 1.#[1., 0., 0., 1.]
-                        ecolors[...,1][flagum] = 0.#[1., 0., 0., 1.]
-                        ecolors[...,2][flagum] = 0.#[1., 0., 0., 1.]
-                        ecolors[...,3][flagum] = 1.#[1., 0., 0., 1.]
+                        ecolors[..., 0][flagum] = 1.  # [1., 0., 0., 1.]
+                        ecolors[..., 1][flagum] = 0.  # [1., 0., 0., 1.]
+                        ecolors[..., 2][flagum] = 0.  # [1., 0., 0., 1.]
+                        ecolors[..., 3][flagum] = 1.  # [1., 0., 0., 1.]
                         axes_overlay[i].set_facecolors(fcolors)
                         axes_overlay[i].set_edgecolors(ecolors)
                         axes_overlay[i].set_linewidths(lws)
@@ -536,11 +538,12 @@ class DatapackPlotter(object):
                 if save_fig:
                     plt.savefig(fignames[j])
 
+
 def _parallel_plot(arg):
     datapack, time_slice, kwargs, output_folder = arg
     dp = DatapackPlotter(datapack=datapack)
     with dp.datapack:
-        dp.datapack.current_solset = kwargs.get('solset','sol000')
+        dp.datapack.current_solset = kwargs.get('solset', 'sol000')
         # Get the time selection desired
         dp.datapack.select(time=kwargs.get('time_sel', None))
         soltabs = dp.datapack.soltabs
@@ -548,7 +551,7 @@ def _parallel_plot(arg):
     # timeslice the selection
     times = axes['time']  # mjs
     # sel_list = list(range(len(times))[time_slice])#times[time_slice]
-    kwargs['time_sel'] = time_slice#sel_list
+    kwargs['time_sel'] = time_slice  # sel_list
     fignames = [os.path.join(output_folder, "fig-{:04d}.png".format(j)) for j in range(len(times))[time_slice]]
     dp.plot(fignames=fignames, **kwargs)
     return fignames
@@ -568,7 +571,7 @@ def animate_datapack(datapack, output_folder, num_processes, **kwargs):
         pass
 
     if num_processes is None:
-        num_processes = 1#psutil.cpu_count()
+        num_processes = 1  # psutil.cpu_count()
 
     if isinstance(datapack, DataPack):
         datapack = datapack.filename
@@ -592,7 +595,7 @@ def make_animation(datafolder, prefix='fig', fps=4):
     Output is datafolder/animation.mp4'''
     if os.system(
             'ffmpeg -framerate {} -i {}/{}-%04d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -r 30 {}/animation.mp4'.format(
-                    fps, datafolder, prefix, datafolder)):
+                fps, datafolder, prefix, datafolder)):
         logging.info("{}/animation.mp4 exists already".format(datafolder))
 
 
@@ -652,21 +655,20 @@ def plot_phase_vs_time(datapack, output_folder, solsets='sol000',
                         plt.savefig(os.path.join(output_folder, filename))
         plt.close('all')
 
-def plot_phase_vs_time_per_datapack(datapacks, output_folder, solsets='sol000',
-                       ant_sel=None, time_sel=None, dir_sel=None, freq_sel=None, pol_sel=None):
 
+def plot_phase_vs_time_per_datapack(datapacks, output_folder, solsets='sol000',
+                                    ant_sel=None, time_sel=None, dir_sel=None, freq_sel=None, pol_sel=None):
     if not isinstance(solsets, (list, tuple)):
         solsets = [solsets]
 
     if not isinstance(datapacks, (list, tuple)):
         datapacks = [datapacks]
 
-
     output_folder = os.path.abspath(output_folder)
     os.makedirs(output_folder, exist_ok=True)
     phases = []
     stds = []
-    for solset, datapack in zip(solsets,datapacks):
+    for solset, datapack in zip(solsets, datapacks):
         with DataPack(datapack, readonly=True) as datapack:
             datapack.current_solset = solset
             datapack.select(ant=ant_sel, time=time_sel, dir=dir_sel, freq=freq_sel, pol=pol_sel)
@@ -692,8 +694,9 @@ def plot_phase_vs_time_per_datapack(datapacks, output_folder, solsets='sol000',
                     for i, solset in enumerate(solsets):
                         phase = phases[i]
                         std = stds[i]
-                        label = "{} {} {} {:.1f}MHz {}:{}".format(os.path.basename(datapacks[i]), solset, axes['pol'][p], axes['freq'][f] / 1e6,
-                                                               axes['ant'][a], axes['dir'][d])
+                        label = "{} {} {} {:.1f}MHz {}:{}".format(os.path.basename(datapacks[i]), solset,
+                                                                  axes['pol'][p], axes['freq'][f] / 1e6,
+                                                                  axes['ant'][a], axes['dir'][d])
                         # ax.fill_between(times.mjd, phase[p, d, a, f, :] - 2 * std[p, d, a, f, :],
                         #                 phase[p, d, a, f, :] + 2 * std[p, d, a, f, :], alpha=0.5,
                         #                 label=r'$\pm2\hat{\sigma}_\phi$')  # ,color='blue')
@@ -997,4 +1000,3 @@ def test_nearest():
     ax.set_ylim([np.min(points_i[:, 1]), np.max(points_i[:, 1])])
     ax.set_facecolor('black')
     plt.show()
-
