@@ -6,7 +6,7 @@ class NLDSSmoother(object):
     def __init__(self, num_latent, num_observables, update, momentum=0.5, serve_shapes=None, session:tf.Session=None):
         """
         Perform non-linear dynamics smoothing.
-        :param serve_serve: dict of shapes of kwargs that will be sliced and served
+        :param serve_shapes: dict of shapes of kwargs that will be sliced and served
             Each value is assumed to be [...] and will form a [B, ...] placeholder
             and will be sliced on first dimension and passed to _update function.
         """
@@ -58,7 +58,7 @@ class NLDSSmoother(object):
                     post_mu_b, post_Gamma_b, post_Gamma_inter = self.backward_filter(prior_Gamma, post_mu_f,
                                                                                      post_Gamma_f, Omega_n1)
 
-                    res = self.parameter_estimation(y_pl, post_mu_b, post_Gamma_b, post_Gamma_inter)
+                    res = self.parameter_estimation(y_pl, post_mu_b, post_Gamma_b, post_Gamma_inter, serve_pl)
 
                     Sigma = momentum * Sigma_n1 + (1. - momentum) * res['R_new']
                     Omega = momentum * Omega_n1 + (1. - momentum) * res['Q_new']
@@ -110,7 +110,7 @@ class NLDSSmoother(object):
                 tf.summary.image('Omega',tf.linalg.diag_part(Omega)[None,:,:,None])
                 self.summary = tf.summary.merge_all()
 
-    def parameter_estimation(self, y, post_mu_b, post_Gamma_b, post_Gamma_inter):
+    def parameter_estimation(self, y, post_mu_b, post_Gamma_b, post_Gamma_inter, serve_values):
         """
         M-step
         :param y: [B, N]
@@ -127,7 +127,7 @@ class NLDSSmoother(object):
             ###
             # observation covariance estimate
             # S, B, N
-            R_new, Q_new = self._update.get_params(y, post_mu_b, post_Gamma_b)
+            R_new, Q_new = self._update.get_params(y, post_mu_b, post_Gamma_b, *serve_values)
 
             mu_0 = post_mu_b[0, :]
             Gamma_0 = post_Gamma_b[0, :, :]
@@ -305,7 +305,7 @@ class NLDSSmoother(object):
                           self.Nmax_pl: Nmax})
 
         if logdir is not None:
-            writer = tf.compat.v1.summary.FileWriter(logdir, self.sess.graph, session=self.sess)
+            writer = tf.summary.FileWriter(logdir, self.sess.graph, session=self.sess)
             run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             run_metadata = tf.RunMetadata()
             res, summary_eval = self.sess.run([self.result, self.summary], feed_dict=feed_dict,
