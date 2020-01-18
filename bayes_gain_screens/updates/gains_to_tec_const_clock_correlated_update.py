@@ -217,7 +217,7 @@ class UpdateGainsToTecConstClockCorr(UpdatePy):
         self.freqs = freqs
         self.tec_scale = tec_scale
 
-    def _forward(self, samples):
+    def _forward(self, samples, *serve_values):
         """
         Computes the data-domain samples by pushing forward.
         :param samples: tf.Tensor

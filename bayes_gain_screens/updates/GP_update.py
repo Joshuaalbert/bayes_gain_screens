@@ -233,7 +233,7 @@ class UpdateGaussianProcess(Update):
     def predictive_distribution(self, post_mu_b, post_Gamma_b):
         return post_mu_b, post_Gamma_b
 
-    def get_params(self, y, post_mu_b, post_Gamma_b):
+    def get_params(self, y, post_mu_b, post_Gamma_b,*serve_values):
         """
         If p(X | y, Sigma) = N[post_mu_b, post_Gamma_b]
         then this returns an estimate of the observational covariance, Sigma, and the Levy step covariance.

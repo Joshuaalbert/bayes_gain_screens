@@ -37,7 +37,7 @@ class Update(object):
 
         raise NotImplementedError()
 
-    def _forward(self, samples):
+    def _forward(self, samples, *serve_values):
         """
         Computes the data-domain samples by pushing forward.
         :param samples: tf.Tensor
@@ -60,7 +60,7 @@ class Update(object):
             return post_mean, post_cov
 
 
-    def get_params(self, y, post_mu_b, post_Gamma_b):
+    def get_params(self, y, post_mu_b, post_Gamma_b, *serve_values):
         """
         If p(X | y, Sigma) = N[post_mu_b, post_Gamma_b]
         then this returns an estimate of the observational covariance, Sigma, and the Levy step covariance.
@@ -115,7 +115,7 @@ class Update(object):
 
             with tf.name_scope("get_sigma"):
                 # S, B, N
-                y_pred = self._forward(samples)
+                y_pred = self._forward(samples, *serve_values)
                 residuals = y - y_pred
                 def rolling_Sigma(residuals):
                     """
