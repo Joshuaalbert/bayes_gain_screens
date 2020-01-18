@@ -699,7 +699,8 @@ class DirectionalKernelThinLayerFull(Kernel):
 
         self.a = Parameter(a,
                                transform=transforms.positiveRescale(a),
-                               dtype=settings.float_type)
+                               dtype=settings.float_type,
+                           trainable=False)
 
         if amplitude is not None:
             self.amplitude = Parameter(amplitude,
