@@ -377,9 +377,11 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              exec_env=bayes_gain_screens_env),
         Step('tec_inference', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
              script_name='tec_inference_improved.py', exec_env=bayes_gain_screens_env),
-        Step('infer_screen', ['smooth_dds4', 'tec_inference'], script_dir=script_dir, script_name='infer_screen_improved.py',
+        Step('tec_inference_and_smooth', ['solve_dds4'], script_dir=script_dir,
+             script_name='tec_inference_and_smooth.py', exec_env=bayes_gain_screens_env),
+        Step('infer_screen', ['smooth_dds4', 'tec_inference','tec_inference_and_smooth'], script_dir=script_dir, script_name='infer_screen_improved.py',
              exec_env=bayes_gain_screens_env),
-        Step('merge_slow', ['slow_solve_dds4', 'smooth_dds4', 'infer_screen'], script_dir=script_dir,
+        Step('merge_slow', ['slow_solve_dds4', 'smooth_dds4', 'infer_screen', 'tec_inference_and_smooth'], script_dir=script_dir,
              script_name='merge_slow.py', exec_env=bayes_gain_screens_env),
         Step('image_subtract_dirty', ['subtract'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_sksp_env),
@@ -387,9 +389,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              script_name='image.py', exec_env=lofar_sksp_env),
         Step('image_dds4', ['solve_dds4', 'image_subtract_dds4'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_sksp_env),
-        Step('image_smooth', ['smooth_dds4', 'image_dds4'], script_dir=script_dir, script_name='image.py',
+        Step('image_smooth', ['smooth_dds4', 'image_dds4', 'tec_inference_and_smooth'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_smooth_slow', ['smooth_dds4', 'merge_slow', 'image_smooth'], script_dir=script_dir,
+        Step('image_smooth_slow', ['smooth_dds4', 'merge_slow', 'image_smooth','tec_inference_and_smooth'], script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
         Step('image_screen', ['infer_screen', 'image_smooth_slow'], script_dir=script_dir, script_name='image.py',
@@ -401,7 +403,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_smooth_slow_restricted', ['smooth_dds4', 'merge_slow', 'image_smooth', 'subtract_outside_pb'],
+        Step('image_smooth_slow_restricted', ['smooth_dds4', 'merge_slow', 'image_smooth', 'subtract_outside_pb','tec_inference_and_smooth'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
@@ -503,7 +505,14 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
     steps['tec_inference'].cmd \
         .add('obs_num', obs_num) \
-        .add('ncpu', ncpu // 2) \
+        .add('ncpu', ncpu) \
+        .add('data_dir', data_dir) \
+        .add('ref_dir', ref_dir) \
+        .add('walking_reference', False)
+
+    steps['tec_inference_and_smooth'].cmd \
+        .add('obs_num', obs_num) \
+        .add('ncpu', ncpu) \
         .add('data_dir', data_dir) \
         .add('ref_dir', ref_dir) \
         .add('walking_reference', False)
@@ -621,6 +630,7 @@ STEPS = [
     "slow_solve_dds4",
     "smooth_dds4",
     "tec_inference",
+    "tec_inference_and_smooth",
     "infer_screen",
     "merge_slow",
     "image_subtract_dirty",

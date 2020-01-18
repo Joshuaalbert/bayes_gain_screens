@@ -38,9 +38,10 @@ do_choose_calibrators=2
 do_subtract=2
 do_subtract_outside_pb=2
 do_solve_dds4=2
-do_smooth_dds4=2
+do_smooth_dds4=0
 do_slow_solve_dds4=2
-do_tec_inference=2
+do_tec_inference=0
+do_tec_inference_and_smooth=2
 do_infer_screen=2
 do_merge_slow=2
 
@@ -81,6 +82,7 @@ L=(obs_num \
     do_smooth_dds4 \
     do_slow_solve_dds4 \
     do_tec_inference \
+    do_tec_inference_and_smooth \
     do_infer_screen \
     do_merge_slow \
     simg_dir \
@@ -157,6 +159,7 @@ cmd="python "$script_dir"/pipeline.py \
         --do_smooth_dds4="$do_smooth_dds4" \
         --do_slow_solve_dds4="$do_slow_solve_dds4" \
         --do_tec_inference="$do_tec_inference" \
+        --do_tec_inference_and_smooth="$do_tec_inference_and_smooth" \
         --do_infer_screen="$do_infer_screen" \
         --do_merge_slow="$do_merge_slow" \
         --do_image_smooth="$do_image_smooth" \
