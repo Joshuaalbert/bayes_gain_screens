@@ -120,10 +120,13 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
                                                     np.sqrt(np.diag(Sigma_array[d,t,Nf:,Nf:])+0.05**2),
                                                     tec_conv, clock_conv, amps[d, :, t]),
                            method='BFGS').x for t in range(N)]
+        #Nf, Nt
         smoothed_phase_array[d,:,:] = np.stack([p[0]*tec_conv + p[1]*clock_conv + p[2] for p in params], axis=1)
-        res_real = Yreal_data_di[d,:,:] - amps*np.cos(smoothed_phase_array[d,:,:])
+        #Nf, Nt
+        res_real = Yreal_data_di[d,:,:] - amps[d, :, :]*np.cos(smoothed_phase_array[d,:,:])
+        #Nf, Nt
         sigma_real = np.sqrt(apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_real), 61))
-        res_imag = Yimag_data_di[d, :, :] - amps*np.sin(smoothed_phase_array[d, :, :])
+        res_imag = Yimag_data_di[d, :, :] - amps[d, :, :]*np.sin(smoothed_phase_array[d, :, :])
         sigma_imag = np.sqrt(apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_imag), 61))
 
         params = [minimize(loss, params[t], args=(Yreal_data_di[d, :, t], Yimag_data_di[d, :, t],
