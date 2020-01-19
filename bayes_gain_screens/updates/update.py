@@ -47,13 +47,13 @@ class Update(object):
         """
         raise NotImplementedError()
 
-    def predictive_distribution(self, post_mu_b, post_Gamma_b):
+    def predictive_distribution(self, post_mu_b, post_Gamma_b, *serve_values):
         with tf.name_scope('predictive_distribution'):
             # S, B, K
             samples = tfp.distributions.MultivariateNormalFullCovariance(loc=post_mu_b,
                                                                          covariance_matrix=post_Gamma_b).sample(self.S)
             # S, B, N
-            y_pred = self._forward(samples)
+            y_pred = self._forward(samples, *serve_values)
 
             post_mean = tf.reduce_mean(y_pred, axis=0)
             post_cov = tfp.stats.covariance(y_pred,sample_axis=0, event_axis=-1)

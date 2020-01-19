@@ -87,7 +87,7 @@ class NLDSSmoother(object):
                                    ],
                                   name='iteration_while_loop')
 
-                self.post_y_mean, self.post_y_cov = self._update.predictive_distribution(post_mu, post_Gamma)
+                self.post_y_mean, self.post_y_cov = self._update.predictive_distribution(post_mu, post_Gamma, *serve_pl)
                 self.y_pl = y_pl
                 self.Sigma_0_pl = Sigma_0_pl
                 self.Omega_0_pl = Omega_0_pl
