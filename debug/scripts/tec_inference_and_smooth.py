@@ -206,8 +206,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
         phase_dd = phase_raw[:, solve_dir:solve_dir+1, ...] - phase_di
 
         # Npol, 1, Na, Nf, Nt
-        Yimag_data_dd = amp_raw[:, solve_dir:solve_dir + 1, ...] * np.sin(phase_dd[:, solve_dir:solve_dir + 1, ...])
-        Yreal_data_dd = amp_raw[:, solve_dir:solve_dir + 1, ...] * np.cos(phase_dd[:, solve_dir:solve_dir + 1, ...])
+        Yimag_data_dd = amp_raw[:, solve_dir:solve_dir + 1, ...] * np.sin(phase_dd)
+        Yreal_data_dd = amp_raw[:, solve_dir:solve_dir + 1, ...] * np.cos(phase_dd)
         Yimag_data_dd = Yimag_data_dd.reshape((-1, Nf, Nt))
         Yreal_data_dd = Yreal_data_dd.reshape((-1, Nf, Nt))
 
@@ -220,7 +220,9 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
 
         logging.info("Building dask")
         D = Yreal_data_dd.shape[0]
+        logging.info("Batch-size {}".format(D))
         num_processes = min(D, ncpu)
+        logging.info("Using {} of {} cpus".format(num_processes, ncpu))
         dsk = {}
         keys = []
         for c,i in enumerate(range(0, D, D // num_processes)):
