@@ -239,7 +239,6 @@ class UpdateGainsToTecAmps(UpdatePy):
         :return: tf.Tensor
             [S, B, N]
         """
-        print(serve_values)
         amps = serve_values[0]
 
         tec_conv = tf.constant(TEC_CONV / self.freqs, samples.dtype)
@@ -269,7 +268,6 @@ class UpdateGainsToTecAmps(UpdatePy):
 
         ###
         # The filter expects K > 1 so we augent with dummy extra that has no effect.
-        print(serve_values)
         amps = serve_values[0]
 
         Nf = self.freqs.shape[0]
