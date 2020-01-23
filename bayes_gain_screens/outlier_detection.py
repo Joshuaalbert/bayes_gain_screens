@@ -482,7 +482,8 @@ class training_data_gen(object):
 
             #deterministically shuffle
             np.random.seed(0)
-            order = np.random.shuffle(np.arange(Nd*Na))
+            order = np.arange(Nd*Na)
+            np.random.shuffle(order)
 
             # Nd*Na,Nt, (K+1)*2
             inputs = np.concatenate(inputs, axis=0)
