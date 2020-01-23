@@ -56,8 +56,8 @@ def main(do_click, do_train, do_eval, working_dir, eval_dir, datapack_pattern, r
         if len(ref_images) == 1 and len(ref_images) != len(datapacks):
             ref_images = ref_images*len(datapacks)
     else:
-        datapacks = None
-        ref_images = None
+        datapacks = []
+        ref_images = []
 
     remove_outliers(do_clicking=do_click,
                     do_training=do_train,
