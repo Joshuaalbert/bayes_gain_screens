@@ -1123,22 +1123,23 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
     :param epochs: int, number of epochs to learn for
     :return:
     """
-    print("Training for outliers.")
-    working_dir = os.path.join(os.path.abspath(working_dir), 'click')
-    os.makedirs(working_dir, exist_ok=True)
+
     print('Using working dir {}'.format(working_dir))
-    # datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
-    # ref_images = [os.path.join(os.path.dirname(f), 'image_full_ampphase_di_m.NS.app.restored.fits') for f in datapacks]
-    # ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits'] * len(datapacks)
+    working_dir = os.path.abspath(working_dir)
+    os.makedirs(working_dir, exist_ok=True)
+    click_dir = os.path.join(working_dir, 'click')
+    os.makedirs(click_dir, exist_ok=True)
+    train_dir = os.path.join(working_dir, 'train')
+    os.makedirs(train_dir, exist_ok=True)
 
     model_kwargs = dict(L=L, K=K, n_features=n_features, crop_size=crop_size, batch_size=batch_size, epochs=epochs)
+
     label_files = []
     linked_datapacks = []
     linked_ref_images = []
     linked_datapack_npzs = []
-
     for dp, ref_img in zip(datapacks, ref_images):
-        linked_datapack = os.path.join(working_dir, os.path.basename(os.path.abspath(dp)))
+        linked_datapack = os.path.join(click_dir, os.path.basename(os.path.abspath(dp)))
         if os.path.islink(linked_datapack):
             os.unlink(linked_datapack)
         print("Linking {} -> {}".format(os.path.abspath(dp), linked_datapack))
@@ -1154,17 +1155,12 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
         label_files.append(save_file)
         linked_datapacks.append(linked_datapack)
         linked_ref_images.append(linked_ref_image)
-        if do_clicking:
-            if click_through(save_file, linked_datapack, linked_ref_image,
-                             model_dir=os.path.join(working_dir, 'click'),
-                             model_kwargs=model_kwargs):
-                break
 
         linked_datapack_npz = linked_datapack.replace('.h5', '.npz')
         if not os.path.isfile(linked_datapack_npz):
             dp = DataPack(dp, readonly=True)
-            dp.current_solset='directionally_referenced'
-            dp.select(pol=slice(0,1,1))
+            dp.current_solset = 'directionally_referenced'
+            dp.select(pol=slice(0, 1, 1))
             tec, axes = dp.tec
             tec_uncert, _ = dp.weights_tec
             _, directions = dp.get_directions(axes['dir'])
@@ -1173,9 +1169,18 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
                      directions=np.stack([directions.ra.deg, directions.dec.deg], axis=1))
         linked_datapack_npzs.append(linked_datapack_npz)
 
-
+    if do_clicking:
+        for label_file, datapack, ref_image in zip(label_files, linked_datapacks, linked_ref_images):
+            if click_through(label_file, datapack, ref_image,
+                             model_dir=train_dir,
+                             model_kwargs=model_kwargs):
+                break
 
     if do_training:
+
+        label_files = sorted(glob.glob(os.path.join(click_dir,'*.labels.npy')))
+        linked_ref_images = [l.replace('.labels.npy', '.ref_image.fits') for l in label_files]
+        linked_datapack_npzs = [l.replace('.labels.npy', '.npz') for l in label_files]
         print("Doing training")
         output_bias, pos_weight = get_output_bias(label_files)
         print("Output bias: {}".format(output_bias))
@@ -1191,7 +1196,8 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
 
         c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=model_kwargs.get('epochs'),
                       print_freq=100,
-                      model_dir=os.path.join(working_dir, 'train'))
+                      model_dir=train_dir)
+
     if do_evaluation:
         print("Doing evaluation on all data")
         output_bias, pos_weight = 0., 1.
@@ -1205,7 +1211,11 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
                        pos_weight=pos_weight)
 
         if eval_dir is None:
-            eval_dir = os.path.join(working_dir, 'train')
+            eval_dir = train_dir
+
+        linked_ref_images = sorted(glob.glob(os.path.join(click_dir, '*.ref_image.fits')))
+        linked_datapack_npzs = [l.replace('.ref_image.fits', '.npz') for l in linked_ref_images]
+
         predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, model_dir=eval_dir)
         for i, datapack in enumerate(linked_datapacks):
             dp = DataPack(datapack, readonly=False)
@@ -1218,12 +1228,6 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
             dp.weights_tec = tec_uncert
 
 
-
-
-
-
-
-
 if __name__ == '__main__':
     datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
     ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits'] * len(datapacks)
@@ -1231,6 +1235,7 @@ if __name__ == '__main__':
                     datapacks=datapacks,
                     ref_images = ref_images,
                     working_dir='/home/albert/git/bayes_gain_screens/debug/outlier_detection',
+                    eval_dir=None,
                     L=5, K=7, n_features=24, crop_size=250, batch_size=16, epochs=30)
     # from bayes_gain_screens.datapack import DataPack
     # dp = DataPack('/net/lofar1/data1/albert/imaging/data/lockman/L667218_DDS4_full.h5', readonly=False)
