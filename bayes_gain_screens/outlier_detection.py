@@ -988,7 +988,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
                 print('Model not defined.')
                 return
             print("Predicting with neural net...")
-            output_bias, pos_weight = get_output_bias([save_file])
+            output_bias, pos_weight = 0., 1.#get_output_bias([save_file])
             classifier = Classifier(L=model_kwargs.get('L'),
                                     K=model_kwargs.get('K'),
                                     n_features=model_kwargs.get('n_features'),
