@@ -1213,8 +1213,9 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
         if eval_dir is None:
             eval_dir = train_dir
 
-        linked_ref_images = sorted(glob.glob(os.path.join(click_dir, '*.ref_image.fits')))
-        linked_datapack_npzs = [l.replace('.ref_image.fits', '.npz') for l in linked_ref_images]
+        # evaluate on what was fed in
+        # linked_ref_images = sorted(glob.glob(os.path.join(click_dir, '*.ref_image.fits')))
+        # linked_datapack_npzs = [l.replace('.ref_image.fits', '.npz') for l in linked_ref_images]
 
         predictions = c.eval_model(linked_ref_images, linked_datapack_npzs, model_dir=eval_dir)
         for i, datapack in enumerate(linked_datapacks):

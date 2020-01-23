@@ -46,7 +46,7 @@ def main(do_click, do_train, do_eval, working_dir, eval_dir, datapack_pattern, r
             raise ValueError("working dir can't be none if clicking or training")
         working_dir = os.path.abspath(working_dir)
         os.makedirs(working_dir, exist_ok=True)
-    if do_click:
+    if do_click or do_eval:
         if datapack_pattern is None:
             raise ValueError("datapack pattern can't be none if clicking")
         if ref_image_patten is None:
