@@ -39,7 +39,7 @@ def add_args(parser):
     parser.add_argument('--epochs', help='Number of whole batches to train',
                         default=30, type=int, required=False)
 
-def main(do_click, do_train, do_eval, working_dir, eval_dir, datapack_pattern, ref_image_patten,
+def main(do_click, do_train, do_eval, working_dir, eval_dir, datapack_pattern, ref_image_pattern,
          L,K,n_features, crop_size, batch_size, epochs):
     if do_click or do_train:
         if working_dir is None:
@@ -49,10 +49,10 @@ def main(do_click, do_train, do_eval, working_dir, eval_dir, datapack_pattern, r
     if do_click or do_eval:
         if datapack_pattern is None:
             raise ValueError("datapack pattern can't be none if clicking")
-        if ref_image_patten is None:
+        if ref_image_pattern is None:
             raise ValueError("ref image pattern can't be none in clicking")
         datapacks = glob.glob(datapack_pattern)
-        ref_images = glob.glob(ref_image_patten)
+        ref_images = glob.glob(ref_image_pattern)
         if len(ref_images) == 1 and len(ref_images) != len(datapacks):
             ref_images = ref_images*len(datapacks)
     else:
