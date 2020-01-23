@@ -480,9 +480,14 @@ class training_data_gen(object):
                 input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (self.K + 1) * 2))
                 inputs.append(input)
 
+            #deterministically shuffle
+            np.random.seed(0)
+            order = np.random.shuffle(np.arange(Nd*Na))
+
             # Nd*Na,Nt, (K+1)*2
             inputs = np.concatenate(inputs, axis=0)
-            for b in range(inputs.shape[0]):
+            for k in range(inputs.shape[0]):
+                b = order[k]
                 if np.sum(mask[b,:,:]) == 0:
                     # print("Skipping", b)
                     continue
