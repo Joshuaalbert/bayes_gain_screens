@@ -137,6 +137,7 @@ class Update(object):
                 if self.windowed_params:
                     #B, (N,) N
                     Sigma_new = tf.py_function(rolling_Sigma, [residuals], [residuals.dtype], name='Sigma_new_rolling')[0]
+
                 else:
                     if self.force_diag_Sigma:
                         # N
@@ -148,6 +149,12 @@ class Update(object):
 
                 if self.force_diag_Sigma:
                     Sigma_new = tf.linalg.diag(Sigma_new)
+
+                if self.windowed_params:
+                    # S,B,N->B,N
+                    outliers = tf.reduce_any(
+                        tf.math.abs(residuals) > 2. * tf.math.sqrt(tf.linalg.diag_part(Sigma_new)), axis=0)
+                    Sigma_new = Sigma_new + tf.linalg.diag(tf.where(outliers, 2.*Sigma_new, tf.zeros_like(Sigma_new)))
 
             return Sigma_new, Omega_new
 
