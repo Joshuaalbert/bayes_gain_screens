@@ -114,7 +114,10 @@ def rolling_window(a, window,padding='same'):
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
 
 
-def apply_rolling_func_strided(func, a, window):
+def apply_rolling_func_strided(func, a, window, piecewise_constant=True):
+    if not piecewise_constant:
+        rolling_a = rolling_window(a, window, padding='same')
+        return func(rolling_a)
     #handles case when window larger
     window = min(a.shape[-1], window)
     # ..., N//window, window
