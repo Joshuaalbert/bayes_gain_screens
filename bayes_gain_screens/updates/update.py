@@ -151,10 +151,15 @@ class Update(object):
                     Sigma_new = tf.linalg.diag(Sigma_new)
 
                 if self.windowed_params:
+                    #B,N
+                    sigma_diag = tf.math.sqrt(tf.linalg.diag_part(Sigma_new))
                     # S,B,N->B,N
-                    outliers = tf.reduce_any(
-                        tf.math.abs(residuals) > 2. * tf.math.sqrt(tf.linalg.diag_part(Sigma_new)), axis=0)
-                    Sigma_new = Sigma_new + tf.linalg.diag(tf.where(outliers, 2.*Sigma_new, tf.zeros_like(Sigma_new)))
+                    outliers = tf.reduce_mean(
+                        tf.cast(
+                            tf.math.abs(residuals) > 2. * sigma_diag,
+                            Sigma_new.dtype),
+                        axis=0)
+                    Sigma_new = Sigma_new + tf.linalg.diag(tf.math.square(outliers * 2.*sigma_diag))
 
             return Sigma_new, Omega_new
 
