@@ -235,7 +235,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
                            Yreal_data_dd[start:stop, :, :], Yimag_data_dd[start:stop, :, :],
                            Yreal_data_di[start:stop, :, :], Yimag_data_di[start:stop, :, :],
                            freqs, os.path.join(working_dir,'proc_{:04d}'.format(proc_idx)))
-            dsk[str(c)][0](dsk[str(c)][1:])
+            dsk[str(c)][0](*dsk[str(c)][1:])
             return
             proc_idx += 1
             keys.append(str(c))
