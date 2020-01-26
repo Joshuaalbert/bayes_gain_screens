@@ -388,7 +388,7 @@ def add_args(parser):
 
 def test_main():
     main(data_dir='/home/albert/store/root_dense/L667218/download_archive',
-         working_dir='/home/albert/store/root_dense/L667218/tec_inference_tf_1.15',
+         working_dir='/home/albert/store/root_dense/L667218/tec_inference_and_smooth_test',
          obs_num=667218,
          ncpu=32,
          ref_dir=0,
