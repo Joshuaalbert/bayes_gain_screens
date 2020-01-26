@@ -1,6 +1,6 @@
 from .update import UpdatePy
 from scipy.linalg import solve_triangular
-from scipy.optimize import minimize, brute
+from scipy.optimize import minimize
 import numpy as np
 import tensorflow.compat.v1 as tf
 from scipy.stats import multivariate_normal
