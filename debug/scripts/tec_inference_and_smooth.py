@@ -80,11 +80,11 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         # warm-up
         # logging.info("On {}: Warming up".format(d))
         # B, Nf
-        # Y_warmup = np.transpose(Yreal_data_dd[d, :, : 50] + 1j * Yimag_data_dd[d, :, : 50])
-        # res = NLDSSmoother(2, 2*Nf, update=update, momentum=0.5, serve_shapes=[[Nf]],session=tf.Session(graph=tf.Graph(), config=config)).run(
-        #     stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0, Gamma_0, 4, serve_values=[amps[d, :, :50].T])
-        # Sigma_0 = np.maximum(0.01**2, np.mean(res['Sigma'], axis=0))
-        # Omega_0 = np.maximum(0.1**2, np.mean(res['Omega'], axis=0))
+        Y_warmup = np.transpose(Yreal_data_dd[d, :, : 50] + 1j * Yimag_data_dd[d, :, : 50])
+        res = NLDSSmoother(2, 2*Nf, update=update, momentum=0.5, serve_shapes=[[Nf]],session=tf.Session(graph=tf.Graph(), config=config)).run(
+            stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0, Gamma_0, 4, serve_values=[amps[d, :, :50].T])
+        Sigma_0 = np.maximum(0.01**2, np.mean(res['Sigma'], axis=0))
+        Omega_0 = np.maximum(0.1**2, np.mean(res['Omega'], axis=0))
         # mu_0 = res['mu_0']
         # Gamma_0 = res['Gamma_0']
         # [ print(type(v)) for k,v in res.items()]
@@ -92,10 +92,10 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         Y = np.transpose(Yreal_data_dd[d, :, :] + 1j * Yimag_data_dd[d, :, :])
         if debug:
             res = NLDSSmoother(2, 2*Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
-                stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 3, logdir=os.path.join(working_dir,'logdir'), step=d, serve_values=[amps[d,:,:].T])
+                stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, logdir=os.path.join(working_dir,'logdir'), step=d, serve_values=[amps[d,:,:].T])
         else:
             res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
-                stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 3, serve_values=[amps[d,:,:].T])
+                stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d,:,:].T])
         tec_mean_array[d, :] = res['post_mu'][:, 0]
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
         Sigma_array[d, :, : , :] = res['Sigma']
@@ -235,8 +235,6 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
                            Yreal_data_dd[start:stop, :, :], Yimag_data_dd[start:stop, :, :],
                            Yreal_data_di[start:stop, :, :], Yimag_data_di[start:stop, :, :],
                            freqs, os.path.join(working_dir,'proc_{:04d}'.format(proc_idx)))
-            dsk[str(c)][0](*dsk[str(c)][1:])
-            return
             proc_idx += 1
             keys.append(str(c))
         logging.info("Running dask on {} processes".format(num_processes))
