@@ -82,14 +82,15 @@ def main(data_dir, working_dir, obs_num):
     phase_smooth_slow = phase_slow[..., time_map] + phase_smoothed
     amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
 
-    phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...] #TODO: check if this should be applied
+    phase_screen_slow = phase_screen # + phase_slow[..., time_map][:, dir_map, ...] #TODO: check if slow phase should be applied (seems not)
     phase_screen_slow[:, :Ncal, ...] = phase_smooth_slow
-    amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...]
+    # Amplitudes are fit with rbf during deploy
+    # amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...]
 
     datapack.current_solset = 'screen_slow000'
     datapack.select(**select)
     datapack.phase = phase_screen_slow
-    datapack.amplitude = amplitude_screen_slow
+    # datapack.amplitude = amplitude_screen_slow
 
     datapack.current_solset = 'smoothed_slow000'
     datapack.select(**select)
