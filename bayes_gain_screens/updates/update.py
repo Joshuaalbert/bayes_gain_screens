@@ -2,13 +2,13 @@ import tensorflow.compat.v1 as tf
 import tensorflow_probability as tfp
 from .. import float_type
 import numpy as np
-from ..misc import rolling_window, apply_rolling_func_strided
+from ..misc import apply_rolling_func_strided
 
 class Update(object):
     """
     Class that performs conditioning of a prior on data, and observational/Levy covariances.
     """
-    def __init__(self, *args, S=200, force_diag_Sigma=False, force_diag_Omega=False, windowed_params=False, stat_window=51, **kwargs):
+    def __init__(self, *args, S=100, force_diag_Sigma=False, force_diag_Omega=False, windowed_params=False, stat_window=51, **kwargs):
         self.force_diag_Sigma = force_diag_Sigma
         self.force_diag_Omega = force_diag_Omega
         self.S = S
@@ -95,7 +95,7 @@ class Update(object):
                         #S, K, K, B-1
                         s = d_samples[:, :, None, :]*d_samples[:, None, :, :]
                     # K, (K,) B-1
-                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window)
+                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window, piecewise_constant=False)
                     #B-1, (K,) K
                     s = s.T
                     #B, (K,) K
@@ -131,7 +131,7 @@ class Update(object):
                         #S, N, N, B
                         s = residuals[:, :, None, :]*residuals[:, None, :, :]
                     #N, (N,) B
-                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window)
+                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window, piecewise_constant=False)
                     #B, (N,) N
                     return s.T
                 if self.windowed_params:
