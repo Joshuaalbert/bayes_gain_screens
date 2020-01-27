@@ -93,7 +93,7 @@ class Deployment(object):
                                                                make_data_solset=False,
                                                                posterior_name='posterior',
                                                                screen_directions=screen_directions,
-                                                               make_soltabs=['phase000', 'tec000'],
+                                                               make_soltabs=['amplitude000', 'phase000', 'tec000'],
                                                                remake_posterior_solsets=remake_posterior_solsets)
 
         self.phase_solset = phase_solset

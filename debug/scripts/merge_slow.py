@@ -47,6 +47,7 @@ def main(data_dir, working_dir, obs_num):
     timestamps, times = datapack.get_times(axes['time'])
     time_screen = times.mjd*86400.
     phase_screen, axes = datapack.phase
+    amplitude_screen, axes = datapack.amplitude
 
     ###
     # get smoothed000 phase and amplitude
@@ -82,15 +83,15 @@ def main(data_dir, working_dir, obs_num):
     phase_smooth_slow = phase_slow[..., time_map] + phase_smoothed
     amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
 
-    phase_screen_slow = phase_screen # + phase_slow[..., time_map][:, dir_map, ...] #TODO: check if slow phase should be applied (seems not)
+    phase_screen_slow = phase_screen # + phase_slow[..., time_map][:, dir_map, ...] #Don't add slow to screen
     phase_screen_slow[:, :Ncal, ...] = phase_smooth_slow
     # Amplitudes are fit with rbf during deploy
-    # amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...]
+    amplitude_screen_slow = amplitude_screen # * amplitude_smooth_slow[:, dir_map, ...]
 
     datapack.current_solset = 'screen_slow000'
     datapack.select(**select)
     datapack.phase = phase_screen_slow
-    # datapack.amplitude = amplitude_screen_slow
+    datapack.amplitude = amplitude_screen_slow
 
     datapack.current_solset = 'smoothed_slow000'
     datapack.select(**select)
