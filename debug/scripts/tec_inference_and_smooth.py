@@ -309,6 +309,11 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
+    animate_datapack(merged_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
+                     solset='smoothed000',
+                     observable='amplitude', vmin=0.5, vmax=2., plot_facet_idx=True,
+                     labels_in_radec=True, plot_crosses=False, phase_wrap=False)
+
     plot_results(Na, Nd, antenna_labels, working_dir, phase_model, phase_raw,
                  res_imag, res_real, tec_mean_array,Sigma_array, Omega_array)
 
