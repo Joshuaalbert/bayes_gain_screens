@@ -480,15 +480,12 @@ class training_data_gen(object):
                 input = np.transpose(input, (1, 2, 0, 3)).reshape((Na, Nt, (self.K + 1) * 2))
                 inputs.append(input)
 
-            #deterministically shuffle
-            np.random.seed(0)
-            order = np.arange(Nd*Na)
-            np.random.shuffle(order)
 
             # Nd*Na,Nt, (K+1)*2
             inputs = np.concatenate(inputs, axis=0)
-            for k in range(inputs.shape[0]):
-                b = order[k]
+            #buffer
+            things_to_yield = []
+            for b in range(inputs.shape[0]):
                 if np.sum(mask[b,:,:]) == 0:
                     # print("Skipping", b)
                     continue
@@ -500,9 +497,13 @@ class training_data_gen(object):
                     if np.sum(mask[b,start:stop,0]) == 0:
                         continue
                     if np.random.uniform() < 0.5:
-                        yield (inputs[b,start:stop:1,:], labels[b, start:stop:1, :], mask[b, start:stop:1, :])
+                        _yield = (inputs[b,start:stop:1,:], labels[b, start:stop:1, :], mask[b, start:stop:1, :])
                     else:
-                        yield (inputs[b,stop:start:-1,:], labels[b, stop:start:-1, :], mask[b, stop:start:-1, :])
+                        _yield = (inputs[b,stop:start:-1,:], labels[b, stop:start:-1, :], mask[b, stop:start:-1, :])
+                    yield _yield
+            #         things_to_yield.append(_yield)
+            # for idx in np.random.choice(len(things_to_yield), size=len(things_to_yield), replace=False):
+            #     yield things_to_yield[idx]
         return
 
 class eval_data_gen(object):
@@ -654,7 +655,7 @@ class Classifier(object):
             self.test_pred_probs = tf.nn.sigmoid(test_outputs)
             self.test_conf_mat = tf.math.confusion_matrix(tf.reshape(self.test_labels, (-1,)),
                                                           tf.reshape(tf.reduce_mean(tf.cast(self.test_pred_probs > self.thresholds[:, None, None, None], tf.float32), 0)>=0.5, (-1,)),
-                                                          weights=tf.reshape(self.train_mask, (-1,)),
+                                                          weights=tf.reshape(self.test_mask, (-1,)),
                                                           num_classes=2, dtype=tf.float32)
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels_ext, test_outputs.dtype), logits=test_outputs,
                                                             pos_weight=pos_weight)
