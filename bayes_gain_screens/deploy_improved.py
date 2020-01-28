@@ -35,9 +35,9 @@ class Deployment(object):
                         [ref_image_fits],
                         self.working_dir,
                         Classifier.flagging_models,
-                        K=7,
-                        L=5,
-                        n_features=24,
+                        K=10,
+                        L=7,
+                        n_features=32,
                         batch_size=16
                         )
 
