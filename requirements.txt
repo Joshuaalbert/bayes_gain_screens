@@ -19,3 +19,4 @@ git+https://github.com/deepmind/graph_nets
 pymc3==3.7
 numba==0.46.0
 dask
+sklearn
