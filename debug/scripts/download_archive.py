@@ -46,6 +46,13 @@ def fixsymlinks(archive_dir, working_dir, obs_num):
         print("Linking {} -> {}".format(src, dst))
         os.symlink(src, dst)
 
+        src = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.app.restored.fits')
+        dst = os.path.join(working_dir, 'image_full_ampphase_di_m.NS.app.restored.fits')
+        if os.path.islink(dst):
+            os.unlink(dst)
+        print("Linking {} -> {}".format(src, dst))
+        os.symlink(src, dst)
+
 def copy_archives(archive_dir, working_dir, obs_num, no_download):
     print("Copying archives.")
     archive_fullmask = os.path.join(archive_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
