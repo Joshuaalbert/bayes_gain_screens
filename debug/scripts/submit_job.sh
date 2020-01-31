@@ -29,6 +29,7 @@ force_conda=
 auto_resume=2
 no_download=False
 mock_run=
+retry_task_on_fail=0
 
 ###
 # calibration steps
@@ -90,7 +91,8 @@ L=(obs_num \
     force_conda \
     no_download \
     auto_resume \
-    mock_run)
+    mock_run \
+    retry_task_on_fail)
 
 arg_parse_str="help"
 for arg in ${L[@]}; do
@@ -150,6 +152,7 @@ cmd="python "$script_dir"/pipeline.py \
         --ncpu="$ncpu" \
         --block_size=40 \
         --deployment_type=directional \
+        --retry_task_on_fail="$retry_task_on_fail" \
         --no_download="$no_download" \
         --do_download_archive="$do_download_archive" \
         --do_choose_calibrators="$do_choose_calibrators" \

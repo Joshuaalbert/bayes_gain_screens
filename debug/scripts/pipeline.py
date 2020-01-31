@@ -6,7 +6,7 @@ import glob
 import argparse
 import datetime
 from timeit import default_timer
-
+from collections import OrderedDict
 
 def cmd_call(cmd):
     print("{}".format(cmd))
@@ -169,7 +169,7 @@ def now():
     return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def execute_dask(dsk, key, timing_file=None, state_file=None):
+def execute_dask(dsk, key, timing_file=None, state_file=None, retry_task_on_fail=0):
     """
     Go through the dask in topo order using DFS to reach `key`
     :param dsk: dict
@@ -195,33 +195,41 @@ def execute_dask(dsk, key, timing_file=None, state_file=None):
             print("{} | Executing task {}".format(now(), k))
             state.write("{} | START | {}\n".format(now(), k))
             state.flush()
-            t0 = default_timer()
-            res[k] = dsk[k][0]()
-            time_to_run = default_timer() - t0
-            if res[k] is not None:
-                print("Task {} took {:.2f} hours".format(k, time_to_run / 3600.))
-                if res[k] == 0:
-                    state.write("{} | END | {}\n".format(now(), k))
-                    state.flush()
-                    if timing_file is not None:
-                        update_timing(timing_file, k, time_to_run)
+            try_idx = 0
+            while True:
+                t0 = default_timer()
+                res[k] = dsk[k][0]()
+                time_to_run = default_timer() - t0
+                if res[k] is not None:
+                    print("Task {} took {:.2f} hours".format(k, time_to_run / 3600.))
+                    if res[k] == 0:
+                        state.write("{} | END | {}\n".format(now(), k))
+                        state.flush()
+                        if timing_file is not None:
+                            update_timing(timing_file, k, time_to_run)
+                        break
+                    else:
+                        if try_idx <= retry_task_on_fail:
+                            try_idx += 1
+                            state.write("{} | RETRY | {}\n".format(now(), k))
+                            continue
+                        state.write("{} | FAIL | {}\n".format(now(), k))
+                        state.flush()
+                        print("FAILURE at: {}".format(k))
+                        state.write("{} | PIPELINE_FAILURE\n".format(now()))
+                        state.flush()
+                        exit(3)
                 else:
-                    state.write("{} | FAIL | {}\n".format(now(), k))
-                    state.flush()
-                    print("FAILURE at: {}".format(k))
-                    state.write("{} | PIPELINE_FAILURE\n".format(now()))
-                    state.flush()
-                    exit(3)
-            else:
-                state.write("{} | END_WITHOUT_RUN | {}\n".format(now(), k))
-                print("{} skipped.".format(k))
+                    state.write("{} | END_WITHOUT_RUN | {}\n".format(now(), k))
+                    print("{} skipped.".format(k))
+                    break
         state.write("{} | PIPELINE_SUCCESS\n".format(now()))
         state.flush()
     return res
 
 
 def update_timing(timing_file, name, time):
-    timings = {}
+    timings = OrderedDict()
     if os.path.isfile(timing_file):
         with open(timing_file, 'r+') as f:
             for line in f:
@@ -266,6 +274,7 @@ class Step(object):
 def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, ref_dir, ref_image_fits,
          block_size,
          deployment_type,
+         retry_task_on_fail,
          no_download,
          bind_dirs,
          lofar_sksp_simg,
@@ -618,7 +627,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         dsk[name] = steps[name].get_dask_task()
 
     dsk['endpoint'] = (lambda *x: None,) + tuple([k for k in dsk.keys()])
-    execute_dask(dsk, 'endpoint', timing_file=timing_file, state_file=state_file)
+    execute_dask(dsk, 'endpoint', timing_file=timing_file, state_file=state_file, retry_task_on_fail=retry_task_on_fail)
 
 
 STEPS = [
@@ -659,6 +668,9 @@ def add_args(parser):
     optional = parser.add_argument_group('Optional arguments')
     step_args = parser.add_argument_group('Enable/Disable steps')
 
+    optional.add_argument('--retry_task_on_fail',
+                          help='Retry on failed task this many times. Useful for non-determininistic bugs. 0 means off.',
+                          default=0, type=int, required=False)
     optional.add_argument('--no_download',
                           help='Whether to move instead of copy the archive dir. Potentially unsafe. Requires env variable set SP_AUTH="1".',
                           default=False, type="bool", required=False)
