@@ -149,11 +149,13 @@ def smoothamps(amps):
     freqkernel = 3
     timekernel = 61
     logging.info("Smoothing amplitudes with a median filter ({:.2f}MHz, {:.2f}minutes)".format(freqkernel*1.95, timekernel*0.5))
-    idxh = np.where(amps > 2.)
-    idxl = np.where(amps < 0.25)
-    median = np.tile(np.nanmedian(amps, axis=-1, keepdims=True), (1, 1, 1, 1, amps.shape[-1]))
-    amps[idxh] = median[idxh]
-    amps[idxl] = median[idxl]
+    amps = np.where(amps < 0.5, 0.5, amps)
+    amps = np.where(amps > 2., 2., amps)
+    # idxh = np.where(amps > 2.)
+    # idxl = np.where(amps < 0.25)
+    # median = np.tile(np.nanmedian(amps, axis=-1, keepdims=True), (1, 1, 1, 1, amps.shape[-1]))
+    # amps[idxh] = median[idxh]
+    # amps[idxl] = median[idxl]
     ampssmoothed = np.exp((median_filter(np.log(amps), size=(1, 1, 1, freqkernel, timekernel), mode='reflect')))
     return ampssmoothed
 
