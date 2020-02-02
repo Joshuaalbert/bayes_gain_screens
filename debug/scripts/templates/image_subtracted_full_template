@@ -20,7 +20,6 @@ DDF.py \
     --Output-Also=onNeds \
     --Image-Cell=1.5 \
     --Facets-NFacets=11 \
-    --Facets-PSFOversize=2 \
     --SSDClean-NEnlargeData=0 \
     --Freq-NDegridBand=1 \
     --Deconv-RMSFactor=3.0 \
