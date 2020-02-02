@@ -205,8 +205,7 @@ def prepare_imaging(obs_num, data_dir, working_dir, mask, delete_ddfcache):
     ddfcache = glob.glob(os.path.join(working_dir, '*.ddfcache'))
     if len(ddfcache) > 0 and delete_ddfcache:
         print("Deleting existing ddf cache")
-        for d in ddfcache:
-            os.unlink(d)
+        cleanup_working_dir(working_dir)
     print("Preparing mslist")
     msfiles = glob.glob(os.path.join(data_dir, 'L{}*.ms'.format(obs_num)))
     if len(msfiles) == 0:
