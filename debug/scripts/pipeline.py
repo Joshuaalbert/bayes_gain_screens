@@ -604,13 +604,13 @@ def setup_auto_resume(auto_resume, state_file, steps):
             print("No state file: {}".format(state_file))
             print("Resume not possible. Trusting your user requested pipeline steps.")
         else:
-            with open(state_file, 'r') as f:
-                applicable = False
-                for line in f.readlines():
-                    if "PIPELINE_FAILURE" in line or "PIPELINE_SUCCESS" in line:
-                        applicable = True
-            if not applicable:
-                raise ValueError("The previous run did not finish, but trying to do auto-resume.")
+            # with open(state_file, 'r') as f:
+            #     applicable = False
+            #     for line in f.readlines():
+            #         if "PIPELINE_FAILURE" in line or "PIPELINE_SUCCESS" in line:
+            #             applicable = True
+            # if not applicable:
+            #     raise ValueError("The previous run did not finish, but trying to do auto-resume.")
             if auto_resume == 1:
                 print("Resuming pipeline with flag setting '1'. Deleting old undone/failed work.")
             if auto_resume == 2:
