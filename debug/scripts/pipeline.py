@@ -433,40 +433,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
                 break
         steps[step.name] = step
     # possibly auto resuming by setting flag
-    if auto_resume:
-        print("Attempting auto resume")
-        if not os.path.isfile(state_file):
-            print("No state file: {}".format(state_file))
-            print("Resume not possible. Trusting your user requested pipeline steps.")
-        else:
-            if auto_resume == 1:
-                print("Resuming pipeline with flag setting '1'. Deleting old undone/failed work.")
-            if auto_resume == 2:
-                print("Resuming pipeline with flag setting '2'. Co-existing with old undone/failed work.")
-            for step in steps.keys():
-                if steps[step].flag is None:
-                    print("Step {} being skipped.".format(step))
-                    steps[step].flag = 0
-                if steps[step].flag > 0:
-                    print("Changing step user requested flag {} : {} -> {}".format(step, steps[step].flag, auto_resume))
-                    steps[step].flag = auto_resume
-            with open(state_file, 'r') as f:
-                for line in f.readlines():
-                    if "END" not in line:
-                        continue
-                    name = line.split(" ")[-1].strip()
-                    if name == 'endpoint':
-                        continue
-                    # split = line.split("|")
-                    # if len(split) == 3:
-                    #     name = split[1].strip()
-                    #     status = split[2].strip()
-                    # else:
-                    #     continue
-                    if name not in steps.keys():
-                        raise ValueError("Could not find step {}".format(name))
-                    print("Auto-resume infers {} should be skipped.".format(name))
-                    steps[name].flag = 0
+    setup_auto_resume(auto_resume, state_file, steps)
     # make required working directories (no deleting
     for k, step in steps.items():
         step.build_working_dir(root_working_dir)
@@ -628,6 +595,50 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
 
     dsk['endpoint'] = (lambda *x: None,) + tuple([k for k in dsk.keys()])
     execute_dask(dsk, 'endpoint', timing_file=timing_file, state_file=state_file, retry_task_on_fail=retry_task_on_fail)
+
+
+def setup_auto_resume(auto_resume, state_file, steps):
+    if auto_resume:
+        print("Attempting auto resume")
+        if not os.path.isfile(state_file):
+            print("No state file: {}".format(state_file))
+            print("Resume not possible. Trusting your user requested pipeline steps.")
+        else:
+            with open(state_file, 'r') as f:
+                applicable = False
+                for line in f.readlines():
+                    if "PIPELINE_FAILURE" in line or "PIPELINE_SUCCESS" in line:
+                        applicable = True
+            if not applicable:
+                raise ValueError("The previous run did not finish, but trying to do auto-resume.")
+            if auto_resume == 1:
+                print("Resuming pipeline with flag setting '1'. Deleting old undone/failed work.")
+            if auto_resume == 2:
+                print("Resuming pipeline with flag setting '2'. Co-existing with old undone/failed work.")
+            for step in steps.keys():
+                if steps[step].flag is None:
+                    print("Step {} being skipped.".format(step))
+                    steps[step].flag = 0
+                if steps[step].flag > 0:
+                    print("Changing step user requested flag {} : {} -> {}".format(step, steps[step].flag, auto_resume))
+                    steps[step].flag = auto_resume
+            with open(state_file, 'r') as f:
+                for line in f.readlines():
+                    if "END" not in line:
+                        continue
+                    name = line.split(" ")[-1].strip()
+                    if name == 'endpoint':
+                        continue
+                    # split = line.split("|")
+                    # if len(split) == 3:
+                    #     name = split[1].strip()
+                    #     status = split[2].strip()
+                    # else:
+                    #     continue
+                    if name not in steps.keys():
+                        raise ValueError("Could not find step {}".format(name))
+                    print("Auto-resume infers {} should be skipped.".format(name))
+                    steps[name].flag = 0
 
 
 STEPS = [
