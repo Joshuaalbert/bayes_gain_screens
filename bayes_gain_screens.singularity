@@ -51,7 +51,7 @@ git clone https://github.com/Joshuaalbert/bayes_gain_screens.git
 cd bayes_gain_screens
 cp -r debug/scripts /opt/scripts
 pip install -r requirements.txt
-pip install --no-deps pyregion pyparsing
+pip install --no-deps pyregion
 python setup.py install
 
 

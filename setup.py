@@ -3,7 +3,7 @@
 from setuptools import setup
 from setuptools import find_packages
 
-__minimum_numpy_version__ = '1.17.0'
+__minimum_numpy_version__ = '1.16.2'
 __minimum_tensorflow_version__ = '1.15.0'
 
 setup_requires = ['numpy>=' + __minimum_numpy_version__, 
