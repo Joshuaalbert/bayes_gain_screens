@@ -43,7 +43,6 @@ def generate_models(X, Y, Y_var, ref_location=None, ref_direction=None,
         # logging.info(Y.shape)
         logging.info(np.where(Y_var == np.inf))
         amplitude = np.sqrt(np.nanmean(np.nanmean( np.where(np.isinf(Y_var),np.nan, Y**2), axis=0), axis=-1))
-        logging.info(amplitude.shape)
         amplitude = np.where(np.isnan(amplitude), 1., amplitude)
 
     # h*l = hpd -> l = hpd / h
