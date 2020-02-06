@@ -761,6 +761,37 @@ class DirectionalKernelThinLayerFull(Kernel):
             return tf.math.square(self.amplitude)[:, None, None] * K
         return K
 
+
+class VecKernel(Kernel):
+    def __init__(self,
+                 active_dims=None,
+                 amplitude=None,
+                 inner_kernel: Kernel = None):
+        super().__init__(3, active_dims)
+        self.caption = "VecKernel_{}".format(inner_kernel.name)
+        self.inner_kernel = inner_kernel
+
+        if amplitude is not None:
+            self.amplitude = Parameter(amplitude,
+                                       dtype=float_type, transform=transforms.positive)
+        else:
+            self.amplitude = None
+
+    @params_as_tensors
+    def Kdiag(self, X, presliced=False):
+        if not presliced:
+            X, _ = self._slice(X, None)
+        return tf.linalg.diag_part(self.K(X, None))
+
+    @params_as_tensors
+    def K(self, X1, X2=None, presliced=False):
+
+        K = self.inner_kernel.K(X1, X2, presliced)
+
+        if self.amplitude is not None:
+            return tf.math.square(self.amplitude)[:, None, None] * K
+        return K
+
 def fix_kernel(kern: Kernel):
 
     @params_as_tensors

@@ -4,7 +4,7 @@ import numpy as np
 from .directional_kernels import (GreatCircleRBF, GreatCircleM32, GreatCircleM52, GreatCircleM12, \
                                   GreatCircleRQ, ThinLayerM12, ThinLayerM32,
                                   ThinLayerM52, \
-                                  ThinLayerRQ, ThinLayerRBF, DirectionalKernelThinLayerFull, fix_kernel)
+                                  ThinLayerRQ, ThinLayerRBF, DirectionalKernelThinLayerFull, fix_kernel, VecKernel)
 from .model import HGPR
 from gpflow.kernels import Matern52, Matern32, Matern12, RBF, ArcCosine, RationalQuadratic
 from . import logging
@@ -63,6 +63,18 @@ def generate_models(X, Y, Y_var, ref_location=None, ref_direction=None,
                                                       inner_kernel=d,
                                                       amplitude=amplitude,
                                                       obs_type='DDTEC'))
+    inner_kernels = [
+        gpflow_kernel('RBF', dims=3, variance=1. ** 2, lengthscales=1.*np.pi/180.),
+        gpflow_kernel('M52', dims=3, variance=1. ** 2, lengthscales=1.*np.pi/180.),
+        gpflow_kernel('M32', dims=3, variance=1. ** 2, lengthscales=1.*np.pi/180.),
+        gpflow_kernel('M12', dims=3, variance=1. ** 2, lengthscales=1.*np.pi/180.),
+        gpflow_kernel('RQ', dims=3, variance=1. ** 2, lengthscales=1.*np.pi/180., alpha=10.),
+    ]
+
+    for d in inner_kernels:
+        kernels.append(VecKernel(
+                                  inner_kernel=d,
+                                  amplitude=amplitude))
 
     models = [HGPR(X, Y, Y_var, kern, caption="HGPR_{}".format(kern.caption)) for kern in kernels]
 
