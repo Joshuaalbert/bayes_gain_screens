@@ -422,7 +422,7 @@ class DataPack(object):
         for axis_name in self.axes_order:
             if axis_name not in axes.keys():
                 continue
-            if isinstance(axes[axis_name], (int, str)):
+            if isinstance(axes[axis_name], int):
                 self._selection[axis_name] = [axes[axis_name]]
             else:
                 self._selection[axis_name] = axes[axis_name]
