@@ -422,7 +422,7 @@ class DataPack(object):
         for axis_name in self.axes_order:
             if axis_name not in axes.keys():
                 continue
-            if isinstance(axes[axis_name], int):
+            if isinstance(axes[axis_name], (int, str)):
                 self._selection[axis_name] = [axes[axis_name]]
             else:
                 self._selection[axis_name] = axes[axis_name]
@@ -490,6 +490,7 @@ class DataPack(object):
                         list_select.append(idx[0])
                 selection.append(list_select)
             elif isinstance(axis_selection, str):
+                axis_val = np.asarray(axis_val)
                 is_pattern = []
                 for idx, element in enumerate(axis_val.astype(type(axis_selection))):
                     if re.search(axis_selection, element) is not None:
