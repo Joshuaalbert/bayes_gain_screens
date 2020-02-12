@@ -250,16 +250,16 @@ class UpdateGainsToTecConst(UpdatePy):
         res = minimize(s.loss_func, np.array([0., deconstrain_tec(5.), 0., deconstrain_const(0.1)]), method='BFGS').x
         # last_res = res + np.inf
         # while np.abs(res[0] - last_res[0]) > 10.:
-        obj_try = np.stack([s.loss_func([res[0] + i * basin, res[1], res[2], res[3]]) for i in range(-num_basin, num_basin+1, 1)], axis=0)
+        obj_try = np.stack([s.loss_func([res[0] + i * basin, res[1], wrap(res[2]), res[3]]) for i in range(-num_basin, num_basin+1, 1)], axis=0)
         which_basin = np.argmin(obj_try, axis=0)
-        x_next = np.array([res[0] + (which_basin - float(num_basin)) * basin, res[1], res[2], res[3]])
+        x_next = np.array([res[0] + (which_basin - float(num_basin)) * basin, res[1], wrap(res[2]), res[3]])
         # last_res = res
         res = minimize(s.loss_func, x_next, method='BFGS').x
 
         tec_mean = res[0]
         tec_uncert = constrain_tec(res[1])
 
-        const_mean = res[2]
+        const_mean = wrap(res[2])
         const_uncert = constrain_const(res[3])
 
         post_mu = np.array([tec_mean, const_mean], np.float64)
