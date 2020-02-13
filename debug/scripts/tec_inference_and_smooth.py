@@ -60,6 +60,9 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
 
     D, Nf, N = Yreal_data_dd.shape
 
+    tec_conv = TEC_CONV / freqs
+    clock_conv = 2. * np.pi * 1e-9 * freqs
+
     smoothed_phase_array = np.zeros((D, Nf, N))
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
@@ -118,7 +121,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         logging.info("DDTEC Levy uncert: {:.2f} +- {:.2f} mTECU".format(np.mean(np.sqrt(res['Omega'][:,0,0])), np.std(np.sqrt(res['Omega'][:,0,0]))))
         logging.info("Timing {:.2f} timesteps / second".format(N / (default_timer() - t0)))
         if debug:
-            phase_model = tec_mean_array[d, None, :] * TEC_CONV/freqs[:, None]
+            phase_model = tec_mean_array[d, None, :] * tec_conv[:, None]
             phase_diff = wrap(wrap(phase_model) - np.arctan2(Yimag_data_dd[d,:, :], Yreal_data_dd[d, :, :]))
             plt.imshow(phase_diff,origin='lower', vmin=-0.2, vmax= 0.2,
                        cmap='coolwarm', aspect='auto',
@@ -128,8 +131,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
             plt.savefig(os.path.join(debug_dir, 'phase_diff_{:04d}.png'.format(d)))
             plt.close('all')
 
-        tec_conv = TEC_CONV/freqs
-        clock_conv = 2.*np.pi*1e-9*freqs
+
         params = [minimize(loss, np.zeros(3), args=(Yreal_data_di[d,:,t], Yimag_data_di[d,:,t],
                                                     np.sqrt(np.diag(Sigma_array[d,t,:Nf,:Nf])+0.05**2),
                                                     np.sqrt(np.diag(Sigma_array[d,t,Nf:,Nf:])+0.05**2),
