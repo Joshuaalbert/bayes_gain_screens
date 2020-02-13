@@ -100,8 +100,8 @@ class NLDSSmoother(object):
                     post_Gamma=post_Gamma,
                     Omega=Omega,
                     Sigma=Sigma,
-                    # mu_0=mu_0,
-                    # Gamma_0=Gamma_0,
+                    mu0=mu_0,
+                    Gamma0=Gamma_0,
                     # post_y_mean=self.post_y_mean,
                     # post_y_cov=self.post_y_cov
                 )

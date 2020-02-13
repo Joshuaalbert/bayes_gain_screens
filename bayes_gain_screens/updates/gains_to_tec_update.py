@@ -225,12 +225,11 @@ class UpdateGainsToTec(UpdatePy):
     Uses variational inference to condition TEC on Gains.
     """
 
-    def __init__(self, freqs, tec_scale=300., spacing=10., model_systematic=False, **kwargs):
+    def __init__(self, freqs, tec_scale=300., spacing=10., **kwargs):
         super(UpdateGainsToTec, self).__init__(**kwargs)
         self.freqs = freqs
         self.tec_scale = tec_scale
         self.spacing = spacing
-        self.model_systematic = model_systematic
 
     def _forward(self, samples, *serve_values):
         """
@@ -292,30 +291,11 @@ class UpdateGainsToTec(UpdatePy):
         x_next = np.array([res[0] + (which_basin - float(num_basin)) * basin, res[1]])
         sol = minimize(s.loss_func, x_next, method='BFGS').x
 
-        eff_const = 0.
-
-        if self.model_systematic:
-            phase_data = np.arctan2(Y[Nf:], Y[:Nf])
-            amp_data = np.sqrt(Y[Nf:]**2 + Y[:Nf]**2)
-            phase_diff = wrap(phase_data - wrap(sol[0]*TEC_CONV/self.freqs))
-            eff_phase = np.polyfit(self.freqs/1e-6, phase_diff)[0]*(self.freqs[-1] - self.freqs[0])/1e6/2.
-            eff_const = eff_phase / 0.1576
-            phase_data = phase_data - eff_const
-            Yreal = amp_data * np.cos(phase_data)
-            Yimag = amp_data * np.sin(phase_data)
-
-            s = SolveLossVI(Yreal, Yimag, self.freqs,
-                            tec_mean_prior=prior_mu[0],
-                            tec_uncert_prior=np.sqrt(prior_Gamma[0, 0]),
-                            sigma_real=sigma_real, sigma_imag=sigma_imag)
-            x_next = np.array([sol[0], sol[1]])
-            sol = minimize(s.loss_func, x_next, method='BFGS').x
-
 
         tec_mean = sol[0]
         tec_uncert = constrain_tec(sol[1])
 
-        post_mu = np.array([tec_mean, eff_const], np.float64)
+        post_mu = np.array([tec_mean, 0.], np.float64)
         post_cov = np.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
 
         return [post_mu, post_cov]

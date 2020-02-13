@@ -82,7 +82,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         # B, Nf
         Y_warmup = np.transpose(Yreal_data_dd[d, :, : 50] + 1j * Yimag_data_dd[d, :, : 50])
         res = NLDSSmoother(2, 2*Nf, update=update, momentum=0.5, serve_shapes=[[Nf]],session=tf.Session(graph=tf.Graph(), config=config)).run(
-            stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0, Gamma_0, 4, serve_values=[amps[d, :, :50].T])
+            stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :50].T])
         Sigma_0 = np.maximum(0.01**2, np.mean(res['Sigma'], axis=0))
         Omega_0 = np.maximum(0.1**2, np.mean(res['Omega'], axis=0))
         # mu_0 = res['mu_0']
@@ -96,6 +96,21 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         else:
             res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
                 stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d,:,:].T])
+
+        ###
+        # subtract constant approximation
+        phase_data = np.angle(Y)
+        amp_data = np.abs(Y)
+        diff_phase = wrap(phase_data - wrap(res['post_mu'][None, :,0] * tec_conv))
+        eff_phase_residual = np.polyfit(freqs/1e6, diff_phase, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
+        eff_const = eff_phase_residual / 0.157
+        eff_const = median_filter(eff_const, size=(11,))
+        Y = amp_data*np.exp(1j*(phase_data - eff_const))
+        res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
+                           session=tf.Session(graph=tf.Graph(), config=config)).run(
+            stack_complex(Y), res['Sigma'], res['Omega'], res['mu0'], res['Gamma0'], 1, serve_values=[amps[d, :, :].T])
+
+        ###
         tec_mean_array[d, :] = res['post_mu'][:, 0]
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
         Sigma_array[d, :, : , :] = res['Sigma']
