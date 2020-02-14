@@ -110,7 +110,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         #N
         eff_phase_residual = np.polyfit(freqs/1e6, diff_phase.T, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
         eff_const = eff_phase_residual / 0.157
-        eff_const = median_filter(eff_const, size=(11,))
+        eff_const = median_filter(eff_const, size=(61,))
         #N, Nf
         Y = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
         res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
