@@ -104,7 +104,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         # subtract constant approximation
         phase_data = np.angle(Y)
         amp_data = np.abs(Y)
-        diff_phase = wrap(phase_data - wrap(res['post_mu'][None, :,0] * tec_conv))
+        diff_phase = wrap(phase_data - wrap(res['post_mu'][None, :,0] * tec_conv[:,None]))
         eff_phase_residual = np.polyfit(freqs/1e6, diff_phase, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
         eff_const = eff_phase_residual / 0.157
         eff_const = median_filter(eff_const, size=(11,))
