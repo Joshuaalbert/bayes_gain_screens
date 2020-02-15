@@ -115,7 +115,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         Y = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
         res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
                            session=tf.Session(graph=tf.Graph(), config=config)).run(
-            stack_complex(Y), res['Sigma'], res['Omega'], res['mu0'], res['Gamma0'], 1, serve_values=[amps[d, :, :].T])
+            stack_complex(Y), res['Sigma'], res['Omega'], res['mu0'], res['Gamma0'], 2, serve_values=[amps[d, :, :].T])
 
         ###
         tec_mean_array[d, :] = res['post_mu'][:, 0]
