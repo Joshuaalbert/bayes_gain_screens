@@ -3,7 +3,7 @@ float_type = tf.float64
 
 
 class NLDSSmoother(object):
-    def __init__(self, num_latent, num_observables, update, momentum=0.5, serve_shapes=None, session:tf.Session=None):
+    def __init__(self, num_latent, num_observables, update, momentum=0.5, serve_shapes=None, session:tf.Session=None, freeze_Sigma=False, freeze_Omega = False):
         """
         Perform non-linear dynamics smoothing.
         :param serve_shapes: dict of shapes of kwargs that will be sliced and served
@@ -60,8 +60,14 @@ class NLDSSmoother(object):
 
                     res = self.parameter_estimation(y_pl, post_mu_b, post_Gamma_b, post_Gamma_inter, serve_pl)
 
-                    Sigma = momentum * Sigma_n1 + (1. - momentum) * res['R_new']
-                    Omega = momentum * Omega_n1 + (1. - momentum) * res['Q_new']
+                    if freeze_Omega:
+                        Omega = Omega_n1
+                    else:
+                        Omega = momentum * Omega_n1 + (1. - momentum) * res['Q_new']
+                    if freeze_Sigma:
+                        Sigma = Sigma_n1
+                    else:
+                        Sigma = momentum * Sigma_n1 + (1. - momentum) * res['R_new']
 
                     mu_0 = momentum*mu_0_n1 + (1. - momentum)*res['mu_0']#mu_0_n1#
                     Gamma_0 = momentum * Gamma_0_n1 + (1. - momentum) * res['Gamma_0']#Gamma_0_n1#
