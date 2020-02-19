@@ -71,7 +71,7 @@ class NLDSSmoother(object):
                 Sigma_0_pl = tf.placeholder(float_type, shape=None, name='Sigma_0')
                 Sigma_0 = tf.broadcast_to(Sigma_0_pl, [B, N, N])
 
-                freeze_Omega = tf.broadcast_to(tf.constant(freeze_Omega, dtype=tf.bool, name='freeze_Omega'), [B, N, N])
+                freeze_Omega = tf.broadcast_to(tf.constant(freeze_Omega, dtype=tf.bool, name='freeze_Omega'), [B, K, K])
                 freeze_Sigma = tf.broadcast_to(tf.constant(freeze_Sigma, dtype=tf.bool, name='freeze_Sigma'), [B, N, N])
                 ###
                 # Bayesian evidence
