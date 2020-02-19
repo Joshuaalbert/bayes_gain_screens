@@ -1,4 +1,5 @@
 import tensorflow.compat.v1 as tf
+import numpy as np
 float_type = tf.float64
 
 
@@ -22,6 +23,32 @@ class NLDSSmoother(object):
         else:
             graph = session.graph
             self.sess = session
+            
+        if isinstance(freeze_Sigma, bool):
+            if freeze_Sigma:
+                freeze_Sigma = np.ones([num_observables, num_observables], dtype=np.bool)
+            else:
+                freeze_Sigma = np.zeros([num_observables, num_observables], dtype=np.bool)
+        else:
+            freeze_Sigma_ = list(freeze_Sigma)
+            freeze_Sigma = np.zeros([num_observables, num_observables], dtype=np.bool)
+            for i in freeze_Sigma_:
+                freeze_Sigma[i,:] = 1.
+                freeze_Sigma[:,i] = 1.
+                
+                
+        if isinstance(freeze_Omega, bool):
+            if freeze_Omega:
+                freeze_Omega = np.ones([num_latent, num_latent], dtype=np.bool)
+            else:
+                freeze_Omega = np.zeros([num_latent, num_latent], dtype=np.bool)
+        else:
+            freeze_Omega_ = list(freeze_Omega)
+            freeze_Omega = np.zeros([num_latent, num_latent], dtype=np.bool)
+            for i in freeze_Omega_:
+                freeze_Omega[i,:] = 1.
+                freeze_Omega[:,i] = 1.
+            
 
         with graph.as_default():
             with tf.name_scope('nlds_smoother'):
@@ -44,6 +71,8 @@ class NLDSSmoother(object):
                 Sigma_0_pl = tf.placeholder(float_type, shape=None, name='Sigma_0')
                 Sigma_0 = tf.broadcast_to(Sigma_0_pl, [B, N, N])
 
+                freeze_Omega = tf.constant(freeze_Omega, dtype=tf.bool, name='freeze_Omega')
+                freeze_Sigma = tf.constant(freeze_Sigma, dtype=tf.bool, name='freeze_Sigma')
                 ###
                 # Bayesian evidence
 
@@ -60,14 +89,9 @@ class NLDSSmoother(object):
 
                     res = self.parameter_estimation(y_pl, post_mu_b, post_Gamma_b, post_Gamma_inter, serve_pl)
 
-                    if freeze_Omega:
-                        Omega = Omega_n1
-                    else:
-                        Omega = momentum * Omega_n1 + (1. - momentum) * res['Q_new']
-                    if freeze_Sigma:
-                        Sigma = Sigma_n1
-                    else:
-                        Sigma = momentum * Sigma_n1 + (1. - momentum) * res['R_new']
+                    Omega = tf.where(freeze_Omega, Omega_n1, momentum * Omega_n1 + (1. - momentum) * res['Q_new'])
+                    Sigma = tf.where(freeze_Sigma, Sigma_n1, momentum * Sigma_n1 + (1. - momentum) * res['R_new'])
+
 
                     mu_0 = momentum*mu_0_n1 + (1. - momentum)*res['mu_0']#mu_0_n1#
                     Gamma_0 = momentum * Gamma_0_n1 + (1. - momentum) * res['Gamma_0']#Gamma_0_n1#
