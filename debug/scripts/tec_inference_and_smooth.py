@@ -100,24 +100,24 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
             res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
                 stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d,:,:].T])
 
-        ###
-        # subtract constant approximation
-        #N, Nf
-        phase_data = np.angle(Y)
-        amp_data = np.abs(Y)
-        #N, Nf
-        diff_phase = wrap(phase_data - wrap(res['post_mu'][:,0:1] * tec_conv))
-        #N
-        eff_phase_residual = np.polyfit(freqs/1e6, diff_phase.T, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
-        eff_const = eff_phase_residual / 0.157
-        eff_const = median_filter(eff_const, size=(61,))
-        #N, Nf
-        Y = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
-        res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
-                           session=tf.Session(graph=tf.Graph(), config=config)).run(
-            stack_complex(Y), res['Sigma'], res['Omega'], res['mu0'], res['Gamma0'], 2, serve_values=[amps[d, :, :].T])
-
-        ###
+        # ###
+        # # subtract constant approximation
+        # #N, Nf
+        # phase_data = np.angle(Y)
+        # amp_data = np.abs(Y)
+        # #N, Nf
+        # diff_phase = wrap(phase_data - wrap(res['post_mu'][:,0:1] * tec_conv))
+        # #N
+        # eff_phase_residual = np.polyfit(freqs/1e6, diff_phase.T, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
+        # eff_const = eff_phase_residual / 0.157
+        # eff_const = median_filter(eff_const, size=(61,))
+        # #N, Nf
+        # Y = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
+        # res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
+        #                    session=tf.Session(graph=tf.Graph(), config=config)).run(
+        #     stack_complex(Y), res['Sigma'], res['Omega'], res['mu0'], res['Gamma0'], 2, serve_values=[amps[d, :, :].T])
+        #
+        # ###
         tec_mean_array[d, :] = res['post_mu'][:, 0]
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
         Sigma_array[d, :, : , :] = res['Sigma']
