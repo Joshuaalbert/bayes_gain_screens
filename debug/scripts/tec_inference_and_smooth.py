@@ -68,37 +68,65 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
     tec_uncert_array = np.zeros((D, N))
     Sigma_array = np.zeros((D, N, 2*Nf, 2*Nf))
     Omega_array = np.zeros((D, N, 1, 1))
-    update = UpdateGainsToTecAmps(freqs, S=100, tec_scale=300., force_diag_Sigma=True, force_diag_Omega=True, windowed_params=True, stat_window=61)
+
+    update = UpdateGainsToTecAmps(freqs, S=100, tec_scale=300., force_diag_Sigma=True, force_diag_Omega=True,
+                                        windowed_params=True, window_Sigma=False, window_Omega=True, stat_window=61)
+
     config = tf.ConfigProto(intra_op_parallelism_threads=1,
                             inter_op_parallelism_threads=1,
                             allow_soft_placement=True,
                             device_count={'CPU': 1})
     for d in range(D):
         t0 = default_timer()
-        Sigma_0 = 0.75 ** 2 * np.eye(2 * Nf)
-        Omega_0 = np.diag([30., 0.1]) ** 2
+
         mu_0 = np.array([0., 0.])
         Gamma_0 = np.diag([200., 2 * np.pi]) ** 2
         ###
         # warm-up
         # logging.info("On {}: Warming up".format(d))
         # B, Nf
-        Y_warmup = np.transpose(Yreal_data_dd[d, :, : 50] + 1j * Yimag_data_dd[d, :, : 50])
-        res = NLDSSmoother(2, 2*Nf, update=update, momentum=0.5, serve_shapes=[[Nf]],session=tf.Session(graph=tf.Graph(), config=config)).run(
-            stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :50].T])
-        Sigma_0 = np.maximum(0.01**2, np.mean(res['Sigma'], axis=0))
-        Omega_0 = np.maximum(0.1**2, np.mean(res['Omega'], axis=0))
+
+        # Y_warmup = np.transpose(Yreal_data_dd[d, :, : 50] + 1j * Yimag_data_dd[d, :, : 50])
+        # res = NLDSSmoother(2, 2*Nf, update=update, momentum=0.5, serve_shapes=[[Nf]],session=tf.Session(graph=tf.Graph(), config=config)).run(
+        #     stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :50].T])
+
+        # Sigma_0 = np.maximum(0.01**2, np.mean(res['Sigma'], axis=0))
+        # Omega_0 = np.maximum(0.1**2, np.mean(res['Omega'], axis=0))
+
         # mu_0 = res['mu_0']
         # Gamma_0 = res['Gamma_0']
         # [ print(type(v)) for k,v in res.items()]
         # logging.info("On {}: Full chain".format(d))
+        # Y = np.transpose(Yreal_data_dd[d, :, :] + 1j * Yimag_data_dd[d, :, :])
+
+        # if debug:
+        #     res = NLDSSmoother(2, 2*Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
+        #         stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, logdir=os.path.join(working_dir,'logdir'), step=d, serve_values=[amps[d,:,:].T])
+        # else:
+        #     res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
+        #         stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d,:,:].T])
+
+        Sigma_0 = 0.5 ** 2 * np.eye(2 * Nf)
+        Omega_0 = np.diag([100., 0.01]) ** 2
+
         Y = np.transpose(Yreal_data_dd[d, :, :] + 1j * Yimag_data_dd[d, :, :])
-        if debug:
-            res = NLDSSmoother(2, 2*Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
-                stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, logdir=os.path.join(working_dir,'logdir'), step=d, serve_values=[amps[d,:,:].T])
-        else:
-            res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
-                stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d,:,:].T])
+
+        res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
+                           session=tf.Session(graph=tf.Graph(), config=config),
+                           freeze_Omega=True).run(
+            stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :].T])
+
+        Sigma_0 = np.maximum(0.01 ** 2, np.mean(res['Sigma'], axis=0))
+        Omega_0 = np.maximum(0.1 ** 2, np.mean(res['Omega'], axis=0))
+        mu_0 = res['mu_0']
+        Gamma_0 = res['Gamma_0']
+
+        res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
+                           session=tf.Session(graph=tf.Graph(), config=config),
+                           freeze_Omega=True).run(
+            stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :].T])
+
+
 
         # ###
         # # subtract constant approximation
@@ -147,11 +175,11 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         res_real = Yreal_data_di[d,:,:] - amps[d, :, :]*np.cos(smoothed_phase_array[d,:,:])
         #Nf, Nt
         sigma_real = np.sqrt(apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_real), 61, piecewise_constant=False))
-        sigma_real = np.where(np.abs(res_real) > 2. * sigma_real, 3. * sigma_real, sigma_real)
+        sigma_real = np.where(np.abs(res_real) > 2. * sigma_real, 5. * sigma_real, sigma_real)
 
         res_imag = Yimag_data_di[d, :, :] - amps[d, :, :]*np.sin(smoothed_phase_array[d, :, :])
         sigma_imag = np.sqrt(apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_imag), 61, piecewise_constant=False))
-        sigma_imag = np.where(np.abs(res_imag) > 2. * sigma_imag, 3. * sigma_imag, sigma_imag)
+        sigma_imag = np.where(np.abs(res_imag) > 2. * sigma_imag, 5. * sigma_imag, sigma_imag)
 
         params = [minimize(loss, params[t], args=(Yreal_data_di[d, :, t], Yimag_data_di[d, :, t],
                                                     sigma_real[:,t],

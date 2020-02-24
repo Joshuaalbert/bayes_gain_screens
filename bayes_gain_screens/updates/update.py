@@ -8,9 +8,12 @@ class Update(object):
     """
     Class that performs conditioning of a prior on data, and observational/Levy covariances.
     """
-    def __init__(self, *args, S=100, force_diag_Sigma=False, force_diag_Omega=False, windowed_params=False, stat_window=51, **kwargs):
+    def __init__(self, *args, S=100, force_diag_Sigma=False, force_diag_Omega=False, windowed_params=False, stat_window=51,
+                 window_Sigma=True, window_Omega=True, **kwargs):
         self.force_diag_Sigma = force_diag_Sigma
         self.force_diag_Omega = force_diag_Omega
+        self.window_Sigma = window_Sigma
+        self.window_Omega = window_Omega
         self.S = S
         self.stat_window = stat_window
         self.windowed_params = windowed_params
@@ -100,7 +103,7 @@ class Update(object):
                     s = s.T
                     #B, (K,) K
                     return np.concatenate([s[0:1, ...], s], axis=0)
-                if self.windowed_params:
+                if self.windowed_params and self.window_Omega:
                     #B, (K,) K
                     Omega_new = tf.py_function(rolling_Omega, [d_samples], [d_samples.dtype],name='Omega_new_rolling')[0]
                 else:
@@ -134,7 +137,7 @@ class Update(object):
                     s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window, piecewise_constant=False)
                     #B, (N,) N
                     return s.T
-                if self.windowed_params:
+                if self.windowed_params and self.window_Sigma:
                     #B, (N,) N
                     Sigma_new = tf.py_function(rolling_Sigma, [residuals], [residuals.dtype], name='Sigma_new_rolling')[0]
 
@@ -150,7 +153,7 @@ class Update(object):
                 if self.force_diag_Sigma:
                     Sigma_new = tf.linalg.diag(Sigma_new)
 
-                if self.windowed_params:
+                if self.windowed_params and self.window_Sigma:
                     #B,N
                     sigma_diag = tf.math.sqrt(tf.linalg.diag_part(Sigma_new))
                     # S,B,N->B,N
@@ -159,7 +162,7 @@ class Update(object):
                             tf.math.abs(residuals) > 2. * sigma_diag,
                             Sigma_new.dtype),
                         axis=0)
-                    Sigma_new = Sigma_new + tf.linalg.diag(tf.math.square(outliers * 2.*sigma_diag))
+                    Sigma_new = Sigma_new + tf.linalg.diag(tf.where(outliers > 0.5, tf.math.square(4.*sigma_diag), tf.zeros_like(sigma_diag)))
 
             return Sigma_new, Omega_new
 
