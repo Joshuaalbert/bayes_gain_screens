@@ -123,7 +123,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
 
         res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
                            session=tf.Session(graph=tf.Graph(), config=config),
-                           freeze_Omega=True).run(
+                           freeze_Omega=False).run(
             stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :].T])
 
 
