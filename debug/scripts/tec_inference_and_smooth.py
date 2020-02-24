@@ -118,8 +118,8 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
 
         Sigma_0 = np.maximum(0.01 ** 2, np.mean(res['Sigma'], axis=0))
         Omega_0 = np.maximum(0.1 ** 2, np.mean(res['Omega'], axis=0))
-        mu_0 = res['mu_0']
-        Gamma_0 = res['Gamma_0']
+        mu_0 = res['mu0']
+        Gamma_0 = res['Gamma0']
 
         res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
                            session=tf.Session(graph=tf.Graph(), config=config),
