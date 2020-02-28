@@ -8,15 +8,13 @@ class Update(object):
     """
     Class that performs conditioning of a prior on data, and observational/Levy covariances.
     """
-    def __init__(self, *args, S=100, force_diag_Sigma=False, force_diag_Omega=False, windowed_params=False, stat_window=51,
-                 window_Sigma=True, window_Omega=True, **kwargs):
+    def __init__(self, *args, S=100, force_diag_Sigma=False, force_diag_Omega=False, Sigma_window=51, Omega_window=51,
+                  **kwargs):
         self.force_diag_Sigma = force_diag_Sigma
         self.force_diag_Omega = force_diag_Omega
-        self.window_Sigma = window_Sigma
-        self.window_Omega = window_Omega
         self.S = S
-        self.stat_window = stat_window
-        self.windowed_params = windowed_params
+        self.Sigma_window = Sigma_window
+        self.Omega_window = Omega_window
 
     def __call__(self, t, prior_mu, prior_Gamma, y, Sigma, *serve_values):
         """
@@ -98,12 +96,12 @@ class Update(object):
                         #S, K, K, B-1
                         s = d_samples[:, :, None, :]*d_samples[:, None, :, :]
                     # K, (K,) B-1
-                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window, piecewise_constant=False)
+                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.Omega_window, piecewise_constant=False)
                     #B-1, (K,) K
                     s = s.T
                     #B, (K,) K
                     return np.concatenate([s[0:1, ...], s], axis=0)
-                if self.windowed_params and self.window_Omega:
+                if self.Omega_window > 0:
                     #B, (K,) K
                     Omega_new = tf.py_function(rolling_Omega, [d_samples], [d_samples.dtype],name='Omega_new_rolling')[0]
                 else:
@@ -134,10 +132,10 @@ class Update(object):
                         #S, N, N, B
                         s = residuals[:, :, None, :]*residuals[:, None, :, :]
                     #N, (N,) B
-                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.stat_window, piecewise_constant=False)
+                    s = apply_rolling_func_strided(lambda x: np.mean(x, axis=-1).mean(0), s, self.Sigma_window, piecewise_constant=False)
                     #B, (N,) N
                     return s.T
-                if self.windowed_params and self.window_Sigma:
+                if self.Sigma_window > 0:
                     #B, (N,) N
                     Sigma_new = tf.py_function(rolling_Sigma, [residuals], [residuals.dtype], name='Sigma_new_rolling')[0]
 
@@ -153,7 +151,7 @@ class Update(object):
                 if self.force_diag_Sigma:
                     Sigma_new = tf.linalg.diag(Sigma_new)
 
-                if self.windowed_params and self.window_Sigma:
+                if self.Sigma_window > 0:
                     #B,N
                     sigma_diag = tf.math.sqrt(tf.linalg.diag_part(Sigma_new))
                     # S,B,N->B,N

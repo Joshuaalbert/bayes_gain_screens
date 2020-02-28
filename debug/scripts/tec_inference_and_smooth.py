@@ -69,11 +69,8 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
     Sigma_array = np.zeros((D, N, 2*Nf, 2*Nf))
     Omega_array = np.zeros((D, N, 1, 1))
 
-    update_1 = UpdateGainsToTecAmps(freqs, S=100, tec_scale=300., force_diag_Sigma=True, force_diag_Omega=True,
-                                        windowed_params=True, window_Sigma=True, window_Omega=True, stat_window=1)
-
-    update_61 = UpdateGainsToTecAmps(freqs, S=100, tec_scale=300., force_diag_Sigma=True, force_diag_Omega=True,
-                                  windowed_params=True, window_Sigma=True, window_Omega=True, stat_window=1)
+    update = UpdateGainsToTecAmps(freqs, S=100, tec_scale=300., force_diag_Sigma=True, force_diag_Omega=True,
+                                        Sigma_window=1, Omega_window=31)
 
     config = tf.ConfigProto(intra_op_parallelism_threads=1,
                             inter_op_parallelism_threads=1,
@@ -114,7 +111,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
 
         Y = np.transpose(Yreal_data_dd[d, :, :] + 1j * Yimag_data_dd[d, :, :])
         # each timestep get its own data uncertainty, and no coupling
-        res = NLDSSmoother(2, 2 * Nf, update=update_1, momentum=0., serve_shapes=[[Nf]],
+        res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
                            session=tf.Session(graph=tf.Graph(), config=config),
                            freeze_Omega=True).run(
             stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :].T])
@@ -124,7 +121,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         mu_0 = res['mu0']
         Gamma_0 = res['Gamma0']
         # freeze sigma now and couple
-        res = NLDSSmoother(2, 2 * Nf, update=update_61, momentum=0., serve_shapes=[[Nf]],
+        res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
                            session=tf.Session(graph=tf.Graph(), config=config),
                            freeze_Sigma=True).run(
             stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :].T])
