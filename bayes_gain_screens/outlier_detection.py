@@ -965,6 +965,12 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
             np.save(save_file, human_flags)
             next_loc = max(loc[0] - 1, 0)
             load_data(next_loc)
+        if event.key == 'r':
+            print("Randomising order...")
+            search, order = rebuild_order(random=True)
+            loc[-2] = search
+            loc[-1] = order
+            load_data(0)
         if event.key == 'x':
             print("Exit")
             # np.save(save_file, human_flags)
@@ -1056,7 +1062,17 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
 
     # Na, Nt
 
-    def rebuild_order():
+    def rebuild_order(random=False):
+        if random:
+            mask = np.logical_not(np.any(human_flags >= 0, axis=0))
+            search_first = np.where(mask)
+            search_second = np.where(np.logical_not(mask))
+            search = [list(sf) + list(ss) for sf, ss in zip(search_first, search_second)]
+            order = list(np.random.choice(len(search_first[0]), len(search_first[0]), replace=False)) + \
+                    list(len(search_first[0]) + np.random.choice(len(search_second[0]), len(search_second[0]),
+                                                                 replace=False))
+            return search, order
+
         mask = np.logical_and(np.any(guess_flags, axis=0), np.logical_not(np.any(human_flags>=0, axis=0)))
         search_first = np.where(mask)
         search_second = np.where(np.logical_not(mask))
