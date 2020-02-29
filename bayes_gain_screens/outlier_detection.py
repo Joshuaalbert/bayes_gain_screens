@@ -1086,7 +1086,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
 
     def scale_face():
         _, a, t, norm, search, order = loc
-        vmin, vmax = np.min(tec[0, human_flags[:, a, t], a, t]), np.max(tec[0, human_flags[:, a, t], a, t])
+        vmin, vmax = np.min(tec[0, human_flags[:, a, t]<1, a, t]), np.max(tec[0, human_flags[:, a, t]<1, a, t])
         vmin, vmax = min(vmin, -vmax), max(vmax, -vmin)
         norm = plt.Normalize(vmin, vmax)
         loc[3] = norm
