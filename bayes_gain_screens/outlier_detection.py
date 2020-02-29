@@ -1019,7 +1019,6 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
             human_flags[:, a, t] = np.where(human_flags[:, a, t] == -1, guess_flags[:, a, t], human_flags[:, a, t])
             load_data(loc[0])
 
-
     def onclick(event):
         _, a, t, norm, search, order = loc
         print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
@@ -1039,6 +1038,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
                         polygons[i].set_edgecolor('green')
                     polygons[i].set_zorder(11)
                     print("to {}".format(human_flags[point, a, t]))
+                    scale_face()
                 if event.button == 3 or event.button == 1:
                     start = max(0, t - window)
                     stop = min(Nt, t + window)
@@ -1083,6 +1083,15 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
 
     search, order = rebuild_order()
     loc = [0, 0, 0, plt.Normalize(-1., 1.), search, order]
+
+    def scale_face():
+        _, a, t, norm, search, order = loc
+        vmin, vmax = np.min(tec[0, human_flags[:, a, t], a, t]), np.max(tec[0, human_flags[:, a, t], a, t])
+        vmin, vmax = min(vmin, -vmax), max(vmax, -vmin)
+        norm = plt.Normalize(vmin, vmax)
+        loc[3] = norm
+        for i, p in enumerate(polygons):
+            p.set_facecolor(cmap(norm(tec[0, i, a, t])))
 
     def load_data(next_loc):
         loc[0] = next_loc
