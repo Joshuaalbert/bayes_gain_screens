@@ -971,6 +971,12 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
             loc[-2] = search
             loc[-1] = order
             load_data(0)
+        if event.key == 'r':
+            print("Randomising order...")
+            search, order = rebuild_order(random=False)
+            loc[-2] = search
+            loc[-1] = order
+            load_data(0)
         if event.key == 'x':
             print("Exit")
             # np.save(save_file, human_flags)
@@ -1073,11 +1079,13 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
                                                                  replace=False))
             return search, order
 
+
+
         mask = np.logical_and(np.any(guess_flags, axis=0), np.logical_not(np.any(human_flags>=0, axis=0)))
         search_first = np.where(mask)
         search_second = np.where(np.logical_not(mask))
         search = [list(sf) + list(ss) for sf, ss in zip(search_first, search_second)]
-        order = list(np.random.choice(len(search_first[0]), len(search_first[0]), replace=False)) + \
+        order = list(np.argsort(np.sum(guess_flags==1, axis=0)[search_first])[::-1]) + \
                 list(len(search_first[0]) + np.random.choice(len(search_second[0]), len(search_second[0]), replace=False))
         return search, order
 
@@ -1104,6 +1112,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
         loc[2] = t
 
         print("Looking at ant{:02d} and time {}".format(a, t))
+        print("Number outliers found: {} | non-outliers {}".format(np.sum(human_flags==1), np.sum(human_flags==0)))
         vmin, vmax = np.min(tec[0, :, a, t]), np.max(tec[0, :, a, t])
         vmin, vmax = min(vmin, -vmax), max(vmax, -vmin)
         norm = plt.Normalize(vmin, vmax)
