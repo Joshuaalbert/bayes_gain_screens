@@ -971,8 +971,8 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
             loc[-2] = search
             loc[-1] = order
             load_data(0)
-        if event.key == 'r':
-            print("Randomising order...")
+        if event.key == 'o':
+            print("Ordering by guessed worst...")
             search, order = rebuild_order(random=False)
             loc[-2] = search
             loc[-1] = order
