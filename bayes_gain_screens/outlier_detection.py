@@ -1120,10 +1120,8 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
 
         print("Looking at ant{:02d} and time {}".format(a, t))
         print("Number outliers found: {} | non-outliers {}".format(np.sum(human_flags==1), np.sum(human_flags==0)))
-        vmin, vmax = np.min(tec[0, :, a, t]), np.max(tec[0, :, a, t])
-        vmin, vmax = min(vmin, -vmax), max(vmax, -vmin)
-        norm = plt.Normalize(vmin, vmax)
-        loc[3] = norm
+        scale_face()
+        norm = loc[3]
         for i, p in enumerate(polygons):
             p.set_facecolor(cmap(norm(tec[0, i, a, t])))
             if human_flags[i, a, t] == 0:
