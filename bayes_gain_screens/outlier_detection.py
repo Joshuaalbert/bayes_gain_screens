@@ -947,7 +947,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
 
     dir_ax.scatter(ref_dir[:, 0], ref_dir[:, 1], marker='*', color='black', zorder=19)
     for i in range(1,directions.shape[0]):
-        dots.append(dir_ax.scatter(directions[i,0], directions[i,1], marker='o', s=50, c='black',ec=None,alpha=0.5))
+        dots.append(dir_ax.scatter(directions[i,0], directions[i,1], marker='o', s=50, c='white',ec='black', lw=2, zorder=19))
 
     # plt.plot(points[:,0], points[:,1], 'ko')
     dir_ax.set_xlim(vor.min_bound[0] - 0.1 * radius, vor.max_bound[0] + 0.1 * radius)
@@ -1042,11 +1042,11 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
                     if human_flags[point, a, t] == -1 or human_flags[point, a, t] == 0:
                         human_flags[point, a, t] = 1
                         polygons[i].set_edgecolor('red')
-                        dots[i].set_array('red')
+                        dots[i].set_edgecolor('red')
                     elif human_flags[point, a, t] == 1:
                         human_flags[point, a, t] = 0
                         polygons[i].set_edgecolor('green')
-                        dots[i].set_array('green')
+                        dots[i].set_edgecolor('green')
                     polygons[i].set_zorder(11)
                     print("to {}".format(human_flags[point, a, t]))
                     scale_face()
@@ -1124,21 +1124,22 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
         loc[3] = norm
         for i, p in enumerate(polygons):
             p.set_facecolor(cmap(norm(tec[0, i, a, t])))
+            dots[i].set_facecolor(cmap(norm(tec[0, i, a, t])))
             if human_flags[i, a, t] == 0:
                 p.set_edgecolor('green')
-                dots[i].set_array('green')
+                dots[i].set_edgecolor('green')
                 p.set_zorder(10)
             elif human_flags[i, a, t] == 1:
                 p.set_edgecolor('red')
-                dots[i].set_array('red')
+                dots[i].set_edgecolor('red')
                 p.set_zorder(11)
             elif guess_flags[i, a, t]:
                 p.set_edgecolor('cyan')
-                dots[i].set_array('cyan')
+                dots[i].set_edgecolor('cyan')
                 p.set_zorder(11)
             else:
                 p.set_edgecolor('black')
-                dots[i].set_array('black')
+                dots[i].set_edgecolor('black')
                 p.set_zorder(10)
         fig.canvas.draw()
 
