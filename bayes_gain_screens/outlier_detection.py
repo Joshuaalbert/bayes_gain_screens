@@ -1119,7 +1119,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
         vmin, vmax = min(vmin, -vmax), max(vmax, -vmin)
         norm = plt.Normalize(vmin, vmax)
         loc[3] = norm
-        dots.set_array(cmap(norm(tec[0, :, a, t])))
+        dots.set_array(cmap(norm(tec[0, 1:, a, t])))
         for i, p in enumerate(polygons):
             p.set_facecolor(cmap(norm(tec[0, i, a, t])))
             if human_flags[i, a, t] == 0:
