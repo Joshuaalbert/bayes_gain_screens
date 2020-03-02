@@ -946,7 +946,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
 
     dir_ax.scatter(ref_dir[:, 0], ref_dir[:, 1], marker='*', color='black', zorder=19)
 
-    dots = dir_ax.scatter(directions[1:,0], directions[1:,1], marker='o', s=50, colors=colors,ec=None)
+    dots = dir_ax.scatter(directions[1:,0], directions[1:,1], marker='o', s=50, c=colors,ec=None)
 
     # plt.plot(points[:,0], points[:,1], 'ko')
     dir_ax.set_xlim(vor.min_bound[0] - 0.1 * radius, vor.max_bound[0] + 0.1 * radius)
