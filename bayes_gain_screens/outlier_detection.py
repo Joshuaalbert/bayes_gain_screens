@@ -1061,8 +1061,10 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
                         time_plot.set_data(times[start:stop], tec[0, closest_idx, a, start:stop])
                         if n == 0:
                             time_plot.set_color('black')
+                            time_plot.set_linewidth(2)
                         else:
                             time_plot.set_color(cmap(norm(tec[0, closest_idx, a, t])))
+                            time_plot.set_linewidth(1)
                     time_ax.set_xlim(times[t] - window_time, times[t] + window_time)
                     time_ax.set_ylim(tec[0, point, a, start:stop].min() - 5., tec[0, point, a, start:stop].max() + 5.)
                     vline.set_data([times[t], times[t]],
