@@ -1137,12 +1137,12 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
                 p.set_edgecolor('black')
                 p.set_zorder(10)
         for i in range(len(dots)):
-            dots[i].set_facecolor(cmap(norm(tec[0, i, a, t])))
-            if human_flags[i, a, t] == 0:
+            dots[i].set_facecolor(cmap(norm(tec[0, i+1, a, t])))
+            if human_flags[i+1, a, t] == 0:
                 dots[i].set_edgecolor('green')
-            elif human_flags[i, a, t] == 1:
+            elif human_flags[i+1, a, t] == 1:
                 dots[i].set_edgecolor('red')
-            elif guess_flags[i, a, t]:
+            elif guess_flags[i+1, a, t]:
                 dots[i].set_edgecolor('cyan')
             else:
                 dots[i].set_edgecolor('black')
