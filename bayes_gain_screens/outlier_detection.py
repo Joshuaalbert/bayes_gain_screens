@@ -946,6 +946,8 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
 
     dir_ax.scatter(ref_dir[:, 0], ref_dir[:, 1], marker='*', color='black', zorder=19)
 
+    dots = dir_ax.scatter(directions[1:,0], directions[1:,1], marker='o', size=50, colors=colors)
+
     # plt.plot(points[:,0], points[:,1], 'ko')
     dir_ax.set_xlim(vor.min_bound[0] - 0.1 * radius, vor.max_bound[0] + 0.1 * radius)
     dir_ax.set_ylim(vor.min_bound[1] - 0.1 * radius, vor.max_bound[1] + 0.1 * radius)
@@ -1117,6 +1119,7 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
         vmin, vmax = min(vmin, -vmax), max(vmax, -vmin)
         norm = plt.Normalize(vmin, vmax)
         loc[3] = norm
+        dots.set_array(cmap(norm(tec[0, :, a, t])))
         for i, p in enumerate(polygons):
             p.set_facecolor(cmap(norm(tec[0, i, a, t])))
             if human_flags[i, a, t] == 0:
