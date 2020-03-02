@@ -1124,23 +1124,28 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
         loc[3] = norm
         for i, p in enumerate(polygons):
             p.set_facecolor(cmap(norm(tec[0, i, a, t])))
-            dots[i].set_facecolor(cmap(norm(tec[0, i, a, t])))
             if human_flags[i, a, t] == 0:
                 p.set_edgecolor('green')
-                dots[i].set_edgecolor('green')
                 p.set_zorder(10)
             elif human_flags[i, a, t] == 1:
                 p.set_edgecolor('red')
-                dots[i].set_edgecolor('red')
                 p.set_zorder(11)
             elif guess_flags[i, a, t]:
                 p.set_edgecolor('cyan')
-                dots[i].set_edgecolor('cyan')
                 p.set_zorder(11)
             else:
                 p.set_edgecolor('black')
-                dots[i].set_edgecolor('black')
                 p.set_zorder(10)
+        for i in range(len(dots)):
+            dots[i].set_facecolor(cmap(norm(tec[0, i, a, t])))
+            if human_flags[i, a, t] == 0:
+                dots[i].set_edgecolor('green')
+            elif human_flags[i, a, t] == 1:
+                dots[i].set_edgecolor('red')
+            elif guess_flags[i, a, t]:
+                dots[i].set_edgecolor('cyan')
+            else:
+                dots[i].set_edgecolor('black')
         fig.canvas.draw()
 
     load_data(0)
