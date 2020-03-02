@@ -823,7 +823,7 @@ class Classifier(object):
             outputs = tf.stack(
                 [tf.layers.conv1d(o, 1, [1], padding='same', name='conv_{:02d}'.format(num), use_bias=False) for o in
                  outputs], axis=0)
-            outputs = tf.reduce_mean(outputs, axis=0, keepdims=True)
+            # outputs = tf.reduce_mean(outputs, axis=0, keepdims=True)
             output_bias = tf.Variable(output_bias, dtype=tf.float32, trainable=False)
             outputs += output_bias
             num += 1
