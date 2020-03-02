@@ -1042,11 +1042,13 @@ def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
                     if human_flags[point, a, t] == -1 or human_flags[point, a, t] == 0:
                         human_flags[point, a, t] = 1
                         polygons[i].set_edgecolor('red')
-                        dots[i].set_edgecolor('red')
+                        if i > 0:
+                            dots[i-1].set_edgecolor('red')
                     elif human_flags[point, a, t] == 1:
                         human_flags[point, a, t] = 0
                         polygons[i].set_edgecolor('green')
-                        dots[i].set_edgecolor('green')
+                        if i > 0:
+                            dots[i-1].set_edgecolor('green')
                     polygons[i].set_zorder(11)
                     print("to {}".format(human_flags[point, a, t]))
                     scale_face()
