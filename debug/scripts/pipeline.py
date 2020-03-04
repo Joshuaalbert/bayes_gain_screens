@@ -75,12 +75,15 @@ class CondaEnv(Env):
 
 class CMD(object):
     def __init__(self, working_dir, script_dir, script_name, shell='python', exec_env=None, skip=False):
+        self.skip = skip
+        if skip:
+            return
         self.cmd = [shell, os.path.join(script_dir, script_name)]
         self.working_dir = working_dir
         if exec_env is None:
             exec_env = Env()
         self.exec_env = exec_env
-        self.skip = skip
+
 
     def add(self, name, value):
         self.cmd.append("--{}={}".format(name, value))
@@ -258,9 +261,9 @@ class Step(object):
         if self.flag is None:
             raise ValueError("Flag is none for {}".format(self.name))
         if self.flag > 0:
-            self.cmd = CMD(self.name, **self.cmd_kwargs)
+            self.cmd = CMD(self.working_dir, **self.cmd_kwargs)
         else:
-            self.cmd = CMD(self.name, skip=True, **self.cmd_kwargs)
+            self.cmd = CMD(self.working_dir, skip=True, **self.cmd_kwargs)
 
     def get_dask_task(self):
         if self.cmd is None:
