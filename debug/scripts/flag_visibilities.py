@@ -23,9 +23,9 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
     with tables.open_file(merged_h5parm) as datapack:
         root = getattr(datapack, "root")
         directionally_referenced = getattr(root, "directionally_referenced")
-        times = directionally_referenced.time[:]
-        antennas = np.array(directionally_referenced.antennas[:])
         tec_soltab = getattr(directionally_referenced, "tec000")
+        times = tec_soltab.time[:]
+        antennas = np.array(tec_soltab.ant[:])
         # Npol, Nd, Na, Nt
         tec_uncert = tec_soltab.weight[...]
         Npol, Nd, Na, Nt = tec_uncert.shape
