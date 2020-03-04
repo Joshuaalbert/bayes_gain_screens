@@ -76,8 +76,6 @@ class CondaEnv(Env):
 class CMD(object):
     def __init__(self, working_dir, script_dir, script_name, shell='python', exec_env=None, skip=False):
         self.skip = skip
-        if skip:
-            return
         self.cmd = [shell, os.path.join(script_dir, script_name)]
         self.working_dir = working_dir
         if exec_env is None:
