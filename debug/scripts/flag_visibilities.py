@@ -1,7 +1,8 @@
 """
 Flags visibilities based on outlier detection
 """
-
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
 import argparse
 import os
