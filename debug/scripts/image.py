@@ -251,6 +251,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     kwargs = {}
     kwargs['peak_factor'] = 0.001
     kwargs['nfacets'] = 11
+    kwargs['weight_col'] = "IMAGING_WEIGHT"
     kwargs['robust'] = -0.5
     kwargs['npix'] = 20000
     kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.fits')
@@ -278,8 +279,10 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
                             data_column='DATA_RESTRICTED',
                             **kwargs)
     if image_type == 'image_screen':
+        kwargs['weight_col'] = "OUTLIER_FLAGS"
         image_screen(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA', **kwargs)
     if image_type == 'image_screen_slow':
+        kwargs['weight_col'] = "OUTLIER_FLAGS"
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir, data_column='DATA',
                           **kwargs)
     if image_type == 'image_dirty_restricted_full':
@@ -294,6 +297,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
                     data_dir=data_dir, working_dir=working_dir, ncpu=ncpu, script_dir=script_dir,
                     data_column='DATA_RESTRICTED', **kwargs)
     if image_type == 'image_screen_slow_restricted':
+        kwargs['weight_col'] = "OUTLIER_FLAGS"
         kwargs['npix'] = 10000
         kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
         image_screen_slow(obs_num, data_dir, working_dir, ncpu=ncpu, script_dir=script_dir,

@@ -34,7 +34,7 @@ DDF.py \
     --Facets-DiamMin=0.1 \
     --Output-Cubes=all \
     --Cache-Dirty=auto \
-    --Weight-ColName=IMAGING_WEIGHT \
+    --Weight-ColName={weight_col} \
     --Output-Name={output_name} \
     --Comp-BDAMode=1 \
     --DDESolutions-DDModeGrid=AP \

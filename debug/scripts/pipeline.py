@@ -392,6 +392,9 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
              exec_env=bayes_gain_screens_env),
         Step('merge_slow', ['slow_solve_dds4', 'smooth_dds4', 'infer_screen', 'tec_inference_and_smooth'], script_dir=script_dir,
              script_name='merge_slow.py', exec_env=bayes_gain_screens_env),
+        Step('flag_visibilities', ['infer_screen'],
+             script_dir=script_dir,
+             script_name='flag_visibilities.py', exec_env=lofar_gain_screens_env),
         Step('image_subtract_dirty', ['subtract'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_sksp_env),
         Step('image_subtract_dds4', ['solve_dds4', 'image_subtract_dirty'], script_dir=script_dir,
@@ -403,12 +406,12 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         Step('image_smooth_slow', ['smooth_dds4', 'merge_slow', 'image_smooth','tec_inference_and_smooth'], script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_screen', ['infer_screen', 'image_smooth_slow'], script_dir=script_dir, script_name='image.py',
+        Step('image_screen', ['flag_visibilities','infer_screen', 'image_smooth_slow'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_screen_slow', ['infer_screen', 'merge_slow', 'image_screen'], script_dir=script_dir,
+        Step('image_screen_slow', ['flag_visibilities','infer_screen', 'merge_slow', 'image_screen'], script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_screen_slow_restricted', ['infer_screen', 'merge_slow', 'image_screen', 'subtract_outside_pb'],
+        Step('image_screen_slow_restricted', ['flag_visibilities','infer_screen', 'merge_slow', 'image_screen', 'subtract_outside_pb'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
@@ -511,6 +514,12 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
     steps['merge_slow'].cmd \
         .add('obs_num', obs_num) \
         .add('data_dir', data_dir)
+
+    steps['flag_visibilities'].cmd \
+        .add('obs_num', obs_num) \
+        .add('data_dir', data_dir) \
+        .add('new_weights_col', 'OUTLIER_FLAGS') \
+        .add('outlier_frac_thresh', 0.25)
 
     steps['image_subtract_dirty'].cmd \
         .add('image_type', 'image_subtract_dirty') \
@@ -659,6 +668,7 @@ STEPS = [
     "tec_inference_and_smooth",
     "infer_screen",
     "merge_slow",
+    "flag_visibilities",
     "image_subtract_dirty",
     "image_subtract_dds4",
     "image_dds4",
@@ -778,6 +788,7 @@ def test_main():
          do_slow_solve_dds4=0,
          do_tec_inference=0,
          do_merge_slow=2,
+         do_flag_visibilities=2,
          do_infer_screen=2,
          do_image_dds4=0,
          do_image_subtract_dds4=0,

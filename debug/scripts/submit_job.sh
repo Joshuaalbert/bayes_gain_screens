@@ -45,6 +45,7 @@ do_tec_inference=0
 do_tec_inference_and_smooth=2
 do_infer_screen=2
 do_merge_slow=2
+do_flag_visibilities=2
 
 ###
 # imaging steps
@@ -57,6 +58,7 @@ do_image_smooth_slow_restricted=0
 do_image_screen_slow=0
 do_image_screen_slow_restricted=2
 do_image_screen=0
+
 
 ###
 # all args
@@ -165,6 +167,7 @@ cmd="python "$script_dir"/pipeline.py \
         --do_tec_inference_and_smooth="$do_tec_inference_and_smooth" \
         --do_infer_screen="$do_infer_screen" \
         --do_merge_slow="$do_merge_slow" \
+        --do_flag_visibilities="$do_flag_visibilities" \
         --do_image_smooth="$do_image_smooth" \
         --do_image_subtract_dds4="$do_image_subtract_dds4" \
         --do_image_dds4="$do_image_dds4" \
