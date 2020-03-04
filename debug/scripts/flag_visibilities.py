@@ -7,6 +7,7 @@ import argparse
 import os
 import glob
 import pyrap.tables as pt
+import pylab as plt
 import tables
 
 
@@ -31,6 +32,47 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
         outliers = np.isinf(tec_uncert)
     # Na, Nt
     flags = np.sum(outliers[0, ...], axis=0) > Nd * outlier_frac_thresh
+
+    #plotting some things
+    frac_flagged = np.sum(flags, axis=0)/Na
+    plt.plot(frac_flagged)
+    plt.xlabel('Time')
+    plt.ylabel("Frac flagged [1]")
+    plt.ylim(0., 1.)
+    plt.savefig(os.path.join(working_dir, "frac_flagged_per_time.png"))
+    plt.savefig(os.path.join(working_dir, "frac_flagged_per_time.pdf"))
+    plt.close('all')
+
+    frac_flagged = np.sum(flags, axis=1) / Nt
+    plt.plot(frac_flagged)
+    plt.xlabel('Antenna index')
+    plt.ylabel("Frac flagged [1]")
+    plt.ylim(0., 1.)
+    plt.savefig(os.path.join(working_dir, "frac_flagged_per_ant.png"))
+    plt.savefig(os.path.join(working_dir, "frac_flagged_per_ant.pdf"))
+    plt.close('all')
+
+    frac_outliers = np.sum(outliers[0, ...], axis=0)/Nd
+    frac_flagged = np.sum(frac_outliers, axis=0) / Na
+    plt.plot(frac_flagged)
+    plt.xlabel('Time')
+    plt.ylabel("Frac flagged [1]")
+    plt.ylim(0., 1.)
+    plt.savefig(os.path.join(working_dir, "frac_outliers_per_time.png"))
+    plt.savefig(os.path.join(working_dir, "frac_outliers_per_time.pdf"))
+    plt.close('all')
+
+    frac_flagged = np.sum(frac_outliers, axis=1) / Nt
+    plt.plot(frac_flagged)
+    plt.xlabel('Antenna index')
+    plt.ylabel("Frac flagged [1]")
+    plt.ylim(0., 1.)
+    plt.savefig(os.path.join(working_dir, "frac_outliers_per_ant.png"))
+    plt.savefig(os.path.join(working_dir, "frac_outliers_per_ant.pdf"))
+    plt.close('all')
+
+
+
     for ms in msfiles:
         with pt.table(os.path.join(ms, "SPECTRAL_WINDOW")) as t_sw:
             ms_freq = np.mean(t_sw.getcol("CHAN_FREQ"))
