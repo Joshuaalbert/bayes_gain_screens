@@ -100,7 +100,7 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
             time_map = np.searchsorted(0.5 * (times[1:] + times[:-1]), vis_times, side='right')
             new_flags = np.logical_or(flags[vis_ant1, time_map], flags[vis_ant2, time_map])
             print("Flagged [{} / {}] baselines ({:.2f}%)".format(np.sum(new_flags), new_flags.size,
-                                                                 100. * (np.sum(new_flags) / new_flags.size)))
+                                                                 100. * (np.sum(new_flags) / float(new_flags.size))))
             new_weights = np.where(new_flags[:, None], 0., weights_col)
             t.putcol(new_weights_col, new_weights)
             print("Stored flags in {}".format(new_weights_col))
