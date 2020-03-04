@@ -35,7 +35,7 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
     flags = np.sum(outliers[0, ...], axis=0) > Nd * outlier_frac_thresh
 
     #plotting some things
-    frac_flagged = np.sum(flags, axis=0)/Na
+    frac_flagged = np.sum(flags, axis=0)/float(Na)
     plt.plot(frac_flagged)
     plt.xlabel('Time')
     plt.ylabel("Frac flagged [1]")
@@ -44,7 +44,7 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
     plt.savefig(os.path.join(working_dir, "frac_flagged_per_time.pdf"))
     plt.close('all')
 
-    frac_flagged = np.sum(flags, axis=1) / Nt
+    frac_flagged = np.sum(flags, axis=1) / float(Nt)
     plt.plot(frac_flagged)
     plt.xlabel('Antenna index')
     plt.ylabel("Frac flagged [1]")
@@ -53,8 +53,8 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
     plt.savefig(os.path.join(working_dir, "frac_flagged_per_ant.pdf"))
     plt.close('all')
 
-    frac_outliers = np.sum(outliers[0, ...], axis=0)/Nd
-    frac_flagged = np.sum(frac_outliers, axis=0) / Na
+    frac_outliers = np.sum(outliers[0, ...], axis=0)/float(Nd)
+    frac_flagged = np.sum(frac_outliers, axis=0) / float(Na)
     plt.plot(frac_flagged)
     plt.xlabel('Time')
     plt.ylabel("Frac flagged [1]")
@@ -63,7 +63,7 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
     plt.savefig(os.path.join(working_dir, "frac_outliers_per_time.pdf"))
     plt.close('all')
 
-    frac_flagged = np.sum(frac_outliers, axis=1) / Nt
+    frac_flagged = np.sum(frac_outliers, axis=1) / float(Nt)
     plt.plot(frac_flagged)
     plt.xlabel('Antenna index')
     plt.ylabel("Frac flagged [1]")
