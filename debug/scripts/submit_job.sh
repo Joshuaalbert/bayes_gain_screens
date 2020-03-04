@@ -88,6 +88,7 @@ L=(obs_num \
     do_tec_inference_and_smooth \
     do_infer_screen \
     do_merge_slow \
+    do_flag_visibilities \
     simg_dir \
     conda_env \
     force_conda \
