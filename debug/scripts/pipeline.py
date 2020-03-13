@@ -520,7 +520,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('obs_num', obs_num) \
         .add('data_dir', data_dir) \
         .add('new_weights_col', 'OUTLIER_FLAGS') \
-        .add('outlier_frac_thresh', 0./45.)
+        .add('outlier_frac_thresh', 6./45.)
 
     steps['image_subtract_dirty'].cmd \
         .add('image_type', 'image_subtract_dirty') \
