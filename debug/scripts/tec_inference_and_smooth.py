@@ -128,24 +128,24 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
 
 
 
-        # ###
-        # # subtract constant approximation
-        # #N, Nf
-        # phase_data = np.angle(Y)
-        # amp_data = np.abs(Y)
-        # #N, Nf
-        # diff_phase = wrap(phase_data - wrap(res['post_mu'][:,0:1] * tec_conv))
-        # #N
-        # eff_phase_residual = np.polyfit(freqs/1e6, diff_phase.T, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
-        # eff_const = eff_phase_residual / 0.157
-        # eff_const = median_filter(eff_const, size=(61,))
-        # #N, Nf
-        # Y = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
-        # res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
-        #                    session=tf.Session(graph=tf.Graph(), config=config)).run(
-        #     stack_complex(Y), res['Sigma'], res['Omega'], res['mu0'], res['Gamma0'], 2, serve_values=[amps[d, :, :].T])
-        #
-        # ###
+        ###
+        # BEGIN subtract constant approximation
+        #N, Nf
+        phase_data = np.angle(Y)
+        amp_data = np.abs(Y)
+        #N, Nf
+        diff_phase = wrap(phase_data - wrap(res['post_mu'][:,0:1] * tec_conv))
+        #N
+        eff_phase_residual = np.polyfit(freqs/1e6, diff_phase.T, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
+        eff_const = eff_phase_residual / 0.157
+        eff_const = median_filter(eff_const, size=(300,))
+        #N, Nf
+        Y_mod = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
+        res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
+                           session=tf.Session(graph=tf.Graph(), config=config),
+                           freeze_Sigma=True, freeze_Omega=False).run(
+            stack_complex(Y_mod), res['Sigma'], res['Omega'], res['mu0'], res['Gamma0'], 2, serve_values=[amps[d, :, :].T])
+        ### END subtract constant approximation
         tec_mean_array[d, :] = res['post_mu'][:, 0]
         tec_uncert_array[d, :] = np.sqrt(res['post_Gamma'][:, 0, 0])
         Sigma_array[d, :, : , :] = res['Sigma']
