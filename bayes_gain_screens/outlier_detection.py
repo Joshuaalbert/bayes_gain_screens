@@ -1183,7 +1183,7 @@ class Classifier(object):
 
     def build_model(self, inputs, position_encoding, senders, receivers, output_bias=0.):
         with tf.variable_scope('classifier', reuse=tf.AUTO_REUSE):
-            print(inputs, position_encoding, senders, receivers)
+            # print(inputs, position_encoding, senders, receivers)
             B = tf.shape(inputs)[0]
             Nd = tf.shape(inputs)[1]
             Nt = tf.shape(inputs)[2]
@@ -1207,7 +1207,7 @@ class Classifier(object):
             nodes.set_shape([None, 1, 3 + self.n_features])
             graph = GraphsTuple(nodes=nodes, edges=None, globals=None,n_node=n_node, n_edge=n_edge,
                                 receivers=tf.reshape(receivers, (-1,))+offsets,senders=tf.reshape(senders,(-1,))+offsets)
-            print(graph)
+            # print(graph)
             sa1 = SelfAttention()
             gi1 = GraphIndependent(node_model_fn=lambda:snt.Sequential([tf.keras.layers.Dense(self.n_features), tf.nn.relu, snt.LayerNorm()]))
             graph = sa1(graph.nodes, graph.nodes, graph.nodes, graph)
@@ -1221,6 +1221,8 @@ class Classifier(object):
             # outputs = tf.reduce_mean(outputs, axis=0, keepdims=True)
             output_bias = tf.Variable(output_bias, dtype=tf.float32, trainable=False)
             output += output_bias
+
+            print(output)
             return output
 
 
