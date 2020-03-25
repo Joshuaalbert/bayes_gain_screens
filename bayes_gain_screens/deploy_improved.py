@@ -29,17 +29,17 @@ class Deployment(object):
         self.working_dir = working_dir
 
         logging.info("Using working directory {}".format(working_dir))
-        # logging.info("Flagging outliers in TEC")
-        # remove_outliers(False, False, True,
-        #                 [datapack],
-        #                 [ref_image_fits],
-        #                 self.working_dir,
-        #                 Classifier.flagging_models,
-        #                 K=15,
-        #                 L=10,
-        #                 n_features=48,
-        #                 batch_size=16
-        #                 )
+        logging.info("Flagging outliers in TEC")
+        remove_outliers(False, False, True,
+                        [datapack],
+                        [ref_image_fits],
+                        self.working_dir,
+                        Classifier.flagging_models,
+                        K=15,
+                        L=10,
+                        n_features=48,
+                        batch_size=16
+                        )
 
         if isinstance(datapack, DataPack):
             datapack = datapack.filename
