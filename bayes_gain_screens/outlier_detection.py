@@ -1205,7 +1205,7 @@ class Classifier(object):
             print(graph)
             sa1 = SelfAttention()
             gi1 = GraphIndependent(node_model_fn=snt.Sequential([snt.Linear(self.n_features), tf.nn.relu, snt.LayerNorm()]))
-            graph = sa1(graph.nodes, graph.nodes, graph.nodes, graph)
+            graph = sa1(graph.nodes[:, None, :], graph.nodes[:, None, :], graph.nodes[:, None, :], graph)
             graph = gi1(graph)
             sa2 = SelfAttention()
             gi2 = GraphIndependent(node_model_fn=snt.Sequential([snt.Linear(1, use_bias=True), snt.LayerNorm()]))
