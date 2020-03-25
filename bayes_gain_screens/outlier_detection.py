@@ -1198,6 +1198,7 @@ class Classifier(object):
             features = tf.reshape(features,(B, Nd*Nt,self.n_features))
 
             nodes = tf.concat([features, tf.reshape(position_encoding, (B, Nd*Nt,3))], axis=-1)
+            nodes.set_shape([None, None, 3+self.n_features])
             node_size = tf.shape(nodes)[-1]
             n_node = tf.tile(tf.shape(nodes)[1:2], [B])
             n_edge = tf.tile(tf.shape(senders)[1:2], [B])
