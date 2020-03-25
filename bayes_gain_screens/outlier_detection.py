@@ -1183,6 +1183,7 @@ class Classifier(object):
 
     def build_model(self, inputs, position_encoding, senders, receivers, output_bias=0.):
         with tf.variable_scope('classifier', reuse=tf.AUTO_REUSE):
+            print(inputs, position_encoding, senders, receivers)
             B = tf.shape(inputs)[0]
             Nd = tf.shape(inputs)[1]
             Nt = tf.shape(inputs)[2]
