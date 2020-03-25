@@ -1025,7 +1025,7 @@ class Classifier(object):
             self.pred_probs = pred_probs
             eval_pred_probs = tf.nn.sigmoid(eval_logits)
 
-            print(labels, pred_probs)
+            print(labels, pred_probs, mask)
             self.conf_mat = tf.math.confusion_matrix(labels, pred_probs > self.threshold,
                                                      weights=mask,num_classes=2,
                                                      dtype=tf.float32)
