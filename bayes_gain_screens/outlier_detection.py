@@ -1026,8 +1026,8 @@ class Classifier(object):
             eval_pred_probs = tf.nn.sigmoid(eval_logits)
 
             print(labels, pred_probs, mask)
-            self.conf_mat = tf.math.confusion_matrix(labels, pred_probs > self.threshold,
-                                                     weights=mask,num_classes=2,
+            self.conf_mat = tf.math.confusion_matrix(tf.reshape(labels, (-1,)), tf.reshape(pred_probs > self.threshold, (-1,)),
+                                                     weights=tf.reshape(mask, (-1,)),num_classes=2,
                                                      dtype=tf.float32)
 
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels, logits.dtype),
