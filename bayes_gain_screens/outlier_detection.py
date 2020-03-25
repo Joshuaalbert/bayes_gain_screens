@@ -881,7 +881,7 @@ class training_data_gen(object):
             self.crop_size = min(self.crop_size, Nt)
 
             senders, receivers = make_edges(Nd, self.crop_size)
-
+            print("Inputs shape", inputs.shape)
             # buffer
             for b in range(inputs.shape[0]):
                 # print("Reading", b)
@@ -890,10 +890,6 @@ class training_data_gen(object):
                     start = max(0,stop - self.crop_size)
                     if np.sum(mask[b, :, start:stop,:]) == 0:
                         # print("Skipping", b)
-                        continue
-                    if stop > Nt:
-                        continue
-                    if np.sum(mask[b, start:stop, 0]) == 0:
                         continue
                     _yield = (inputs[b, :, start:stop:1, :], labels[b, :, start:stop:1, :], mask[b, :, start:stop:1, :], position_encoding[b, :, start:stop:1,:], senders, receivers)
                     yield _yield
