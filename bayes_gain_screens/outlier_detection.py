@@ -1188,25 +1188,26 @@ class Classifier(object):
             Nd = tf.shape(inputs)[1]
             Nt = tf.shape(inputs)[2]
             inputs = tf.reshape(inputs, (B*Nd, Nt, 2))
-            num = 0
+
             features = tf.layers.conv1d(inputs, self.n_features, [1], strides=1, padding='same', activation=None,
                                         name='pointwise')
             for l in range(self.L):
                 features = tf.layers.conv1d(features, self.n_features, [5], strides=1, padding='same', activation=tf.nn.relu,
-                                        name='conv_{:02d}'.format(l))
+                                        name='conv_{:02d}'.format(l)) + features
             features = tf.keras.layers.LayerNormalization()(features)
-            features = tf.reshape(features,(B, Nd*Nt,-1))
+            features = tf.reshape(features,(B, Nd*Nt,self.n_features))
 
-            nodes = tf.concat([features, tf.reshape(position_encoding, (B, Nd*Nt,-1))], axis=-1)
+            nodes = tf.concat([features, tf.reshape(position_encoding, (B, Nd*Nt,3))], axis=-1)
+            node_size = tf.shape(nodes)[-1]
             n_node = tf.tile(tf.shape(nodes)[1:2], [B])
             n_edge = tf.tile(tf.shape(senders)[1:2], [B])
             offsets = _compute_stacked_offsets(n_node, n_edge)
-            graph = GraphsTuple(nodes=tf.reshape(nodes,(-1,)), edges=None, globals=None,n_node=n_node, n_edge=n_edge,
+            graph = GraphsTuple(nodes=tf.reshape(nodes,(-1, 1, node_size)), edges=None, globals=None,n_node=n_node, n_edge=n_edge,
                                 receivers=tf.reshape(receivers, (-1,))+offsets,senders=tf.reshape(senders,(-1,))+offsets)
             print(graph)
             sa1 = SelfAttention()
             gi1 = GraphIndependent(node_model_fn=snt.Sequential([snt.Linear(self.n_features), tf.nn.relu, snt.LayerNorm()]))
-            graph = sa1(graph.nodes[:, None, :], graph.nodes[:, None, :], graph.nodes[:, None, :], graph)
+            graph = sa1(graph.nodes, graph.nodes, graph.nodes, graph)
             graph = gi1(graph)
             sa2 = SelfAttention()
             gi2 = GraphIndependent(node_model_fn=snt.Sequential([snt.Linear(1, use_bias=True), snt.LayerNorm()]))
