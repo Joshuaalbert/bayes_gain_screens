@@ -1202,7 +1202,7 @@ class Classifier(object):
             offsets = _compute_stacked_offsets(n_node, n_edge)
             graph = GraphsTuple(nodes=tf.reshape(nodes,(-1,)), edges=None, globals=None,n_node=n_node, n_edge=n_edge,
                                 receivers=tf.reshape(receivers, (-1,))+offsets,senders=tf.reshape(senders,(-1,))+offsets)
-
+            print(graph)
             sa1 = SelfAttention()
             gi1 = GraphIndependent(node_model_fn=snt.Sequential([snt.Linear(self.n_features), tf.nn.relu, snt.LayerNorm()]))
             graph = sa1(graph, graph, graph, graph)
