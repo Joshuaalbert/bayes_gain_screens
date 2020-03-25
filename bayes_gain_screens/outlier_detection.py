@@ -4,7 +4,10 @@ from bayes_gain_screens.misc import make_coord_array
 from bayes_gain_screens import logging
 from dask.multiprocessing import get
 from timeit import default_timer
-
+from graph_nets.modules import SelfAttention, GraphIndependent
+from graph_nets.graphs import GraphsTuple
+from graph_nets.utils_tf import _compute_stacked_offsets
+import sonnet as snt
 import sys
 
 import numpy as np
@@ -431,7 +434,7 @@ def in_hull(points, x):
     lp = linprog(c, A_eq=A, b_eq=b)
     return lp.success
 
-class training_data_gen(object):
+class training_data_gen_nn(object):
     def __init__(self, K, crop_size):
         self.K = K
         self.crop_size = crop_size
@@ -461,13 +464,13 @@ class training_data_gen(object):
 
             __, nn_idx = cKDTree(directions).query(directions, k=self.K + 1)
 
-
             # Nd, Na, Nt
             human_flags = np.load(label_file)
             # Nd*Na,Nt, 1
             labels = human_flags.reshape((Nd * Na, Nt, 1)).astype(np.int32)
             mask = np.reshape(human_flags != -1, (Nd * Na, Nt, 1)).astype(np.int32)
             labels = np.where(labels == -1., 0., labels)
+
 
             # tec = np.pad(tec,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
             # tec_uncert = np.pad(tec_uncert,[(0,0),(0,0), (0,0), (window_size, window_size)],mode='reflect')
@@ -506,7 +509,7 @@ class training_data_gen(object):
             #     yield things_to_yield[idx]
         return
 
-class eval_data_gen(object):
+class eval_data_gen_nn(object):
     def __init__(self, K):
         self.K = K
 
@@ -549,19 +552,7 @@ class eval_data_gen(object):
                 yield (inputs[b,:,:],)
         return
 
-def get_output_bias(label_files):
-    num_pos = 0
-    num_neg = 0
-    for label_file in label_files:
-        human_flags = np.load(label_file)
-        num_pos += np.sum(human_flags == 1)
-        num_neg += np.sum(human_flags == 0)
-    pos_weight = num_neg / num_pos
-    bias = np.log(num_pos) - np.log(num_neg)
-    return bias, pos_weight
-
-
-class Classifier(object):
+class ClassifierNN(object):
     _module = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
     flagging_models = os.path.join(_module, 'flagging_models')
     def __init__(self, L=4, K=3, n_features=16, batch_size=16, graph=None, output_bias=0., pos_weight=1., crop_size=60):
@@ -828,6 +819,404 @@ class Classifier(object):
             outputs += output_bias
             num += 1
             return outputs
+
+def make_edges(Nd, Nt):
+    node_indices = np.arange(Nd*Nt).reshape((Nd,Nt))
+    senders = []
+    receivers = []
+    for d1 in range(Nd):
+        for d2 in range(Nd):
+            if d1 == d2:
+                continue
+            for t in range(Nt):
+                senders.append(node_indices[d1,t])
+                receivers.append(node_indices[d2,t])
+
+    for t1 in range(Nt):
+        for t2 in range(Nt):
+            if t1 == t2:
+                continue
+            for d in range(Nd):
+                senders.append(node_indices[d,t1])
+                receivers.append(node_indices[d,t2])
+
+    return np.array(senders, dtype=np.int32), np.array(receivers, dtype=np.int32)
+
+
+class training_data_gen(object):
+    def __init__(self, crop_size):
+        self.crop_size = crop_size
+
+    def __call__(self, label_files, ref_images, datapacks):
+        for label_file, ref_image, datapack in zip(label_files, ref_images, datapacks):
+            label_file, ref_image, datapack = label_file.decode(), ref_image.decode(), datapack.decode()
+            print("Getting data for", label_file, ref_image, datapack, self.K)
+
+            tec = np.load(datapack)['tec'].copy()
+            tec_uncert = np.load(datapack)['tec_uncert'].copy()
+            directions = np.load(datapack)['directions'].copy()
+            _, Nd, Na, Nt = tec.shape
+            tec_uncert = np.maximum(0.1, np.where(np.isinf(tec_uncert), 1., tec_uncert))
+
+            directions -= np.mean(directions,axis=0)
+            times = np.linspace(-1,1,Nt)[:, None]
+            times_ext = np.tile(times[None, None, :, :], [Na, Nd, 1, 1])
+
+            directions_ext = np.tile(directions[None, :, None, :], [Na, 1, Nt, 1])
+            # Na, Nd, Nt, 2
+            directions_ext = directions_ext.astype(np.float32)
+            # Na, Nd, Nt, 3
+            position_encoding = np.concatenate([directions_ext, times_ext], axis=-1)
+
+            # Na, Nd, Nt
+            human_flags = np.load(label_file).transpose((1,0,2))
+            # Na, Nd, Nt, 1
+            labels = human_flags.reshape((Na, Nd, Nt, 1)).astype(np.int32)
+            mask = np.reshape(human_flags != -1, (Na , Nd, Nt, 1)).astype(np.int32)
+            labels = np.where(labels == -1., 0., labels)
+
+            #Na, Nd, Nt, 2
+            inputs = np.stack([tec[0, ...] / 10., np.log(tec_uncert[0, ...])], axis=-1).transpose((1,0,2,3))
+
+            self.crop_size = min(self.crop_size, Nt)
+
+            senders, receivers = make_edges(Nd, self.crop_size)
+
+            # buffer
+            for b in range(inputs.shape[0]):
+                # print("Reading", b)
+                for start in range(0, Nt, self.crop_size):
+                    stop = min(Nt,start + self.crop_size)
+                    start = max(0,stop - self.crop_size)
+                    if np.sum(mask[b, :, start:stop,:]) == 0:
+                        # print("Skipping", b)
+                        continue
+                    if stop > Nt:
+                        continue
+                    if np.sum(mask[b, start:stop, 0]) == 0:
+                        continue
+                    _yield = (inputs[b, :, start:stop:1, :], labels[b, :, start:stop:1, :], mask[b, :, start:stop:1, :], position_encoding[b, :, start:stop:1,:], senders, receivers)
+                    yield _yield
+        return
+
+class eval_data_gen(object):
+    def __init__(self):
+        pass
+
+    def __call__(self, ref_images, datapacks):
+        for ref_image, datapack in zip(ref_images, datapacks):
+            ref_image, datapack = ref_image.decode(), datapack.decode()
+            print("Getting data for", ref_image, datapack, self.K)
+
+            tec = np.load(datapack)['tec'].copy()
+            tec_uncert = np.load(datapack)['tec_uncert'].copy()
+            directions = np.load(datapack)['directions'].copy()
+            _, Nd, Na, Nt = tec.shape
+            tec_uncert = np.maximum(0.1, np.where(np.isinf(tec_uncert), 1., tec_uncert))
+
+            directions -= np.mean(directions, axis=0)
+            times = np.linspace(-1, 1, Nt)[:, None]
+            times_ext = np.tile(times[None, None, :, :], [Na, Nd, 1, 1])
+
+            directions_ext = np.tile(directions[None, :, None, :], [Na, 1, Nt, 1])
+            # Na, Nd, Nt, 2
+            directions_ext = directions_ext.astype(np.float32)
+            # Na, Nd, Nt, 3
+            position_encoding = np.concatenate([directions_ext, times_ext], axis=-1)
+            # Na, Nd, Nt, 2
+            inputs = np.stack([tec[0, ...] / 10., np.log(tec_uncert[0, ...])], axis=-1).transpose((1, 0, 2, 3))
+
+            senders, receivers = make_edges(Nd, Nt)
+
+            for b in range(inputs.shape[0]):
+                yield (inputs[b,:,:, :], position_encoding[b, :, :, :], position_encoding[b, :, :, :], senders, receivers)
+        return
+
+
+
+def get_output_bias(label_files):
+    num_pos = 0
+    num_neg = 0
+    for label_file in label_files:
+        human_flags = np.load(label_file)
+        num_pos += np.sum(human_flags == 1)
+        num_neg += np.sum(human_flags == 0)
+    pos_weight = num_neg / num_pos
+    bias = np.log(num_pos) - np.log(num_neg)
+    return bias, pos_weight
+
+
+class Classifier(object):
+    _module = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
+    flagging_models = os.path.join(_module, 'flagging_models')
+    def __init__(self, L=4, n_features=16, batch_size=16, graph=None, output_bias=0., pos_weight=1., crop_size=60, **kwargs):
+        if graph is None:
+            graph = tf.Graph()
+        self.graph = graph
+
+        self.L = L
+        self.crop_size = crop_size
+        self.n_features = n_features
+        with self.graph.as_default():
+            self.label_files_pl = tf.placeholder(tf.string, shape=[None], name='label_files')
+            self.datapacks_pl = tf.placeholder(tf.string, shape=[None], name='datapacks')
+            self.ref_images_pl = tf.placeholder(tf.string, shape=[None], name='ref_images')
+            self.shard_idx = tf.placeholder(tf.int32, shape=[], name='shard_idx')
+
+            ###
+            # train/test inputs
+
+            dataset = tf.data.Dataset.from_tensors((self.label_files_pl, self.ref_images_pl, self.datapacks_pl))
+            dataset = dataset.interleave(lambda  label_files, ref_images, datapacks:
+                                         tf.data.Dataset.from_generator(
+                                             training_data_gen(self.crop_size),
+                                             output_types=(tf.float32, tf.int32, tf.int32, tf.float32, tf.int32, tf.int32),
+                                             output_shapes=((None, self.crop_size, 2),
+                                                            (None, self.crop_size, 1),
+                                                            (None, self.crop_size, 1),
+                                                            (None, self.crop_size, 3),
+                                                            (None,),
+                                                            (None,)),
+                                             args=(label_files, ref_images, datapacks)),
+                                         cycle_length=1,
+                                         block_length=1
+                                         )
+            dataset = dataset.shard(2, self.shard_idx).shuffle(1000).batch(batch_size=batch_size, drop_remainder=True)
+
+            iterator_tensor = dataset.make_initializable_iterator()
+            self.init = iterator_tensor.initializer
+            inputs, labels, mask, pe, senders, receivers = iterator_tensor.get_next()
+            self.labels = labels
+            self.mask = mask
+
+
+            ###
+            # eval inputs
+            dataset = tf.data.Dataset.from_tensors((self.ref_images_pl, self.datapacks_pl))
+            eval_dataset = dataset.interleave(lambda ref_images, datapacks:
+                                         tf.data.Dataset.from_generator(
+                                             eval_data_gen(),
+                                             output_types=(tf.float32,tf.float32),
+                                             output_shapes=((None, None, 2),
+                                                            (None, None, 3),
+                                                            (None,),
+                                                            (None,)),
+                                             args=(ref_images, datapacks)),
+                                         cycle_length=1,
+                                         block_length=1
+                                         ).batch(batch_size=batch_size, drop_remainder=False)
+
+            iterator_tensor = eval_dataset.make_initializable_iterator()
+            self.eval_init = iterator_tensor.initializer
+            eval_inputs, eval_pe, eval_senders, eval_receivers = iterator_tensor.get_next()
+
+            ###
+            # outputs
+            #Nd, Nt,1
+            logits = self.build_model(inputs, pe, senders, receivers, output_bias=output_bias)
+            eval_logits = self.build_model(eval_inputs, eval_pe, eval_senders, eval_receivers, output_bias=output_bias)
+
+
+            self.threshold = tf.Variable(0.5, shape=[], dtype=tf.float32)
+            self.threshold_pl = tf.placeholder(tf.float32, [])
+            self.assign_threshold = tf.assign(self.threshold, self.threshold_pl)
+
+            pred_probs = tf.nn.sigmoid(logits)
+            self.pred_probs = pred_probs
+            eval_pred_probs = tf.nn.sigmoid(eval_logits)
+
+
+            self.conf_mat = tf.math.confusion_matrix(labels, pred_probs > self.threshold,
+                                                     weights=mask,num_classes=2,
+                                                     dtype=tf.float32)
+
+            loss = tf.nn.weighted_cross_entropy_with_logits(labels=tf.cast(labels, logits.dtype),
+                                                            logits=logits,
+                                                            pos_weight=pos_weight)
+            self.loss = tf.reduce_mean(loss * tf.cast(mask, loss.dtype))
+
+            self.eval_pred_labels = tf.cast(eval_pred_probs > self.threshold, tf.float32)
+
+            self.global_step = tf.Variable(0, trainable=False)
+            self.opt = tf.train.AdamOptimizer().minimize(loss, global_step=self.global_step)
+
+    def conf_mat_to_str(self, conf_mat):
+        tn = conf_mat[0, 0]
+        fp = conf_mat[0, 1]
+        fn = conf_mat[1, 0]
+        tp = conf_mat[1, 1]
+        T = tp + fn
+        F = tn + fp
+        acc = (tp + tn) / (T + F)
+        rel_acc = (2. * acc - 1.) * 100.
+        fpr = fp / F
+        rel_fpr = (fpr / (0.5 * F / T) - 1.) * 100.
+        fnr = fn / T
+        rel_fnr = (fnr / (0.5 * T / F) - 1.) * 100.
+        with np.printoptions(precision=2):
+            return "ACC: {} [{}% baseline] FPR: {} [{}% baseline] FNR: {} [{}% baseline]".format(acc, rel_acc, fpr,
+                                                                                                 rel_fpr, fnr, rel_fnr)
+
+    def train_model(self, label_files, ref_images, datapacks, epochs=10, print_freq=100, model_dir='./'):
+        os.makedirs(model_dir, exist_ok=True)
+        with tf.Session(graph=self.graph) as sess:
+            saver = tf.train.Saver()
+            print("initialising valiables")
+            sess.run(tf.initialize_variables(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)))
+            print("restoring if possibe")
+            try:
+                saver.restore(sess, tf.train.latest_checkpoint(model_dir))
+            except:
+                pass
+            print("Running {} epochs".format(epochs))
+
+            for epoch in range(epochs):
+                print("epoch", epoch)
+                print("init data for training")
+                sess.run([self.init],
+                         {self.label_files_pl: label_files,
+                          self.ref_images_pl: ref_images,
+                          self.datapacks_pl: datapacks,
+                          self.shard_idx: 0})
+
+                print("Run loop")
+                train_loss = 0.
+                train_conf_mat = 0.
+                _labels = []
+                _probs = []
+                _mask = []
+                batch = 0
+                while True:
+                    try:
+                        _, loss, conf_mat, global_step, pred_probs, labels, mask = sess.run(
+                            [self.opt, self.loss, self.conf_mat, self.global_step, self.pred_probs, self.labels, self.mask])
+                        _labels.append(labels.flatten())
+                        _probs.append(pred_probs.flatten())
+                        _mask.append(mask.flatten())
+                        train_conf_mat += conf_mat
+                        train_loss += loss
+
+                        if global_step % print_freq == 0:
+                            print("Epoch {:02d} Step {:04d} Train loss {}".format(epoch,
+                                                                                  global_step,
+                                                                                  loss))
+                        batch += 1
+                    except tf.errors.OutOfRangeError:
+                        break
+                train_loss /= batch
+                _labels = np.concatenate(_labels)
+                _probs = np.concatenate(_probs)
+                _mask = np.concatenate(_mask)
+                fpr, tpr, thresholds = roc_curve(_labels, _probs, sample_weight=_mask)
+                which = np.argmax(tpr - fpr)
+                opt_threshold = thresholds[which]
+                print("New opt threshold: {}".format(opt_threshold))
+                sess.run(self.assign_threshold, {self.threshold_pl: opt_threshold})
+
+                print("init data for testing")
+                sess.run([self.init],
+                         {self.label_files_pl: label_files,
+                          self.ref_images_pl: ref_images,
+                          self.datapacks_pl: datapacks,
+                          self.shard_idx: 1})
+                test_loss = 0.
+                test_conf_mat = 0.
+                batch = 0
+                while True:
+                    try:
+                        loss, conf_mat, pred_probs, labels, mask = sess.run(
+                            [self.loss, self.conf_mat, self.pred_probs, self.labels,
+                             self.mask])
+                        test_conf_mat += conf_mat
+                        test_loss += loss
+
+                        batch += 1
+                    except tf.errors.OutOfRangeError:
+                        break
+                test_loss /= batch
+
+                print("Epoch {} Train loss: {}\nconf. mat.\n{}".format(epoch, train_loss,train_conf_mat.astype(np.int32)))
+                self.conf_mat_to_str(train_conf_mat)
+                print("Epoch {} Test loss: {}\nconf. mat.\n{}".format(epoch, test_loss,test_conf_mat.astype(np.int32)))
+                self.conf_mat_to_str(test_conf_mat)
+
+                print('Saving...')
+                save_path = saver.save(sess, self.save_path(model_dir), global_step=self.global_step)
+                print("Saved to {}".format(save_path))
+
+    def save_path(self, model_dir):
+        return os.path.join(model_dir, 'model-selfattention-F{:02d}-L{:02d}.ckpt'.format(self.n_features, self.L))
+
+    def get_model_file(self, model_dir):
+        print("Looking in {}".format(model_dir))
+        latest_model = tf.train.latest_checkpoint(model_dir)
+        if latest_model is None:
+            latest_model = self.save_path(model_dir)
+        return latest_model
+
+    def eval_model(self, ref_images, datapacks, model_dir=None):
+        if model_dir is None:
+            model_dir = self.flagging_models
+        model_file = self.get_model_file(model_dir)
+        with tf.Session(graph=self.graph) as sess:
+            saver = tf.train.Saver()
+            saver.restore(sess,model_file)
+            all_predictions = []
+            for ref_image, datapack in zip(ref_images, datapacks):
+                sess.run(self.eval_init,
+                         {self.ref_images_pl: [ref_image],
+                          self.datapacks_pl: [datapack]})
+                predictions = []
+                while True:
+                    try:
+                        winner = sess.run(self.eval_pred_labels)
+                        predictions.append(winner)
+                    except tf.errors.OutOfRangeError:
+                        break
+                predictions = np.concatenate(predictions, axis=0)
+                print("{} Predictions: {}".format(datapack, predictions.shape))
+                print("Predicted [{}/{}] outliers ({:.2f}%) in {}".format(np.sum(predictions),predictions.size,
+                                                                          100.*np.sum(predictions)/predictions.size,
+                                                                          datapack))
+                all_predictions.append(predictions)
+            return all_predictions
+
+    def build_model(self, inputs, position_encoding, senders, receivers, output_bias=0.):
+        with tf.variable_scope('classifier', reuse=tf.AUTO_REUSE):
+            B = tf.shape(inputs)[0]
+            Nd = tf.shape(inputs)[1]
+            Nt = tf.shape(inputs)[2]
+            inputs = tf.reshape(inputs, (B*Nd, Nt, 2))
+            num = 0
+            features = tf.layers.conv1d(inputs, self.n_features, [1], strides=1, padding='same', activation=None,
+                                        name='pointwise')
+            for l in range(self.L):
+                features = tf.layers.conv1d(features, self.n_features, [5], strides=1, padding='same', activation=tf.nn.relu,
+                                        name='conv_{:02d}'.format(l))
+            features = tf.keras.layers.LayerNormalization()(features)
+            features = tf.reshape(features,(B, Nd*Nt,-1))
+
+            nodes = tf.concat([features, tf.reshape(position_encoding, (B, Nd*Nt,-1))], axis=-1)
+            n_node = tf.tile(tf.shape(nodes)[1:2], [B])
+            n_edge = tf.tile(tf.shape(senders)[1:2], [B])
+            offsets = _compute_stacked_offsets(n_node, n_edge)
+            graph = GraphsTuple(nodes=tf.reshape(nodes,(-1,)), edges=None, globals=None,n_node=n_node, n_edge=n_edge,
+                                receivers=tf.reshape(receivers, (-1,))+offsets,senders=tf.reshape(senders,(-1,))+offsets)
+
+            sa1 = SelfAttention()
+            gi1 = GraphIndependent(node_model_fn=snt.Sequential([snt.Linear(self.n_features), tf.nn.relu, snt.LayerNorm()]))
+            graph = sa1(graph, graph, graph, graph)
+            graph = gi1(graph)
+            sa2 = SelfAttention()
+            gi2 = GraphIndependent(node_model_fn=snt.Sequential([snt.Linear(1, use_bias=True), tf.nn.relu, snt.LayerNorm()]))
+            graph = sa2(graph, graph, graph, graph)
+            graph = gi2(graph)
+            output = tf.reshape(graph.nodes,(B, Nd, Nt, 1))
+
+            # outputs = tf.reduce_mean(outputs, axis=0, keepdims=True)
+            output_bias = tf.Variable(output_bias, dtype=tf.float32, trainable=False)
+            output += output_bias
+            return output
 
 
 def click_through(save_file, datapack, ref_image, model_dir, model_kwargs=None):
