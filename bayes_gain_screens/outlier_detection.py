@@ -1101,6 +1101,7 @@ class Classifier(object):
                                                                                   loss))
                         batch += 1
                     except tf.errors.OutOfRangeError:
+                        print("out of examples")
                         break
                 train_loss /= batch
                 _labels = np.concatenate(_labels)
@@ -1131,6 +1132,7 @@ class Classifier(object):
 
                         batch += 1
                     except tf.errors.OutOfRangeError:
+                        print("out of examples")
                         break
                 test_loss /= batch
 
