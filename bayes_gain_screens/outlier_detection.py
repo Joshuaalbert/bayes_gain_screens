@@ -961,7 +961,7 @@ class Classifier(object):
             self.label_files_pl = tf.placeholder(tf.string, shape=[None], name='label_files')
             self.datapacks_pl = tf.placeholder(tf.string, shape=[None], name='datapacks')
             self.ref_images_pl = tf.placeholder(tf.string, shape=[None], name='ref_images')
-            self.shard_idx = tf.placeholder(tf.int32, shape=[], name='shard_idx')
+            self.shard_idx = tf.placeholder(tf.int64, shape=[], name='shard_idx')
 
             ###
             # train/test inputs
