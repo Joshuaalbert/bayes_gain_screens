@@ -1191,7 +1191,7 @@ class Classifier(object):
             for l in range(self.L):
                 features = tf.layers.conv1d(features, self.n_features, [5], strides=1, padding='same', activation=tf.nn.relu,
                                         name='conv_{:02d}'.format(l)) + features
-            features = tf.keras.layers.LayerNormalization()(features)
+            # features = tf.keras.layers.LayerNormalization()(features)
             features = tf.reshape(features,(B, Nd*Nt,self.n_features))
 
             nodes = tf.concat([features, tf.reshape(position_encoding, (B, Nd*Nt,3))], axis=-1)
@@ -1206,11 +1206,11 @@ class Classifier(object):
                                 receivers=tf.reshape(receivers, (-1,))+offsets,senders=tf.reshape(senders,(-1,))+offsets)
             # print(graph)
             sa1 = SelfAttention()
-            gi1 = GraphIndependent(node_model_fn=lambda:snt.Sequential([tf.keras.layers.Dense(self.n_features), tf.nn.relu, snt.LayerNorm()]))
+            gi1 = GraphIndependent(node_model_fn=lambda:snt.Sequential([tf.keras.layers.Dense(self.n_features), tf.nn.relu]))
             graph = sa1(graph.nodes, graph.nodes, graph.nodes, graph)
             graph = gi1(graph)
             sa2 = SelfAttention()
-            gi2 = GraphIndependent(node_model_fn=lambda:snt.Sequential([tf.keras.layers.Dense(1), snt.LayerNorm()]))
+            gi2 = GraphIndependent(node_model_fn=lambda:snt.Sequential([tf.keras.layers.Dense(1)]))
             graph = sa2(graph.nodes, graph.nodes, graph.nodes, graph)
             graph = gi2(graph)
             output = tf.reshape(graph.nodes,(B, Nd, Nt, 1))
