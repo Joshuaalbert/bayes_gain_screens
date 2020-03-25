@@ -1198,12 +1198,14 @@ class Classifier(object):
             features = tf.reshape(features,(B, Nd*Nt,self.n_features))
 
             nodes = tf.concat([features, tf.reshape(position_encoding, (B, Nd*Nt,3))], axis=-1)
-            nodes.set_shape([None, None, 3+self.n_features])
+
             node_size = tf.shape(nodes)[-1]
             n_node = tf.tile(tf.shape(nodes)[1:2], [B])
             n_edge = tf.tile(tf.shape(senders)[1:2], [B])
             offsets = _compute_stacked_offsets(n_node, n_edge)
-            graph = GraphsTuple(nodes=tf.reshape(nodes,(-1, 1, node_size)), edges=None, globals=None,n_node=n_node, n_edge=n_edge,
+            nodes = tf.reshape(nodes,(-1, 1, node_size))
+            nodes.set_shape([None, 1, 3 + self.n_features])
+            graph = GraphsTuple(nodes=nodes, edges=None, globals=None,n_node=n_node, n_edge=n_edge,
                                 receivers=tf.reshape(receivers, (-1,))+offsets,senders=tf.reshape(senders,(-1,))+offsets)
             print(graph)
             sa1 = SelfAttention()
