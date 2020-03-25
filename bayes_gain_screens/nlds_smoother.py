@@ -115,6 +115,7 @@ class NLDSSmoother(object):
                                    tf.zeros([B, K], float_type),
                                    tf.zeros([B, K, K], float_type)
                                    ],
+                                  back_prop=False,
                                   name='iteration_while_loop')
 
                 self.post_y_mean, self.post_y_cov = self._update.predictive_distribution(post_mu, post_Gamma, *serve_pl)
@@ -269,6 +270,7 @@ class NLDSSmoother(object):
                                post_mu_ta,
                                post_Gamma_ta,
                                post_Gamma_inter_ta],
+                              back_prop=False,
                               name='backwards_while_loop')
 
             post_mu = post_mu_ta.stack()[::-1, ...]
@@ -313,6 +315,7 @@ class NLDSSmoother(object):
                                prior_Gamma_ta,
                                post_mu_ta,
                                post_Gamma_ta],
+                              back_prop=False,
                               name='forwards_while_loop')
 
             prior_Gamma = prior_Gamma_ta.stack()
