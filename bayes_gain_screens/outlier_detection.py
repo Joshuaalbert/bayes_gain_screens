@@ -1052,7 +1052,7 @@ class Classifier(object):
             return "ACC: {} [{}% baseline] FPR: {} [{}% baseline] FNR: {} [{}% baseline]".format(acc, rel_acc, fpr,
                                                                                                  rel_fpr, fnr, rel_fnr)
 
-    def train_model(self, label_files, ref_images, datapacks, epochs=10, print_freq=100, model_dir='./'):
+    def train_model(self, label_files, ref_images, datapacks, epochs=10, print_freq=1, model_dir='./'):
         os.makedirs(model_dir, exist_ok=True)
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver()
@@ -1641,7 +1641,7 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
                        pos_weight=pos_weight)
 
         c.train_model(label_files, linked_ref_images, linked_datapack_npzs, epochs=model_kwargs.get('epochs'),
-                      print_freq=100,
+                      print_freq=1,
                       model_dir=train_dir)
 
     if do_evaluation:
