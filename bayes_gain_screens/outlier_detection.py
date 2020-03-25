@@ -850,7 +850,7 @@ class training_data_gen(object):
     def __call__(self, label_files, ref_images, datapacks):
         for label_file, ref_image, datapack in zip(label_files, ref_images, datapacks):
             label_file, ref_image, datapack = label_file.decode(), ref_image.decode(), datapack.decode()
-            print("Getting data for", label_file, ref_image, datapack, self.K)
+            print("Getting data for", label_file, ref_image, datapack)
 
             tec = np.load(datapack)['tec'].copy()
             tec_uncert = np.load(datapack)['tec_uncert'].copy()
@@ -906,7 +906,7 @@ class eval_data_gen(object):
     def __call__(self, ref_images, datapacks):
         for ref_image, datapack in zip(ref_images, datapacks):
             ref_image, datapack = ref_image.decode(), datapack.decode()
-            print("Getting data for", ref_image, datapack, self.K)
+            print("Getting data for", ref_image, datapack)
 
             tec = np.load(datapack)['tec'].copy()
             tec_uncert = np.load(datapack)['tec_uncert'].copy()
@@ -1025,7 +1025,6 @@ class Classifier(object):
             self.pred_probs = pred_probs
             eval_pred_probs = tf.nn.sigmoid(eval_logits)
 
-            print(labels, pred_probs, mask)
             self.conf_mat = tf.math.confusion_matrix(tf.reshape(labels, (-1,)), tf.reshape(pred_probs > self.threshold, (-1,)),
                                                      weights=tf.reshape(mask, (-1,)),num_classes=2,
                                                      dtype=tf.float32)
@@ -1222,7 +1221,6 @@ class Classifier(object):
             output_bias = tf.Variable(output_bias, dtype=tf.float32, trainable=False)
             output += output_bias
 
-            print(output)
             return output
 
 
