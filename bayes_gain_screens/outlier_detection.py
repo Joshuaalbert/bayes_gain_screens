@@ -996,7 +996,7 @@ class Classifier(object):
             eval_dataset = dataset.interleave(lambda ref_images, datapacks:
                                          tf.data.Dataset.from_generator(
                                              eval_data_gen(),
-                                             output_types=(tf.float32,tf.float32),
+                                             output_types=(tf.float32,tf.float32, tf.int32, tf.int32),
                                              output_shapes=((None, None, 2),
                                                             (None, None, 3),
                                                             (None,),
