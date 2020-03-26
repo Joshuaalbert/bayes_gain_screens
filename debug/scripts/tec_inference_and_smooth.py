@@ -81,30 +81,6 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
 
         mu_0 = np.array([0., 0.])
         Gamma_0 = np.diag([200., 2 * np.pi]) ** 2
-        ###
-        # warm-up
-        # logging.info("On {}: Warming up".format(d))
-        # B, Nf
-
-        # Y_warmup = np.transpose(Yreal_data_dd[d, :, : 50] + 1j * Yimag_data_dd[d, :, : 50])
-        # res = NLDSSmoother(2, 2*Nf, update=update, momentum=0.5, serve_shapes=[[Nf]],session=tf.Session(graph=tf.Graph(), config=config)).run(
-        #     stack_complex(Y_warmup), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :50].T])
-
-        # Sigma_0 = np.maximum(0.01**2, np.mean(res['Sigma'], axis=0))
-        # Omega_0 = np.maximum(0.1**2, np.mean(res['Omega'], axis=0))
-
-        # mu_0 = res['mu_0']
-        # Gamma_0 = res['Gamma_0']
-        # [ print(type(v)) for k,v in res.items()]
-        # logging.info("On {}: Full chain".format(d))
-        # Y = np.transpose(Yreal_data_dd[d, :, :] + 1j * Yimag_data_dd[d, :, :])
-
-        # if debug:
-        #     res = NLDSSmoother(2, 2*Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
-        #         stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, logdir=os.path.join(working_dir,'logdir'), step=d, serve_values=[amps[d,:,:].T])
-        # else:
-        #     res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]], session=tf.Session(graph=tf.Graph(), config=config)).run(
-        #         stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d,:,:].T])
 
         Sigma_0 = 0.5 ** 2 * np.eye(2 * Nf)
         Omega_0 = np.diag([100., 0.01]) ** 2
@@ -221,7 +197,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True)
     logging.info("Creating directionally_referenced/tec000+const000")
     make_soltab(datapack, from_solset='sol000', to_solset='directionally_referenced', from_soltab='phase000',
-                to_soltab=['tec000'])
+                to_soltab=['tec000', 'const000'])
     logging.info("Getting raw phases")
     datapack.current_solset = 'sol000'
     datapack.select(**select)
@@ -240,6 +216,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     tec_conv = TEC_CONV / freqs
     tec_mean_array = np.zeros((Npol, Nd, Na, Nt))
     tec_uncert_array = np.zeros((Npol, Nd, Na, Nt))
+    const_array = np.zeros((Npol,Nd, Na, Nt))
     Sigma_array = np.zeros((Npol, Nd, Na, Nt, 2*Nf, 2*Nf))
     Omega_array = np.zeros((Npol, Nd, Na, Nt, 1, 1))
     smoothed_phase_array = np.zeros((Npol, Nd, Na, Nf, Nt))
@@ -293,6 +270,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
         logging.info("Finished dask.")
         tec_mean = np.zeros((D, Nt))
         tec_uncert = np.zeros((D, Nt))
+        const = np.zeros((D, Nt))
         Sigma = np.zeros((D, Nt, 2*Nf, 2*Nf))
         Omega = np.zeros((D, Nt, 1, 1))
         smoothed_phase = np.zeros((D, Nf, Nt))
@@ -305,8 +283,11 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
             Sigma[start:stop,:, :, :] = results[c][2]
             Omega[start:stop,:, :, :] = results[c][3]
             smoothed_phase[start:stop, :, :] = results[c][4]
+            const[start:stop, :] = results[c][5]
+
         tec_mean = tec_mean.reshape((Npol, 1, Na, Nt))
         tec_uncert = tec_uncert.reshape((Npol, 1, Na, Nt))
+        const = const.reshape((Npol, 1, Na, Nt))
         Sigma = Sigma.reshape((Npol, 1, Na, Nt, 2*Nf, 2*Nf))
         Omega = Omega.reshape((Npol, 1, Na, Nt, 1, 1))
         smoothed_phase = smoothed_phase.reshape((Npol, 1, Na, Nf, Nt))
@@ -316,18 +297,20 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
             #Reference to ref_dir 0: tau_ij + tau_jk = tau_ik
             tec_mean_array[:, solve_dir:solve_dir+1,...] = tec_mean + tec_mean_array[:,next_ref_dir:next_ref_dir+1,...]
             tec_uncert_array[:, solve_dir:solve_dir+1, ...] = np.sqrt(tec_uncert**2 + tec_uncert_array[:, next_ref_dir:next_ref_dir+1, ...]**2)
+            const_array[:, solve_dir:solve_dir+1, ...] = const + const_array[:,next_ref_dir:next_ref_dir+1,...]
             Sigma_array[:, solve_dir:solve_dir+1, ...] = Sigma
             Omega_array[:, solve_dir:solve_dir+1, ...] = Omega
             smoothed_phase_array[:, solve_dir:solve_dir+1, ...] = smoothed_phase
         else:
             tec_mean_array[:, solve_dir:solve_dir + 1, ...] = tec_mean
             tec_uncert_array[:, solve_dir:solve_dir + 1, ...] = tec_uncert
+            const_array[:, solve_dir:solve_dir + 1, ...] = const
             Sigma_array[:, solve_dir:solve_dir + 1, ...] = Sigma
             Omega_array[:, solve_dir:solve_dir + 1, ...] = Omega
             smoothed_phase_array[:, solve_dir:solve_dir + 1, ...] = smoothed_phase
 
     # phase_smooth_uncert = np.abs(tec_conv[:, None] * tec_uncert_array[..., None, :])
-    phase_model = tec_mean_array[..., None, :]*tec_conv[:, None] + smoothed_phase_array[:, ref_dir:ref_dir+1, ...]
+    phase_model = tec_mean_array[..., None, :]*tec_conv[:, None] + smoothed_phase_array[:, ref_dir:ref_dir+1, ...] + const_array[...,None,:]
     res_real = amp_raw * np.cos(phase_raw) - amp_smooth*np.cos(phase_model)
     res_imag = amp_raw * np.sin(phase_raw) - amp_smooth*np.sin(phase_model)
 
@@ -343,6 +326,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     datapack.select(**select)
     datapack.tec = tec_mean_array
     datapack.weights_tec = tec_uncert_array
+    datapack.const = const_array
     logging.info("Storing HMM params")
     np.save(os.path.join(working_dir, "Sigma.npy"), Sigma_array)
     np.save(os.path.join(working_dir, "Omega.npy"), Omega_array)
