@@ -66,6 +66,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
     smoothed_phase_array = np.zeros((D, Nf, N))
     tec_mean_array = np.zeros((D, N))
     tec_uncert_array = np.zeros((D, N))
+    const_array = np.zeros((D, N))
     Sigma_array = np.zeros((D, N, 2*Nf, 2*Nf))
     Omega_array = np.zeros((D, N, 1, 1))
 
@@ -114,7 +115,9 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         #N
         eff_phase_residual = np.polyfit(freqs/1e6, diff_phase.T, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
         eff_const = eff_phase_residual / 0.157
+        #N
         eff_const = median_filter(eff_const, size=(300,))
+        const_array[d,:] = eff_const
         #N, Nf
         Y_mod = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
         res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
@@ -165,7 +168,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
                                                     amps[d, :, t]),
                            method='BFGS').x for t in range(N)]
         smoothed_phase_array[d, :, :] = np.stack([p[0] * tec_conv + p[1] * clock_conv + p[2] for p in params], axis=1)
-    return tec_mean_array, tec_uncert_array, Sigma_array, Omega_array, smoothed_phase_array
+    return tec_mean_array, tec_uncert_array, Sigma_array, Omega_array, smoothed_phase_array, const_array
 
 def wrap(p):
     return np.arctan2(np.sin(p), np.cos(p))
