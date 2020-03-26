@@ -90,7 +90,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
                            session=tf.Session(graph=tf.Graph(), config=config),
                            freeze_Omega=True).run(
-            stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :].T])
+            stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 1, serve_values=[amps[d, :, :].T])
 
         Sigma_0 = res['Sigma']#np.maximum(0.01 ** 2, np.mean(res['Sigma'], axis=0))
         Omega_0 = res['Omega']#np.maximum(0.1 ** 2, np.mean(res['Omega'], axis=0))
@@ -100,7 +100,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         res = NLDSSmoother(2, 2 * Nf, update=update, momentum=0., serve_shapes=[[Nf]],
                            session=tf.Session(graph=tf.Graph(), config=config),
                            freeze_Sigma=True).run(
-            stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 2, serve_values=[amps[d, :, :].T])
+            stack_complex(Y), Sigma_0, Omega_0, mu_0, Gamma_0, 1, serve_values=[amps[d, :, :].T])
 
 
 
@@ -150,12 +150,12 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         #Nf, Nt
         res_real = Yreal_data_di[d,:,:] - amps[d, :, :]*np.cos(smoothed_phase_array[d,:,:])
         #Nf, Nt
-        sigma_real = np.sqrt(apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_real), 61, piecewise_constant=False))
-        sigma_real = np.where(np.abs(res_real) > 2. * sigma_real, 5. * sigma_real, sigma_real)
+        sigma_real = np.sqrt(np.square(res_real)*0.5 + 0.5*apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_real), 5, piecewise_constant=False))
+        # sigma_real = np.where(np.abs(res_real) > 2. * sigma_real, 5. * sigma_real, sigma_real)
 
         res_imag = Yimag_data_di[d, :, :] - amps[d, :, :]*np.sin(smoothed_phase_array[d, :, :])
-        sigma_imag = np.sqrt(apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_imag), 61, piecewise_constant=False))
-        sigma_imag = np.where(np.abs(res_imag) > 2. * sigma_imag, 5. * sigma_imag, sigma_imag)
+        sigma_imag = np.sqrt(np.square(res_imag)*0.5 + 0.5*apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_imag), 5, piecewise_constant=False))
+        # sigma_imag = np.where(np.abs(res_imag) > 2. * sigma_imag, 5. * sigma_imag, sigma_imag)
 
         params = [minimize(loss, params[t], args=(Yreal_data_di[d, :, t], Yimag_data_di[d, :, t],
                                                     sigma_real[:,t],
