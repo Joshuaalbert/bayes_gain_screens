@@ -33,6 +33,15 @@ def main(data_dir, working_dir, obs_num):
     phase_slow, axes = datapack_slow.phase
     amplitude_slow, axes = datapack_slow.amplitude
 
+    ###
+    # get const term
+
+    datapack = DataPack(original_h5parm, readonly=True)
+    logging.info("Getting directionally_referenced/const000")
+    datapack.current_solset = 'directionally_referenced'
+    datapack.select(**select)
+    const_cals, _ = datapack.const
+
 
     ###
     # get screen phase and amplitude
@@ -48,6 +57,9 @@ def main(data_dir, working_dir, obs_num):
     time_screen = times.mjd*86400.
     phase_screen, axes = datapack.phase
     amplitude_screen, axes = datapack.amplitude
+
+
+
 
     ###
     # get smoothed000 phase and amplitude
@@ -83,7 +95,7 @@ def main(data_dir, working_dir, obs_num):
     phase_smooth_slow = phase_slow[..., time_map] + phase_smoothed
     amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
 
-    phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...] #Don't add slow to screen
+    phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...] + const_cals[:, dir_map, ..., None, :]#Don't add slow to screen
     phase_screen_slow[:, :Ncal, ...] = phase_smooth_slow
     # Amplitudes are fit with rbf during deploy, so we can keep those or replace with NN here
     amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...] #amplitude_smoothed[:, dir_map, ...] #amplitude_screen # * amplitude_smooth_slow[:, dir_map, ...]

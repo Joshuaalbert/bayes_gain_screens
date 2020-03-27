@@ -58,6 +58,8 @@ class Deployment(object):
         tec = tec.astype(np.float64)
         tec_uncert, _ = datapack.weights_tec
         tec_uncert = tec_uncert.astype(np.float64)
+        const, _ = datapack.const
+        const = const[0,...]#Nd,Na,Nt
 
         logging.info("Transposing data to (Nt, Na, Nd)")
         # Nd, Na, Nt -> Nt, Na, Nd
@@ -103,6 +105,7 @@ class Deployment(object):
         self.datapack = datapack
         self.tec = tec
         self.tec_uncert = tec_uncert
+        self.const = const
 
         self.block_size = block_size
         self.names = None
