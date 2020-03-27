@@ -154,10 +154,12 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         res_real = Yreal_data_di[d,:,:] - amps[d, :, :]*np.cos(smoothed_phase_array[d,:,:])
         #Nf, Nt
         sigma_real = np.sqrt(np.square(res_real)*0.5 + 0.5*apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_real), 5, piecewise_constant=False))
+        sigma_real = np.maximum(0.01,sigma_real)
         # sigma_real = np.where(np.abs(res_real) > 2. * sigma_real, 5. * sigma_real, sigma_real)
 
         res_imag = Yimag_data_di[d, :, :] - amps[d, :, :]*np.sin(smoothed_phase_array[d, :, :])
         sigma_imag = np.sqrt(np.square(res_imag)*0.5 + 0.5*apply_rolling_func_strided(lambda x: np.mean(x, axis=-1), np.square(res_imag), 5, piecewise_constant=False))
+        sigma_imag = np.maximum(0.01,sigma_imag)
         # sigma_imag = np.where(np.abs(res_imag) > 2. * sigma_imag, 5. * sigma_imag, sigma_imag)
 
         params = [minimize(loss, params[t], args=(Yreal_data_di[d, :, t], Yimag_data_di[d, :, t],
