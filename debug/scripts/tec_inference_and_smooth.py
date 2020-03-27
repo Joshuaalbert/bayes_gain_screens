@@ -200,7 +200,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True)
     logging.info("Creating directionally_referenced/tec000+const000")
     make_soltab(datapack, from_solset='sol000', to_solset='directionally_referenced', from_soltab='phase000',
-                to_soltab=['tec000', 'const000'])
+                to_soltab=['tec000', 'const000'], remake_solset=True)
     logging.info("Getting raw phases")
     datapack.current_solset = 'sol000'
     datapack.select(**select)
