@@ -1314,14 +1314,18 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
 
 
 if __name__ == '__main__':
-    datapacks = glob.glob('/home/albert/store/root_dense/L*/download_archive/L*_DDS4_full_merged.h5')
+    datapacks = glob.glob('/home/albert/store/root_adjusted/L342*/download_archive/L*_DDS4_full_merged.h5')
     ref_images = ['/home/albert/store/lockman/archive/image_full_ampphase_di_m.NS.app.restored.fits'] * len(datapacks)
-    remove_outliers(do_clicking=True, do_training=True, do_evaluation=True,
+    remove_outliers(False, False, True,
                     datapacks=datapacks,
                     ref_images=ref_images,
-                    working_dir='/home/albert/git/bayes_gain_screens/debug/outlier_detection',
-                    eval_dir=None,
-                    L=5, K=7, n_features=24, crop_size=250, batch_size=16, epochs=30)
+                    working_dir='./debug_outliers',
+                    eval_dir=Classifier.flagging_models,
+                    K=15,
+                    L=10,
+                    n_features=48,
+                    batch_size=16
+                    )
     # from bayes_gain_screens.datapack import DataPack
     # dp = DataPack('/net/lofar1/data1/albert/imaging/data/lockman/L667218_DDS4_full.h5', readonly=False)
     # dp.current_solset = 'directionally_referenced'
