@@ -111,7 +111,8 @@ class AutoEncoderGaussian(tf.keras.Model):
         model_data = self.decoder(posterior_samples, training=training)
         # likelihood = tfp.distributions.Bernoulli(logits=model_data, dtype=tf.float32)
         likelihood = tfp.distributions.MultivariateNormalDiag(loc=model_data[...,:self.F], scale_diag=tf.math.exp(model_data[...,self.F:]))
-        var_exp = tf.reduce_mean(tf.reduce_sum(likelihood.log_prob(inputs),axis=-1), axis=0)
+        # var_exp = tf.reduce_mean(tf.reduce_sum(likelihood.log_prob(inputs),axis=-1), axis=0)
+        var_exp = tf.reduce_mean(likelihood.log_prob(inputs), axis=0)
         # with tf.control_dependencies([tf.print(['KL', tf.reduce_mean(KL), 'var_exp', tf.reduce_mean(var_exp)])]):
         elbo = var_exp - KL
 
