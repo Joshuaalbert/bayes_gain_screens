@@ -176,7 +176,7 @@ class Train():
             loss, KL, var_exp, posterior_samples, fake_model_data, posterior_mean= auto_encoder(features, training=False)
 
             global_step = tf.Variable(0, trainable=False)
-            lr = tf.train.inverse_time_decay(1e-2, global_step, 1000, 1.)
+            lr = tf.train.inverse_time_decay(1e-3, global_step, 1000, 1.)
 
             optimiser = tf.train.AdamOptimizer(lr)
             opt_op = optimiser.minimize(loss, global_step=global_step)
