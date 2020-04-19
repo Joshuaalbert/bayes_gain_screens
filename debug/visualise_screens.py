@@ -147,7 +147,7 @@ class ExampleGenerator:
             Npol, Nd, Na, Nt = tec.shape
             tecs.append(tec.transpose((0,2,3,1)).reshape((-1, Nd)))
         tecs = np.concatenate(tecs,axis=0)
-        self.tecs = tecs/10.
+        self.tecs = tecs/100.
         self.Nd = self.tecs.shape[1]
 
     def __call__(self, train=True):
