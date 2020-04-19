@@ -94,7 +94,7 @@ class AutoEncoderGaussian(tf.keras.Model):
         self.F = feature_size
         self.L = latent_size
         self.encoder = Encoder(layer_size=layer_size,latent_size=latent_size*2, rate=rate)
-        self.decoder = Decoder(layer_size=layer_size,feature_size=feature_size, rate=rate)
+        self.decoder = Decoder(layer_size=layer_size,feature_size=feature_size*2, rate=rate)
         self.prior = tfp.distributions.MultivariateNormalDiag(loc=tf.zeros((latent_size,)),scale_identity_multiplier=1.)
         xx,yy = tf.meshgrid(tf.linspace(-2.,2.,5),tf.linspace(-2.,2.,5), indexing='ij')
         self.fake_input = tf.stack([tf.reshape(xx,(-1,)), tf.reshape(yy,(-1,))], axis=-1)[None,...]
@@ -109,16 +109,18 @@ class AutoEncoderGaussian(tf.keras.Model):
         posterior_samples = variational_posterior.sample(self.S)
         #S, B, F
         model_data = self.decoder(posterior_samples, training=training)
-        likelihood = tfp.distributions.Bernoulli(logits=model_data, dtype=tf.float32)
-        # likelihood = tfp.distributions.MultivariateNormalDiag(loc=model_data[...,:self.F], scale_diag=tf.nn.softplus(model_data[...,self.F:]))
+        # likelihood = tfp.distributions.Bernoulli(logits=model_data, dtype=tf.float32)
+        likelihood = tfp.distributions.MultivariateNormalDiag(loc=model_data[...,:self.F], scale_diag=tf.math.exp(model_data[...,self.F:]))
         var_exp = tf.reduce_mean(tf.reduce_sum(likelihood.log_prob(inputs),axis=-1), axis=0)
         # with tf.control_dependencies([tf.print(['KL', tf.reduce_mean(KL), 'var_exp', tf.reduce_mean(var_exp)])]):
         elbo = var_exp - KL
 
         #B, 28*28
         fake_model_data = self.decoder(self.fake_input, training=False)
-        fake_model_data = tf.reshape(fake_model_data, (-1, 28,28, 1))
-        return tf.reduce_mean(tf.negative(elbo)), KL, var_exp, posterior_samples, fake_model_data, posterior_mean
+        # fake_likelihood = tfp.distributions.MultivariateNormalDiag(loc=model_data[...,:self.F], scale_diag=tf.math.exp(model_data[...,self.F:]))
+
+        # fake_model_data = tf.reshape(fake_model_data, (-1, 28,28, 1))
+        return tf.reduce_mean(tf.negative(elbo)), KL, var_exp, posterior_samples, model_data[...,:self.F], posterior_mean
 
 class MnistExampleGenerator:
     def __init__(self):
@@ -182,8 +184,8 @@ class Train():
                                                      tf.summary.scalar('learning_rate', lr, family='train'),
                                                      tf.summary.scalar('KL', tf.reduce_mean(KL), family='train'),
                                                      tf.summary.scalar('var_exp', tf.reduce_mean(var_exp), family='train'),
-                                                     tf.summary.image('class_mean', fake_model_data, max_outputs=25,
-                                                                      family='train')
+                                                     # tf.summary.image('class_mean', fake_model_data, max_outputs=25,
+                                                     #                  family='train')
                                                      ]
                                                     )
 
