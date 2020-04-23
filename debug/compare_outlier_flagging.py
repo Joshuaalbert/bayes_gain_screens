@@ -225,13 +225,13 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
 
 
 
-    for z in zip(datapacks, FNR_nn, FPR_nn, FN_nn, FP_nn, FNR_reinout, FPR_reinout, FN_reinout, FP_reinout):
+    for z in zip(datapacks, FNR_nn*100, FPR_nn*100, FN_nn, FP_nn, FNR_reinout*100, FPR_reinout*100, FN_reinout, FP_reinout)[::-1]:
         datapack = z[0]
         obsnum = os.path.basename(datapack).split('_')[0][1:]
         s = "{} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f}\\".format(obsnum, *z[1:])
         print(s)
     s = "{} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f}".format("Total",
-                                                                                        tFNR_nn, tFPR_nn, FN_nn.sum(), FP_nn.sum(), tFNR_reinout, tFPR_reinout, FN_reinout.sum(), FP_reinout.sum())
+                                                                                        tFNR_nn*100, tFPR_nn*100, float(FN_nn.sum()), float(FP_nn.sum()), tFNR_reinout*100, tFPR_reinout*100, float(FN_reinout.sum()), float(FP_reinout.sum()))
     print(s)
 
 
