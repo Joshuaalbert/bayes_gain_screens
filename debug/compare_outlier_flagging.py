@@ -18,9 +18,10 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tp_nn,tn_nn,fp_nn,fn_nn = [],[],[],[]
     tp_gt,tn_gt,fp_gt,fn_gt = [],[],[],[]
     tp_r, tn_r, fp_r, fn_r = [],[],[],[]
-    fn_dirs = []
+    tp_thresh, tn_thresh, fp_thresh, fn_thresh = [],[],[],[]
     sizes = []
     num_outliers = []
+    dir_thresh = np.arange(45)
     for datapack in datapacks:
         print("Running {}".format(datapack))
         click_data = os.path.join('/home/albert/git/bayes_gain_screens/debug/outlier_detection_adjusted_2/click',os.path.basename(datapack.replace('.h5','.labels.npy')))
@@ -63,9 +64,14 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         fp_r.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
         fn_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
 
-        fn_dirs.append((np.sum(nn_flags[0,...], axis=0).flatten(),np.sum(np.logical_and(~ignore,ground_truth), axis=0).flatten(),np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :])), axis=0).flatten()))
+        #S, Nd, Na, Nt
+        flag_thresh = np.tile((np.sum(nn_flags[0,...], axis=0) > dir_thresh[:, None, None])[:, None, :, :], [1,nn_flags.shape[1], 1, 1])
+        # S, Nd, Na, Nt
+        tp_thresh.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, flag_thresh)).reshape((45, -1)),axis=-1))
+        tn_thresh.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, ~flag_thresh)).reshape((45, -1)),axis=-1))
+        fp_thresh.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, flag_thresh)).reshape((45, -1)),axis=-1))
+        fn_thresh.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~flag_thresh)).reshape((45, -1)),axis=-1))
 
-    fn_dirs = np.concatenate(fn_dirs, 1)
     sizes = np.array(sizes)
     num_outliers = np.array(num_outliers)
 
@@ -242,12 +248,19 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
 
     print(np.mean(sizes),"points per observation")
 
-    plt.scatter(fn_dirs[0,:],fn_dirs[2,:],alpha=0.1)
-    plt.show()
+    tp = np.array(tp_thresh).astype(float).sum(0)
+    tn = np.array(tn_thresh).astype(float).sum(0)
+    fp = np.array(fp_thresh).astype(float).sum(0)
+    fn = np.array(fn_thresh).astype(float).sum(0)
+    #S
+    tpr = tp / (tp + fn)
+    fpr = fp / (fp + tn)
+    fnr = fn / (fn + tp)
+    tnr = tn / (tn + fp)
+    acc = (tn + tp) / (tp + tn + fp + fn)
 
-    plt.scatter(fn_dirs[1, :], fn_dirs[2, :], alpha=0.1)
+    plt.scatter(fnr, fpr, c=dir_thresh)
     plt.show()
-
 
 
 
