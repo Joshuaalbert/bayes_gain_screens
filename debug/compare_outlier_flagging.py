@@ -45,7 +45,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
             np.save(r_flag_file, reinout_flags)
         reinout_flags = np.load(r_flag_file)
         sizes.append(Nd*Na*Nt)
-        num_outliers.append(nn_flags[0,...].sum())
+        num_outliers.append(nn_flags.sum())
 
         tp_nn.append(np.sum(np.logical_and(nn_flags, reinout_flags)))
         tn_nn.append(np.sum(np.logical_and(~nn_flags, ~reinout_flags)))
@@ -63,6 +63,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         fn_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
 
     sizes = np.array(sizes)
+    num_outliers = np.array(num_outliers)
 
     tp = np.array(tp_nn).astype(float)
     tn = np.array(tn_nn).astype(float)
@@ -158,15 +159,17 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print(f"FNR: {fnr}")
     print(f"ACC: {acc}")
 
-    P = tp + fn
-    N = tn + fp
+    #P = tp + fn = tp + fnr * P -> tp = P*(1-fnr)
+    #N = tn + fp = tn + fpr * N -> tn = N*(1-fpr)
 
-    print("Estimated false negatives: {}".format(sizes * P / (P + N) * fnr))
-    print("Estimated false negatives: {}".format(np.sum(sizes * P / (P + N) * fnr)))
-    print("Estimated false positives: {}".format(sizes * N / (P + N) * fpr))
-    print("Estimated false positives: {}".format(np.sum(sizes * N / (P + N) * fpr)))
     print("Total outliers found: {}".format(num_outliers))
     print("Total outliers found: {}".format(np.sum(num_outliers)))
+
+    print("Estimated false negatives: {}".format(num_outliers * fnr))
+    print("Estimated false negatives: {}".format(np.sum(num_outliers * fnr)))
+    print("Estimated false positives: {}".format((sizes - num_outliers) * fpr ))
+    print("Estimated false positives: {}".format(np.sum((sizes - num_outliers) * fpr)))
+
 
 
     tp = tp.sum()
