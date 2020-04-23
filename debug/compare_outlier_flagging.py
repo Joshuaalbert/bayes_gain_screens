@@ -5,15 +5,15 @@ import argparse, os, glob
 
 def compare_outlier_methods(datapacks, ref_images, working_dir):
     print("Comparing flagging methods")
-    remove_outliers(False, False, True,
-                    datapacks,
-                    ref_images,
-                    working_dir,
-                    Classifier.flagging_models,
-                    K=15,
-                    L=10,
-                    n_features=48,
-                    batch_size=16)
+    # remove_outliers(False, False, True,
+    #                 datapacks,
+    #                 ref_images,
+    #                 working_dir,
+    #                 Classifier.flagging_models,
+    #                 K=15,
+    #                 L=10,
+    #                 n_features=48,
+    #                 batch_size=16)
     tp,tn,fp,fn = [],[],[],[]
     for datapack in datapacks:
         print("Running {}".format(datapack))
