@@ -82,6 +82,15 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print(f"TNR: {tnr}")
     print(f"FNR: {fnr}")
     print(f"ACC: {acc}")
+
+    print("Total outliers found: {}".format(num_outliers))
+    print("Total outliers found: {}".format(np.sum(num_outliers)))
+
+    print("Estimated false negatives: {}".format(num_outliers * fnr))
+    print("Estimated false negatives: {}".format(np.sum(num_outliers * fnr)))
+    print("Estimated false positives: {}".format((sizes - num_outliers) * fpr))
+    print("Estimated false positives: {}".format(np.sum((sizes - num_outliers) * fpr)))
+
     tp = tp.sum()
     tn = tn.sum()
     fp = fp.sum()
@@ -123,6 +132,16 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print(f"TNR: {tnr}")
     print(f"FNR: {fnr}")
     print(f"ACC: {acc}")
+
+    print("Total outliers found: {}".format(num_outliers))
+    print("Total outliers found: {}".format(np.sum(num_outliers)))
+
+    print("Estimated false negatives: {}".format(num_outliers * fnr))
+    print("Estimated false negatives: {}".format(np.sum(num_outliers * fnr)))
+    print("Estimated false positives: {}".format((sizes - num_outliers) * fpr))
+    print("Estimated false positives: {}".format(np.sum((sizes - num_outliers) * fpr)))
+
+
     tp = tp.sum()
     tn = tn.sum()
     fp = fp.sum()
