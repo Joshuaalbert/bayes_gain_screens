@@ -260,6 +260,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tnr = tn / (tn + fp)
     acc = (tn + tp) / (tp + tn + fp + fn)
 
+    plt.figure(figsize=(5,8))
     plt.plot(fnr*100, fpr*100, c='black')
 
     argmin = np.argmin(np.abs(fnr) + np.abs(fpr))
@@ -273,6 +274,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     plt.ylabel('FPR [%]')
     plt.legend()
 
+    plt.savefig('./flag_roc.pdf')
     plt.show()
 
 
