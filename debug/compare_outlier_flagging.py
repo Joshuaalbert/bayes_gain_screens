@@ -30,7 +30,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         tec, axes = dp.tec
         _, directions = dp.get_directions(axes['dir'])
         Npol, Nd, Na, Nt = tec.shape
-        if os.path.isfile('./reinout_flags.npy'):
+        if not os.path.isfile('./reinout_flags.npy'):
             reinout_flags = np.zeros_like(nn_flags)
             for a in range(Na):
                 for t in range(Nt):
