@@ -66,6 +66,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
 
         #S, Nd, Na, Nt
         flag_thresh = np.tile((np.sum(nn_flags[0,...], axis=0) > dir_thresh[:, None, None])[:, None, :, :], [1,nn_flags.shape[1], 1, 1])
+        flag_thresh = np.logical_or(flag_thresh, nn_flags)
         # S, Nd, Na, Nt
         tp_thresh.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, flag_thresh)).reshape((45, -1)),axis=-1))
         tn_thresh.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, ~flag_thresh)).reshape((45, -1)),axis=-1))
