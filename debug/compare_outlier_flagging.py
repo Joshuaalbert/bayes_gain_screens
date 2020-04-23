@@ -16,6 +16,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     #                 batch_size=16)
     tp_nn,tn_nn,fp_nn,fn_nn = [],[],[],[]
     tp_gt,tn_gt,fp_gt,fn_gt = [],[],[],[]
+    tp_r, tn_r, fp_r, fn_r = [],[],[],[]
 
     for datapack in datapacks:
         print("Running {}".format(datapack))
@@ -47,10 +48,15 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         fp_nn.append(np.sum(np.logical_and(~nn_flags, reinout_flags)))
         fn_nn.append(np.sum(np.logical_and(nn_flags, ~reinout_flags)))
 
-        tp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, reinout_flags[0, :, :, :]))))
-        tn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, ~reinout_flags[0, :, :, :]))))
-        fp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, reinout_flags[0, :, :, :]))))
-        fn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, ~reinout_flags[0, :, :, :]))))
+        tp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, nn_flags[0, :, :, :]))))
+        tn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, ~nn_flags[0, :, :, :]))))
+        fp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
+        fn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
+
+        tp_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, nn_flags[0, :, :, :]))))
+        tn_gt.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, ~nn_flags[0, :, :, :]))))
+        fp_gt.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
+        fn_gt.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
 
     tp = np.array(tp_nn).astype(float)
     tn = np.array(tn_nn).astype(float)
@@ -122,6 +128,42 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     acc = (tn + tp) / (tp + tn + fp + fn)
 
     print('Reinout vs Ground truth (aggregate)')
+    print(f"TPR: {tpr}")
+    print(f"FPR: {fpr}")
+    print(f"TNR: {tnr}")
+    print(f"FNR: {fnr}")
+    print(f"ACC: {acc}")
+
+    tp = np.array(tp_r).astype(float)
+    tn = np.array(tn_r).astype(float)
+    fp = np.array(fp_r).astype(float)
+    fn = np.array(fn_r).astype(float)
+
+    tpr = tp / (tp + fn)
+    fpr = fp / (fp + tn)
+    fnr = fn / (fn + tp)
+    tnr = tn / (tn + fp)
+    acc = (tn + tp) / (tp + tn + fp + fn)
+
+    print('NN vs Ground truth (per observation)')
+    print(f"TPR: {tpr}")
+    print(f"FPR: {fpr}")
+    print(f"TNR: {tnr}")
+    print(f"FNR: {fnr}")
+    print(f"ACC: {acc}")
+
+    tp = tp.sum()
+    tn = tn.sum()
+    fp = fp.sum()
+    fn = fn.sum()
+
+    tpr = tp / (tp + fn)
+    fpr = fp / (fp + tn)
+    fnr = fn / (fn + tp)
+    tnr = tn / (tn + fp)
+    acc = (tn + tp) / (tp + tn + fp + fn)
+
+    print('NN vs Ground truth (aggregate)')
     print(f"TPR: {tpr}")
     print(f"FPR: {fpr}")
     print(f"TNR: {tnr}")
