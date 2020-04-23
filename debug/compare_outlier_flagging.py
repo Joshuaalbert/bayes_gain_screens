@@ -166,6 +166,9 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print(f"FNR: {fnr}")
     print(f"ACC: {acc}")
 
+    tFNR_reinout = fnr
+    tFPR_reinout = fpr
+
     tp = np.array(tp_r).astype(float)
     tn = np.array(tn_r).astype(float)
     fp = np.array(fp_r).astype(float)
@@ -177,8 +180,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tnr = tn / (tn + fp)
     acc = (tn + tp) / (tp + tn + fp + fn)
 
-    tFNR_reinout = fnr
-    tFPR_reinout = fpr
+
 
     print('NN vs Ground truth (per observation)')
     print(f"TPR: {tpr}")
