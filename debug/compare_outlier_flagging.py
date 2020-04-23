@@ -1,6 +1,7 @@
 from bayes_gain_screens.outlier_detection import remove_outliers, Classifier, reinout_filter
 from bayes_gain_screens.datapack import DataPack
 import numpy as np
+import pylab as plt
 import argparse, os, glob
 
 def compare_outlier_methods(datapacks, ref_images, working_dir):
@@ -17,7 +18,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tp_nn,tn_nn,fp_nn,fn_nn = [],[],[],[]
     tp_gt,tn_gt,fp_gt,fn_gt = [],[],[],[]
     tp_r, tn_r, fp_r, fn_r = [],[],[],[]
-
+    fn_dirs = []
     sizes = []
     num_outliers = []
     for datapack in datapacks:
@@ -62,6 +63,9 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         fp_r.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
         fn_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
 
+        fn_dirs.append((np.sum(nn_flags[0,...], axis=0).flatten(),np.sum(np.logical_and(~ignore,ground_truth), axis=0).flatten(),np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :])), axis=0).flatten()))
+
+    fn_dirs = np.concatenate(fn_dirs, 1)
     sizes = np.array(sizes)
     num_outliers = np.array(num_outliers)
 
@@ -237,6 +241,15 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print(s)
 
     print(np.mean(sizes),"points per observation")
+
+    plt.scatter(fn_dirs[0,:],fn_dirs[2,:],alpha=0.1)
+    plt.show()
+
+    plt.scatter(fn_dirs[1, :], fn_dirs[2, :], alpha=0.1)
+    plt.show()
+
+
+
 
 
 def add_args(parser):
