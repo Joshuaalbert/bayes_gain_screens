@@ -141,6 +141,12 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print("Estimated false positives: {}".format((sizes - num_outliers) * fpr))
     print("Estimated false positives: {}".format(np.sum((sizes - num_outliers) * fpr)))
 
+    FP_reinout = (sizes - num_outliers) * fpr
+    FN_reinout = num_outliers * fnr
+    FNR_reinout = fnr
+    FPR_reinout = fpr
+
+
 
     tp = tp.sum()
     tn = tn.sum()
@@ -171,6 +177,9 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tnr = tn / (tn + fp)
     acc = (tn + tp) / (tp + tn + fp + fn)
 
+    tFNR_reinout = fnr
+    tFPR_reinout = fpr
+
     print('NN vs Ground truth (per observation)')
     print(f"TPR: {tpr}")
     print(f"FPR: {fpr}")
@@ -189,7 +198,10 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print("Estimated false positives: {}".format((sizes - num_outliers) * fpr ))
     print("Estimated false positives: {}".format(np.sum((sizes - num_outliers) * fpr)))
 
-
+    FP_nn = (sizes - num_outliers) * fpr
+    FN_nn = num_outliers * fnr
+    FNR_nn = fnr
+    FPR_nn = fpr
 
     tp = tp.sum()
     tn = tn.sum()
@@ -208,6 +220,20 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print(f"TNR: {tnr}")
     print(f"FNR: {fnr}")
     print(f"ACC: {acc}")
+    tFNR_nn = fnr
+    tFPR_nn = fpr
+
+
+
+    for z in zip(datapacks, FNR_nn, FPR_nn, FN_nn, FP_nn, FNR_reinout, FPR_reinout, FN_reinout, FP_reinout):
+        datapack = z[0]
+        obsnum = os.path.basename(datapack).split('_')[0][1:]
+        s = "{} & {:.1f}% & {:.1f}% & {:d} & {:d} & {:.1f}% & {:.1f}% & {:d} & {:d}\\".format(obsnum, *z[1:])
+        print(s)
+    s = "{} & {:.1f}% & {:.1f}% & {:d} & {:d} & {:.1f}% & {:.1f}% & {:d} & {:d}".format("Total",
+                                                                                        tFNR_nn, tFPR_nn, FN_nn.sum(), FP_nn.sum(), tFNR_reinout, tFPR_reinout, FN_reinout.sum(), FP_reinout.sum())
+    print(s)
+
 
 def add_args(parser):
     def string_or_none(s):
