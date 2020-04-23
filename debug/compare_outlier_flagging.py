@@ -18,6 +18,8 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tp_gt,tn_gt,fp_gt,fn_gt = [],[],[],[]
     tp_r, tn_r, fp_r, fn_r = [],[],[],[]
 
+    sizes = []
+    num_outliers = []
     for datapack in datapacks:
         print("Running {}".format(datapack))
         click_data = os.path.join('/home/albert/git/bayes_gain_screens/debug/outlier_detection_adjusted_2/click',os.path.basename(datapack.replace('.h5','.labels.npy')))
@@ -42,21 +44,25 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
                 print("Done {}/{}".format(a+1, Na))
             np.save(r_flag_file, reinout_flags)
         reinout_flags = np.load(r_flag_file)
+        sizes.append(Nd*Na*Nt)
+        num_outliers.append(nn_flags[0,...].sum())
 
         tp_nn.append(np.sum(np.logical_and(nn_flags, reinout_flags)))
         tn_nn.append(np.sum(np.logical_and(~nn_flags, ~reinout_flags)))
         fp_nn.append(np.sum(np.logical_and(~nn_flags, reinout_flags)))
         fn_nn.append(np.sum(np.logical_and(nn_flags, ~reinout_flags)))
 
-        tp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, nn_flags[0, :, :, :]))))
-        tn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, ~nn_flags[0, :, :, :]))))
-        fp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
-        fn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
+        tp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, reinout_flags[0, :, :, :]))))
+        tn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, ~reinout_flags[0, :, :, :]))))
+        fp_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(~ground_truth, reinout_flags[0, :, :, :]))))
+        fn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, ~reinout_flags[0, :, :, :]))))
 
         tp_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, nn_flags[0, :, :, :]))))
         tn_r.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, ~nn_flags[0, :, :, :]))))
         fp_r.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
         fn_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
+
+    sizes = np.array(sizes)
 
     tp = np.array(tp_nn).astype(float)
     tn = np.array(tn_nn).astype(float)
@@ -151,6 +157,17 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     print(f"TNR: {tnr}")
     print(f"FNR: {fnr}")
     print(f"ACC: {acc}")
+
+    P = tp + fn
+    N = tn + fp
+
+    print("Estimated false negatives: {}".format(sizes * P / (P + N) * fnr))
+    print("Estimated false negatives: {}".format(np.sum(sizes * P / (P + N) * fnr)))
+    print("Estimated false positives: {}".format(sizes * N / (P + N) * fpr))
+    print("Estimated false positives: {}".format(np.sum(sizes * N / (P + N) * fpr)))
+    print("Total outliers found: {}".format(num_outliers))
+    print("Total outliers found: {}".format(np.sum(num_outliers)))
+
 
     tp = tp.sum()
     tn = tn.sum()
