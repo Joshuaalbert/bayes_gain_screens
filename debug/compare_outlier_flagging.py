@@ -22,7 +22,8 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         click_data = os.path.join('/home/albert/git/bayes_gain_screens/debug/outlier_detection_adjusted_2/click',os.path.basename(datapack.replace('.h5','.labels.npy')))
         flags = np.load(click_data)#Nd, Na, Nt
         ignore = flags == -1
-        ground_truth = np.where(flags == 1, True, False)
+        print(np.sum(~ignore),'labelled')
+        ground_truth = flags == 1
         dp = DataPack(datapack, readonly=True)
         dp.select(pol=0)
         dp.current_solset = 'directionally_referenced'
@@ -73,6 +74,12 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     fp = fp.sum()
     fn = fn.sum()
 
+    tpr = tp / (tp + fn)
+    fpr = fp / (fp + tn)
+    fnr = fn / (fn + tp)
+    tnr = tn / (tn + fp)
+    acc = (tn + tp) / (tp + tn + fp + fn)
+
     print('Reinout vs NN (aggregate)')
     print(f"TPR: {tpr}")
     print(f"FPR: {fpr}")
@@ -104,6 +111,12 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tn = tn.sum()
     fp = fp.sum()
     fn = fn.sum()
+
+    tpr = tp / (tp + fn)
+    fpr = fp / (fp + tn)
+    fnr = fn / (fn + tp)
+    tnr = tn / (tn + fp)
+    acc = (tn + tp) / (tp + tn + fp + fn)
 
     print('Reinout vs Ground truth (aggregate)')
     print(f"TPR: {tpr}")
