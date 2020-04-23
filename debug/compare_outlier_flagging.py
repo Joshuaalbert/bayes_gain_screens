@@ -95,6 +95,9 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     fp = np.array(fp_gt).astype(float)
     fn = np.array(fn_gt).astype(float)
 
+    print("Outliers {}".format(tp+fn))
+    print("Non-outliers {}".format(tn + fp))
+
     tpr = tp / (tp + fn)
     fpr = fp / (fp + tn)
     fnr = fn / (fn + tp)
