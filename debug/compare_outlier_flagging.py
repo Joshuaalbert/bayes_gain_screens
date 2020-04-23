@@ -15,6 +15,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     #                 n_features=48,
     #                 batch_size=16)
     tp,tn,fp,fn = [],[],[],[]
+    print(datapacks)
     for datapack in datapacks:
         print("Running {}".format(datapack))
         dp = DataPack(datapack, readonly=True)
