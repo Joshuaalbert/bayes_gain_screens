@@ -231,7 +231,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         s = "{} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f}\\".format(obsnum, *z[1:])
         print(s)
     s = "{} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f}".format("Total",
-                                                                                        tFNR_nn*100, tFPR_nn*100, float(FN_nn.sum()), float(FP_nn.sum()), tFNR_reinout*100, tFPR_reinout*100, float(FN_reinout.sum()), float(FP_reinout.sum()))
+                                                                                        float(tFNR_nn*100), float(tFPR_nn*100), float(FN_nn.sum()), float(FP_nn.sum()), float(tFNR_reinout*100), float(tFPR_reinout*100), float(FN_reinout.sum()), float(FP_reinout.sum()))
     print(s)
 
 
