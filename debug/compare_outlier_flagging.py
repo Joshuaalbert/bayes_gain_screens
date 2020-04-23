@@ -236,6 +236,8 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
                                                                                         float(tFNR_nn*100), float(tFPR_nn*100), float(FN_nn.sum()), float(FP_nn.sum()), float(tFNR_reinout*100), float(tFPR_reinout*100), float(FN_reinout.sum()), float(FP_reinout.sum()))
     print(s)
 
+    print(np.mean(sizes),"points per observation")
+
 
 def add_args(parser):
     def string_or_none(s):
