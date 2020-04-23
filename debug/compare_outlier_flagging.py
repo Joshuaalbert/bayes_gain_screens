@@ -15,7 +15,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     #                 n_features=48,
     #                 batch_size=16)
     tp,tn,fp,fn = [],[],[],[]
-    print(datapacks)
+
     for datapack in datapacks:
         print("Running {}".format(datapack))
         dp = DataPack(datapack, readonly=True)
@@ -24,7 +24,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         tec_uncert, axes = dp.weights_tec
         nn_flags = np.isinf(tec_uncert)
         tec, axes = dp.tec
-        directions = dp.get_directions(axes['dir'])
+        _, directions = dp.get_directions(axes['dir'])
         Npol, Nd, Na, Nt = tec.shape
         reinout_flags = np.zeros_like(nn_flags)
         for a in range(Na):
@@ -54,7 +54,6 @@ def add_args(parser):
                         default=None, type=str, required=False)
 
 def main(working_dir, datapack_pattern, ref_image_pattern):
-
 
     if datapack_pattern is None:
         raise ValueError("datapack pattern can't be none if clicking")
