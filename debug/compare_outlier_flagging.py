@@ -14,7 +14,8 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     #                 L=10,
     #                 n_features=48,
     #                 batch_size=16)
-    tp,tn,fp,fn = [],[],[],[]
+    tp_nn,tn_nn,fp_nn,fn_nn = [],[],[],[]
+    tp_gt,tn_gt,fp_gt,fn_gt = [],[],[],[]
 
     for datapack in datapacks:
         print("Running {}".format(datapack))
@@ -30,82 +31,86 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         tec, axes = dp.tec
         _, directions = dp.get_directions(axes['dir'])
         Npol, Nd, Na, Nt = tec.shape
-        if not os.path.isfile('./reinout_flags.npy'):
+        r_flag_file = click_data.replace('.npy','reinout.npy')
+        if not os.path.isfile(r_flag_file):
             reinout_flags = np.zeros_like(nn_flags)
             for a in range(Na):
                 for t in range(Nt):
                     reinout_flags[0,:,a,t] = reinout_filter(directions.ra.deg, directions.dec.deg, tec[0,:, a, t])
                 print("Done {}/{}".format(a+1, Na))
-            np.save('./reinout_flags.npy', reinout_flags)
-        reinout_flags = np.load('./reinout_flags.npy')
+            np.save(r_flag_file, reinout_flags)
+        reinout_flags = np.load(r_flag_file)
 
-        tp.append(np.sum(np.logical_and(nn_flags, reinout_flags)))
-        tn.append(np.sum(np.logical_and(~nn_flags, ~reinout_flags)))
-        fp.append(np.sum(np.logical_and(~nn_flags, reinout_flags)))
-        fn.append(np.sum(np.logical_and(nn_flags, ~reinout_flags)))
-        tp = np.array(tp).astype(float)
-        tn = np.array(tn).astype(float)
-        fp = np.array(fp).astype(float)
-        fn = np.array(fn).astype(float)
+        tp_nn.append(np.sum(np.logical_and(nn_flags, reinout_flags)))
+        tn_nn.append(np.sum(np.logical_and(~nn_flags, ~reinout_flags)))
+        fp_nn.append(np.sum(np.logical_and(~nn_flags, reinout_flags)))
+        fn_nn.append(np.sum(np.logical_and(nn_flags, ~reinout_flags)))
 
-        tpr = tp/(tp + fn)
-        fpr = fp/(fp + tn)
-        fnr = fn/(fn+tp)
-        tnr = tn/(tn + fp)
-        acc = (tn + tp)/(tp+tn+fp+fn)
+        tp_gt.append(np.sum(np.logical_and(~ignore, ground_truth, reinout_flags[0, :, :, :])))
+        tn_gt.append(np.sum(np.logical_and(~ignore, ~ground_truth, ~reinout_flags[0, :, :, :])))
+        fp_gt.append(np.sum(np.logical_and(~ignore, ~ground_truth, reinout_flags[0, :, :, :])))
+        fn_gt.append(np.sum(np.logical_and(~ignore, ground_truth, ~reinout_flags[0, :, :, :])))
 
-        print('Reinout vs NN (per observation)')
-        print(f"TPR: {tpr:.2f}")
-        print(f"FPR: {fpr:.2f}")
-        print(f"TNR: {tnr:.2f}")
-        print(f"FNR: {fnr:.2f}")
-        print(f"ACC: {acc:.2f}")
-        tp = tp.sum()
-        tn = tn.sum()
-        fp = fp.sum()
-        fn = fn.sum()
+    tp = np.array(tp_nn).astype(float)
+    tn = np.array(tn_nn).astype(float)
+    fp = np.array(fp_nn).astype(float)
+    fn = np.array(fn_nn).astype(float)
 
-        print('Reinout vs NN (aggregate)')
-        print(f"TPR: {tpr:.2f}")
-        print(f"FPR: {fpr:.2f}")
-        print(f"TNR: {tnr:.2f}")
-        print(f"FNR: {fnr:.2f}")
-        print(f"ACC: {acc:.2f}")
+    tpr = tp/(tp + fn)
+    fpr = fp/(fp + tn)
+    fnr = fn/(fn+tp)
+    tnr = tn/(tn + fp)
+    acc = (tn + tp)/(tp+tn+fp+fn)
+
+    print('Reinout vs NN (per observation)')
+    print(f"TPR: {tpr:.2f}")
+    print(f"FPR: {fpr:.2f}")
+    print(f"TNR: {tnr:.2f}")
+    print(f"FNR: {fnr:.2f}")
+    print(f"ACC: {acc:.2f}")
+    tp = tp.sum()
+    tn = tn.sum()
+    fp = fp.sum()
+    fn = fn.sum()
+
+    print('Reinout vs NN (aggregate)')
+    print(f"TPR: {tpr:.2f}")
+    print(f"FPR: {fpr:.2f}")
+    print(f"TNR: {tnr:.2f}")
+    print(f"FNR: {fnr:.2f}")
+    print(f"ACC: {acc:.2f}")
 
 
-        tp.append(np.sum(np.logical_and(~ignore, ground_truth, reinout_flags[0,:,:,:])))
-        tn.append(np.sum(np.logical_and(~ignore,~ground_truth, ~reinout_flags[0,:,:,:])))
-        fp.append(np.sum(np.logical_and(~ignore,~ground_truth, reinout_flags[0,:,:,:])))
-        fn.append(np.sum(np.logical_and(~ignore,ground_truth, ~reinout_flags[0,:,:,:])))
 
-        tp = np.array(tp).astype(float)
-        tn = np.array(tn).astype(float)
-        fp = np.array(fp).astype(float)
-        fn = np.array(fn).astype(float)
 
-        tpr = tp / (tp + fn)
-        fpr = fp / (fp + tn)
-        fnr = fn / (fn + tp)
-        tnr = tn / (tn + fp)
-        acc = (tn + tp) / (tp + tn + fp + fn)
+    tp = np.array(tp_gt).astype(float)
+    tn = np.array(tn_gt).astype(float)
+    fp = np.array(fp_gt).astype(float)
+    fn = np.array(fn_gt).astype(float)
 
-        print('Reinout vs Ground truth (per observation)')
-        print(f"TPR: {tpr:.2f}")
-        print(f"FPR: {fpr:.2f}")
-        print(f"TNR: {tnr:.2f}")
-        print(f"FNR: {fnr:.2f}")
-        print(f"ACC: {acc:.2f}")
-        tp = tp.sum()
-        tn = tn.sum()
-        fp = fp.sum()
-        fn = fn.sum()
+    tpr = tp / (tp + fn)
+    fpr = fp / (fp + tn)
+    fnr = fn / (fn + tp)
+    tnr = tn / (tn + fp)
+    acc = (tn + tp) / (tp + tn + fp + fn)
 
-        print('Reinout vs Ground truth (aggregate)')
-        print(f"TPR: {tpr:.2f}")
-        print(f"FPR: {fpr:.2f}")
-        print(f"TNR: {tnr:.2f}")
-        print(f"FNR: {fnr:.2f}")
-        print(f"ACC: {acc:.2f}")
+    print('Reinout vs Ground truth (per observation)')
+    print(f"TPR: {tpr:.2f}")
+    print(f"FPR: {fpr:.2f}")
+    print(f"TNR: {tnr:.2f}")
+    print(f"FNR: {fnr:.2f}")
+    print(f"ACC: {acc:.2f}")
+    tp = tp.sum()
+    tn = tn.sum()
+    fp = fp.sum()
+    fn = fn.sum()
+
+    print('Reinout vs Ground truth (aggregate)')
+    print(f"TPR: {tpr:.2f}")
+    print(f"FPR: {fpr:.2f}")
+    print(f"TNR: {tnr:.2f}")
+    print(f"FNR: {fnr:.2f}")
+    print(f"ACC: {acc:.2f}")
 
 def add_args(parser):
     def string_or_none(s):
