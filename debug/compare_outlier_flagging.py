@@ -263,6 +263,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     plt.plot(fnr*100, fpr*100, c='black')
 
     argmin = np.argmin(np.abs(fnr) + np.abs(fpr))
+    argmin = 28
     plt.scatter(fnr[argmin]*100, fpr[argmin]*100, color='green', label='optimal')
     print("Optimal thresh {}".format(dir_thresh[argmin]))
 
