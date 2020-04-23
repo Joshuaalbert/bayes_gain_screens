@@ -225,7 +225,7 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
 
 
 
-    for z in zip(datapacks, FNR_nn*100, FPR_nn*100, FN_nn, FP_nn, FNR_reinout*100, FPR_reinout*100, FN_reinout, FP_reinout)[::-1]:
+    for z in list(zip(datapacks, FNR_nn*100, FPR_nn*100, FN_nn, FP_nn, FNR_reinout*100, FPR_reinout*100, FN_reinout, FP_reinout))[::-1]:
         datapack = z[0]
         obsnum = os.path.basename(datapack).split('_')[0][1:]
         s = "{} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f} & {:.1f}% & {:.1f}% & {:.0f} & {:.0f}\\".format(obsnum, *z[1:])
