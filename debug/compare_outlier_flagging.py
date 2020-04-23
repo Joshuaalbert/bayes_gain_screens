@@ -260,13 +260,13 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
     tnr = tn / (tn + fp)
     acc = (tn + tp) / (tp + tn + fp + fn)
 
-    plt.figure(figsize=(5,8))
+    plt.figure(figsize=(8,5))
     plt.plot(fnr*100, fpr*100, c='black')
 
     argmin = np.argmin(np.abs(fnr) + np.abs(fpr))
-    argmin = 28
+    argmin = 29
     plt.scatter(fnr[argmin]*100, fpr[argmin]*100, color='green', label='optimal')
-    print("Optimal thresh {}".format(dir_thresh[argmin]))
+    print("Optimal thresh {}".format(dir_thresh[argmin]), fnr[argmin]*100, fpr[argmin]*100)
 
     print(list(zip(dir_thresh, fpr)))
 
