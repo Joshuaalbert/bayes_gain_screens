@@ -54,9 +54,9 @@ def compare_outlier_methods(datapacks, ref_images, working_dir):
         fn_gt.append(np.sum(np.logical_and(~ignore,np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
 
         tp_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, nn_flags[0, :, :, :]))))
-        tn_gt.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, ~nn_flags[0, :, :, :]))))
-        fp_gt.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
-        fn_gt.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
+        tn_r.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, ~nn_flags[0, :, :, :]))))
+        fp_r.append(np.sum(np.logical_and(~ignore, np.logical_and(~ground_truth, nn_flags[0, :, :, :]))))
+        fn_r.append(np.sum(np.logical_and(~ignore, np.logical_and(ground_truth, ~nn_flags[0, :, :, :]))))
 
     tp = np.array(tp_nn).astype(float)
     tn = np.array(tn_nn).astype(float)
