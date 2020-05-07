@@ -5,6 +5,13 @@ import tables
 import argparse
 import subprocess
 
+def link_overwrite(src, dst):
+    if os.path.islink(dst):
+        print("Unlinking pre-existing sym link {}".format(dst))
+        os.unlink(dst)
+    print("Linking {} -> {}".format(src, dst))
+    os.symlink(src, dst)
+
 def cmd_call(cmd):
     print("{}".format(cmd))
     exit_status = subprocess.call(cmd, shell=True)
@@ -12,14 +19,14 @@ def cmd_call(cmd):
         raise ValueError("Failed to  run: {}".format(cmd))
 
 def prepare_kms_sols(data_dir, obs_num):
-    merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
-    merged_sol = os.path.join(data_dir, 'L{}_DDS4_full_merged.sols.npz'.format(obs_num))
-    smooth_merged_sol = os.path.join(data_dir, 'L{}_DDS4_full_smoothed_merged.sols.npz'.format(obs_num))
-    with tables.open_file(merged_h5parm) as t:
+    smoothed_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+    original_sols = os.path.join(data_dir, 'L{}_DDS4_full_merged.sols.npz'.format(obs_num))
+    smooth_merged_sol = os.path.join(data_dir, 'L{}_DDS5_full_smoothed_merged.sols.npz'.format(obs_num))
+    with tables.open_file(smoothed_h5parm) as t:
         #Nt, Nf, Na, Nd, Npol
         phase = t.root.smoothed000.phase000.val[...].T
         amp = t.root.smoothed000.amplitude000.val[...].T
-    kms = np.load(merged_sol)
+    kms = np.load(original_sols)
     if phase[:, :, :, :, 0].shape != kms['Sols']['G'][:, :, :, :, 0, 0].shape:
         raise ValueError("Shapes are not correct in kms solutions {} {}".format(kms['Sols']['G'].shape, phase.shape))
 
@@ -85,9 +92,12 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
         cmd_call(cmd)
 
 def make_merged_h5parm(obs_num, data_dir, working_dir):
-    slow_sol = 'DDS4_full_slow'
-    merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, slow_sol))
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, slow_sol))
+    slow_sol = 'DDS7_full_slow'
+    merged_sol = os.path.join(working_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, slow_sol))
+    linked_merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, slow_sol))
+    merged_h5parm = os.path.join(working_dir, 'L{}_{}_merged.h5'.format(obs_num, slow_sol))
+    linked_merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, slow_sol))
+
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     sol_folders = sorted(glob.glob(os.path.join(solsdir, "L{}*.ms".format(obs_num))))
     if len(sol_folders) == 0:
@@ -110,6 +120,9 @@ def make_merged_h5parm(obs_num, data_dir, working_dir):
     cmd_call('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
                                                                             h5_file=merged_h5parm))
 
+    link_overwrite(merged_sol, linked_merged_sol)
+    link_overwrite(merged_h5parm, linked_merged_h5parm)
+
 def make_symlinks(data_dir, obs_num):
     print("Creating symbolic links")
     smooth_merged_sol = os.path.join(data_dir, 'L{}_DDS4_full_smoothed_merged.sols.npz'.format(obs_num))
@@ -118,10 +131,7 @@ def make_symlinks(data_dir, obs_num):
     for f in sol_folders:
         src = smooth_merged_sol
         dst = os.path.join(f, 'killMS.DDS4_full_smoothed.sols.npz')
-        if os.path.islink(dst):
-            os.unlink(dst)
-        print("Linking {} -> {}".format(src,dst))
-        os.symlink(src,dst)
+        link_overwrite(src, dst)
 
 def cleanup_working_dir(working_dir):
     print("Deleting cache since we're done.")

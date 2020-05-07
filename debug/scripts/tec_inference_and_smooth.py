@@ -25,6 +25,13 @@ This script is still being debugged/tested.
 Get's TEC from gains.
 """
 
+def link_overwrite(src, dst):
+    if os.path.islink(dst):
+        print("Unlinking pre-existing sym link {}".format(dst))
+        os.unlink(dst)
+    print("Linking {} -> {}".format(src, dst))
+    os.symlink(src, dst)
+
 def stack_complex(y):
     """
     Stacks complex real and imaginary parts
@@ -193,29 +200,34 @@ def smoothamps(amps):
 def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     os.chdir(working_dir)
     logging.info("Performing TEC and constant variational inference.")
-    merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
-    logging.info("Looking for {}".format(merged_h5parm))
+    dds4_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
+
+    dds5_h5parm = os.path.join(working_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+    linked_dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+    
+    link_overwrite(dds5_h5parm, linked_dds5_h5parm)
+    logging.info("Looking for {}".format(dds5_h5parm))
     select = dict(pol=slice(0, 1, 1))
-    datapack = DataPack(merged_h5parm, readonly=False)
+    dds4_datapack = DataPack(dds4_h5parm, readonly=False)
     logging.info("Creating smoothed/phase000+amplitude000")
-    make_soltab(datapack, from_solset='sol000', to_solset='smoothed000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000'], remake_solset=True)
+    make_soltab(dds4_datapack, from_solset='sol000', to_solset='smoothed000', from_soltab='phase000',
+                to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack=dds5_h5parm)
     logging.info("Creating directionally_referenced/tec000+const000")
-    make_soltab(datapack, from_solset='sol000', to_solset='directionally_referenced', from_soltab='phase000',
-                to_soltab=['tec000', 'const000'], remake_solset=True)
+    make_soltab(dds4_datapack, from_solset='sol000', to_solset='directionally_referenced', from_soltab='phase000',
+                to_soltab=['tec000', 'const000'], remake_solset=True, to_datapack=dds5_h5parm)
     logging.info("Getting raw phases")
-    datapack.current_solset = 'sol000'
-    datapack.select(**select)
-    axes = datapack.axes_phase
-    antenna_labels, antennas = datapack.get_antennas(axes['ant'])
-    patch_names, directions = datapack.get_directions(axes['dir'])
+    dds4_datapack.current_solset = 'sol000'
+    dds4_datapack.select(**select)
+    axes = dds4_datapack.axes_phase
+    antenna_labels, antennas = dds4_datapack.get_antennas(axes['ant'])
+    patch_names, directions = dds4_datapack.get_directions(axes['dir'])
     radec = np.stack([directions.ra.rad, directions.dec.rad], axis=1)
-    timestamps, times = datapack.get_times(axes['time'])
-    freq_labels, freqs = datapack.get_freqs(axes['freq'])
-    pol_labels, pols = datapack.get_pols(axes['pol'])
+    timestamps, times = dds4_datapack.get_times(axes['time'])
+    freq_labels, freqs = dds4_datapack.get_freqs(axes['freq'])
+    pol_labels, pols = dds4_datapack.get_pols(axes['pol'])
     Npol, Nd, Na, Nf, Nt = len(pols), len(directions), len(antennas), len(freqs), len(times)
-    phase_raw, axes = datapack.phase
-    amp_raw, axes = datapack.amplitude
+    phase_raw, axes = dds4_datapack.phase
+    amp_raw, axes = dds4_datapack.amplitude
     amp_smooth = smoothamps(amp_raw)
 
     tec_conv = TEC_CONV / freqs
@@ -320,42 +332,43 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     res_imag = amp_raw * np.sin(phase_raw) - amp_smooth*np.sin(phase_model)
 
     logging.info("Storing smoothed phase and amplitudes")
-    datapack.current_solset = 'smoothed000'
-    datapack.select(**select)
-    datapack.phase = smoothed_phase_array
-    datapack.amplitude = amp_smooth
+    dds5_datapack = DataPack(dds5_h5parm)
+    dds5_datapack.current_solset = 'smoothed000'
+    dds5_datapack.select(**select)
+    dds5_datapack.phase = smoothed_phase_array
+    dds5_datapack.amplitude = amp_smooth
 
     logging.info("Storing TEC and const")
-    datapack.current_solset = 'directionally_referenced'
+    dds5_datapack.current_solset = 'directionally_referenced'
     # Npol, Nd, Na, Nf, Nt
-    datapack.select(**select)
-    datapack.tec = tec_mean_array
-    datapack.weights_tec = tec_uncert_array
-    datapack.const = const_array
+    dds5_datapack.select(**select)
+    dds5_datapack.tec = tec_mean_array
+    dds5_datapack.weights_tec = tec_uncert_array
+    dds5_datapack.const = const_array
     logging.info("Storing HMM params")
     np.save(os.path.join(working_dir, "Sigma.npy"), Sigma_array)
     np.save(os.path.join(working_dir, "Omega.npy"), Omega_array)
     logging.info("Done ddtec VI.")
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
                      solset='directionally_referenced',
                      observable='tec', vmin=-60., vmax=60., plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'const_plots'), num_processes=ncpu,
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'const_plots'), num_processes=ncpu,
                      solset='directionally_referenced',
                      observable='const', vmin=-np.pi, vmax=np.pi, plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
                      solset='directionally_referenced',
                      observable='weights_tec', vmin=0., vmax=5., plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
                      solset='smoothed000',
                      observable='amplitude', vmin=0.5, vmax=2., plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False)

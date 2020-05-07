@@ -8,6 +8,14 @@ import argparse
 
 import subprocess
 
+
+def link_overwrite(src, dst):
+    if os.path.islink(dst):
+        print("Unlinking pre-existing sym link {}".format(dst))
+        os.unlink(dst)
+    print("Linking {} -> {}".format(src, dst))
+    os.symlink(src, dst)
+
 def cmd_call(cmd):
     print("{}".format(cmd))
     exit_status = subprocess.call(cmd, shell=True)
@@ -82,7 +90,9 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu, s
 
 def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
     merged_sol = os.path.join(data_dir, 'L{}_{}_merged.sols.npz'.format(obs_num, sol_name))
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
+    merged_h5parm = os.path.join(working_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
+    linked_merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, sol_name))
+
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     sol_folders = sorted(glob.glob(os.path.join(solsdir, "L{}*.ms".format(obs_num))))
     if len(sol_folders) == 0:
@@ -106,6 +116,8 @@ def make_merged_h5parm(obs_num, sol_name, data_dir, working_dir):
         os.unlink(merged_h5parm)
     cmd_call('killMS2H5parm.py --nofulljones {h5_file} {npz_file} '.format(npz_file=merged_sol,
                                                                             h5_file=merged_h5parm))
+    link_overwrite(merged_h5parm, linked_merged_h5parm)
+
 
 def cleanup_working_dir(working_dir):
     print("Deleting cache since we're done.")

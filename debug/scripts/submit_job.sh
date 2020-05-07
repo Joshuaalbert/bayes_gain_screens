@@ -82,9 +82,7 @@ L=(obs_num \
     do_subtract \
     do_subtract_outside_pb \
     do_solve_dds4 \
-    do_smooth_dds4 \
     do_slow_solve_dds4 \
-    do_tec_inference \
     do_tec_inference_and_smooth \
     do_infer_screen \
     do_merge_slow \
@@ -162,9 +160,7 @@ cmd="python "$script_dir"/pipeline.py \
         --do_subtract="$do_subtract" \
         --do_subtract_outside_pb="$do_subtract_outside_pb" \
         --do_solve_dds4="$do_solve_dds4" \
-        --do_smooth_dds4="$do_smooth_dds4" \
         --do_slow_solve_dds4="$do_slow_solve_dds4" \
-        --do_tec_inference="$do_tec_inference" \
         --do_tec_inference_and_smooth="$do_tec_inference_and_smooth" \
         --do_infer_screen="$do_infer_screen" \
         --do_merge_slow="$do_merge_slow" \

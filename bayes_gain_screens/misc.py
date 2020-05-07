@@ -371,11 +371,14 @@ def laplace_gaussian_marginalisation(L, y, order = 10):
     poly_coeffs_2 = np.array([ -c if i%2 == 1 else c for i,c in enumerate(poly_coeffs_1)], float_type)
     #TODO: finish the function
 
-def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None, directions=None, patch_names=None, remake_solset=False):
+def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None, directions=None, patch_names=None, remake_solset=False, to_datapack:str=None):
     if not isinstance(to_soltab, (list, tuple)):
         to_soltab = [to_soltab]
     if select is None:
         select = dict(ant = None, time = None, dir = None, freq = None, pol = slice(0,1,1))
+
+    if isinstance(datapack, str):
+        datapack = DataPack(datapack)
 
     with datapack:
         datapack.current_solset = from_solset
@@ -388,6 +391,9 @@ def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', fro
         freq_labels, freqs = datapack.get_freqs(axes['freq'])
         pol_labels, pols = datapack.get_pols(axes['pol'])
         Npol, Nd, Na, Nf, Nt = len(pols), len(directions), len(antennas), len(freqs), len(times)
+    if to_datapack is None:
+        to_datapack = datapack.filename
+    with DataPack(to_datapack) as datapack:
         if remake_solset:
             if to_solset in datapack.solsets:
                 datapack.delete_solset(to_solset)

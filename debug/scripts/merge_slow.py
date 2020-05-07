@@ -6,16 +6,24 @@ from bayes_gain_screens.misc import great_circle_sep
 from bayes_gain_screens.misc import make_soltab
 import argparse
 
-"""
-This script is still being debugged/tested. 
-Get's TEC from gains.
-"""
+
+def link_overwrite(src, dst):
+    if os.path.islink(dst):
+        print("Unlinking pre-existing sym link {}".format(dst))
+        os.unlink(dst)
+    print("Linking {} -> {}".format(src, dst))
+    os.symlink(src, dst)
+
 
 def main(data_dir, working_dir, obs_num):
     os.chdir(working_dir)
     logging.info("Merging slow solutions into screen and smoothed.")
-    original_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
-    slow_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_slow_merged.h5'.format(obs_num))
+    smoothed_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+    screen_h5parm = os.path.join(data_dir, 'L{}_DDS6_full_merged.h5'.format(obs_num))
+    slow_h5parm = os.path.join(data_dir, 'L{}_DDS7_full_slow_merged.h5'.format(obs_num))
+    merged_h5parm = os.path.join(working_dir, 'L{}_DDS8_full_merged.h5'.format(obs_num))
+    linked_merged_h5parm = os.path.join(data_dir, 'L{}_DDS8_full_merged.h5'.format(obs_num))
+
     select = dict(pol = slice(0, 1, 1))
 
     ###
@@ -36,7 +44,7 @@ def main(data_dir, working_dir, obs_num):
     ###
     # get const term
 
-    datapack = DataPack(original_h5parm, readonly=True)
+    datapack = DataPack(smoothed_h5parm, readonly=True)
     logging.info("Getting directionally_referenced/const000")
     datapack.current_solset = 'directionally_referenced'
     datapack.select(**select)
@@ -46,7 +54,7 @@ def main(data_dir, working_dir, obs_num):
     ###
     # get screen phase and amplitude
 
-    datapack = DataPack(original_h5parm, readonly=False)
+    datapack = DataPack(screen_h5parm, readonly=False)
     logging.info("Getting screen_posterior/phase000+amplitude000")
     datapack.current_solset = 'screen_posterior'
     datapack.select(**select)
@@ -59,10 +67,10 @@ def main(data_dir, working_dir, obs_num):
     amplitude_screen, axes = datapack.amplitude
 
 
-
-
     ###
     # get smoothed000 phase and amplitude
+
+    datapack = DataPack(smoothed_h5parm, readonly=False)
 
     logging.info("Getting smoothed000/phase000+amplitude000")
     datapack.current_solset = 'smoothed000'
@@ -80,11 +88,13 @@ def main(data_dir, working_dir, obs_num):
     # Create and set screen_slow000
 
     logging.info("Creating screen_slow000/phase000+amplitude000")
-    make_soltab(datapack, from_solset='screen_posterior', to_solset='screen_slow000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000'], remake_solset=True)
+    make_soltab(screen_h5parm, from_solset='screen_posterior', to_solset='screen_slow000', from_soltab='phase000',
+                to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack= merged_h5parm)
     logging.info("Creating smoothed_slow000/phase000+amplitude000")
-    make_soltab(datapack, from_solset='smoothed000', to_solset='smoothed_slow000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000'], remake_solset=True)
+    make_soltab(smoothed_h5parm, from_solset='smoothed000', to_solset='smoothed_slow000', from_soltab='phase000',
+                to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack= merged_h5parm)
+
+    link_overwrite(merged_h5parm, linked_merged_h5parm)
 
     logging.info("Creating time mapping")
     time_map = np.array([np.argmin(np.abs(time_slow - t)) for t in time_screen])
@@ -100,6 +110,7 @@ def main(data_dir, working_dir, obs_num):
     # Amplitudes are fit with rbf during deploy, so we can keep those or replace with NN here
     amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...] #amplitude_smoothed[:, dir_map, ...] #amplitude_screen # * amplitude_smooth_slow[:, dir_map, ...]
 
+    datapack = DataPack(merged_h5parm)
     datapack.current_solset = 'screen_slow000'
     datapack.select(**select)
     datapack.phase = phase_screen_slow

@@ -4,32 +4,37 @@ This will deploy the probabilistic screen solver on an H5Parm
 
 from bayes_gain_screens.deploy import Deployment
 from bayes_gain_screens.plotting import animate_datapack
-import numpy as np
 import argparse
 import os
 
+def link_overwrite(src, dst):
+    if os.path.islink(dst):
+        print("Unlinking pre-existing sym link {}".format(dst))
+        os.unlink(dst)
+    print("Linking {} -> {}".format(src, dst))
+    os.symlink(src, dst)
+
 def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, ref_image_fits, ncpu, max_N):
-    directional_deploy = True
     generate_models = None
     if deployment_type not in ['directional', 'non_integral', 'tomographic']:
         raise ValueError("Invalid deployment_type".format(deployment_type))
     if deployment_type == 'directional':
         from bayes_gain_screens.directional_models import generate_models
-        directional_deploy = True
     if deployment_type == 'non_integral':
         from bayes_gain_screens.non_integral_models import generate_models
-        directional_deploy = False
     if deployment_type == 'tomographic':
         from bayes_gain_screens.tomographic_models import generate_models
-        directional_deploy = False
 
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
+    dds5_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS5_full'))
+    dds6_h5parm = os.path.join(working_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS6_full'))
+    linked_dds6_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS6_full'))
 
-    deployment = Deployment(merged_h5parm,
+    deployment = Deployment(dds5_h5parm,
+                            dds6_h5parm,
                             ref_dir_idx=ref_dir,
                             tec_solset='directionally_referenced',
-                            phase_solset='smoothed000',
-                            flux_limit=0.05,
+                            phase_solset='sol000',#'smoothed000',
+                            flux_limit=0.01,
                             max_N=max_N,
                             min_spacing_arcmin=4.,
                             ref_image_fits=ref_image_fits,
@@ -38,24 +43,23 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
                             time=None,
                             freq=None,
                             pol=slice(0, 1, 1),
-                            directional_deploy=directional_deploy,
                             block_size=block_size,
                             working_dir=working_dir,
-                            flag_directions=None,
-                            debug=False,
-                            flag_outliers=True,
-                            constant_tec_uncert=None,
                             remake_posterior_solsets=True)
-    deployment.run(generate_models, use_vec_kernels=False)
 
-    animate_datapack(merged_h5parm,os.path.join(working_dir, 'tec_screen_plots'), num_processes=ncpu,
+    link_overwrite(dds6_h5parm, linked_dds6_h5parm)
+
+    deployment.run(generate_models)
+
+    animate_datapack(dds6_h5parm,os.path.join(working_dir, 'tec_screen_plots'), num_processes=ncpu,
                      solset=deployment.screen_solset,
                      observable='tec', vmin=-60., vmax=60.,labels_in_radec=True,plot_crosses=False,phase_wrap=False,
                      overlay_solset='directionally_referenced')
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'amplitude_screen_plots'), num_processes=ncpu,
+    animate_datapack(dds6_h5parm, os.path.join(working_dir, 'amplitude_screen_plots'), num_processes=ncpu,
                      solset=deployment.screen_solset,
-                     observable='amplitude', vmin=0.5, vmax=2., labels_in_radec=True, plot_crosses=False, phase_wrap=False,
+                     observable='amplitude', vmin=0.5, vmax=2., labels_in_radec=True, plot_crosses=False,
+                     phase_wrap=False,
                      )
 
     # animate_datapack(merged_h5parm, os.path.join(working_dir, 'const_screen_plots'), num_processes=ncpu,

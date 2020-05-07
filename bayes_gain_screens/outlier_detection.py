@@ -10,7 +10,7 @@ import sys
 import numpy as np
 import glob, os
 from bayes_gain_screens.datapack import DataPack
-from bayes_gain_screens.misc import voronoi_finite_polygons_2d
+from bayes_gain_screens.misc import voronoi_finite_polygons_2d, make_soltab
 import matplotlib
 
 try:
@@ -1309,7 +1309,13 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
             _, Nd, Na, Nt = tec_uncert.shape
             tec_uncert = np.where(np.isinf(tec_uncert), 1., tec_uncert)
             tec_uncert = np.where(predictions[i].reshape((1, Nd, Na, Nt)) == 1, np.inf, tec_uncert)
-            dp.weights_tec = tec_uncert
+            make_soltab(dp, from_solset='directionally_referenced', to_solset='outliers',
+                        from_soltab='tec000', to_soltab='tec000')
+            dp.current_solset = 'outliers'
+            dp.tec = tec_uncert
+
+
+
 
 
 if __name__ == '__main__':
@@ -1351,4 +1357,5 @@ if __name__ == '__main__':
     # directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
     # log_amp = np.log(amplitude)
     # filter_log_amplitude_dir_freq(log_amp[0,...], directions, freqs[:, None], function='multiquadric')
+
 
