@@ -1309,10 +1309,10 @@ def remove_outliers(do_clicking, do_training, do_evaluation,
             _, Nd, Na, Nt = tec_uncert.shape
             tec_uncert = np.where(np.isinf(tec_uncert), 1., tec_uncert)
             tec_uncert = np.where(predictions[i].reshape((1, Nd, Na, Nt)) == 1, np.inf, tec_uncert)
-            make_soltab(dp, from_solset='directionally_referenced', to_solset='outliers',
-                        from_soltab='tec000', to_soltab='tec000')
-            dp.current_solset = 'outliers'
-            dp.tec = tec_uncert
+            # make_soltab(dp, from_solset='directionally_referenced', to_solset='outliers',
+            #             from_soltab='tec000', to_soltab='tec000')
+            # dp.current_solset = 'outliers'
+            dp.weights_tec = tec_uncert
 
 
 
