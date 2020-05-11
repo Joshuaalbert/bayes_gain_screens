@@ -794,7 +794,11 @@ class Classifier(object):
 
     def get_model_file(self, model_dir):
         print("Looking in {}".format(model_dir))
-        latest_model = tf.train.latest_checkpoint(model_dir)
+        try:
+            latest_model = tf.train.latest_checkpoint(model_dir)
+        except:
+            latest_model = None
+
         if latest_model is None:
             latest_model = self.save_path(model_dir)
         return latest_model
