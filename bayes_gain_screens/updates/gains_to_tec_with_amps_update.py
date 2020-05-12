@@ -1,7 +1,8 @@
 from .update import UpdatePy
-from scipy.linalg import solve_triangular
 from scipy.optimize import minimize
-import numpy as np
+import jax.numpy as np
+import jax
+from jax.scipy.linalg import solve_triangular
 import tensorflow.compat.v1 as tf
 from scipy.stats import multivariate_normal
 from .. import TEC_CONV
@@ -95,17 +96,7 @@ class SolveLossVI(object):
     """
 
     def __init__(self, amps, Yreal, Yimag, freqs, tec_mean_prior=0., tec_uncert_prior=100.,
-                 const_mean_prior=0., const_uncert_prior=100.,
-                 S=20, sigma_real=None, sigma_imag=None, L_Sigma=None):
-        # self.x, self.w = np.polynomial.hermite.hermgauss(S)
-        # self.x_tec = self.x
-        # self.x_const = self.x
-        # self.w /= np.pi ** (0.5)
-        # self.w_tec = self.w
-        # self.w_const = self.w
-        #
-        # # S_tec
-        # self.const = const_mean_prior + np.sqrt(2.) * const_uncert_prior * self.x_const
+                 sigma_real=None, sigma_imag=None):
         self.amps = amps
         self.tec_conv = TEC_CONV / freqs
         # Nf
@@ -114,14 +105,11 @@ class SolveLossVI(object):
 
         self.tec_mean_prior = tec_mean_prior
         self.tec_uncert_prior = tec_uncert_prior
-        # self.const_mean_prior = const_mean_prior
-        # self.const_uncert_prior = const_uncert_prior
 
         self.sigma_real = sigma_real
         self.sigma_imag = sigma_imag
-        # self.L_Sigma = L_Sigma
 
-    def _scalar_KL(self, mean, uncert, mean_prior, uncert_prior):
+    def scalar_KL(self, mean, uncert, mean_prior, uncert_prior):
         # Get KL
         q_var = np.square(uncert)
         var_prior = np.square(uncert_prior)
@@ -155,69 +143,14 @@ class SolveLossVI(object):
         res *= 0.25
         return np.sum(res, axis=-1)
 
-    def test_loss_func(self, params):
-        tec_mean, _tec_uncert = params[0], params[1]
-        tec_uncert = constrain_tec(_tec_uncert)
-
-        q = multivariate_normal(tec_mean, tec_uncert ** 2)
-        tec_prior = multivariate_normal(self.tec_mean_prior, self.tec_uncert_prior ** 2)
-        q_samples = q.rvs(1000)
-        tec_prior_KL = np.mean(q.logpdf(q_samples) - tec_prior.logpdf(q_samples))
-        #         print("tec_prior_KL", tec_prior_KL)
-
-        # S_tec, Nf
-        phase = q_samples[:, None] * self.tec_conv
-        Yreal_m = np.cos(phase)
-        Yimag_m = np.sin(phase)
-        # S_tec
-        log_prob = log_gaussian_pdf((Yreal_m - self.Yreal),
-                                    (Yimag_m - self.Yimag),
-                                    self.sigma)
-        # scalar
-        var_exp = np.mean(log_prob)
-        #         print('var_exp',var_exp)
-        loss = np.negative(var_exp - tec_prior_KL)
-        return loss
-
-    def loss_func_gauss_hermite(self, params):
-        """
-        VI loss
-        :param params: tf.Tensor
-            shapfrom scipy.optimize import brute, fmine [D]
-        :return: tf.Tensor
-            scalar The loss
-        """
-
-        tec_mean, _tec_uncert = params[0], params[1]
-
-        tec_uncert = constrain_tec(_tec_uncert)
-
-        # S_tec
-        tec = tec_mean + np.sqrt(2.) * tec_uncert * self.x_tec
-        # S_tec, Nf
-        phase = tec[:, None] * self.tec_conv
-        Yreal_m = np.cos(phase)
-        Yimag_m = np.sin(phase)
-        # S_tec, 2*Nf
-        dx = np.concatenate([Yreal_m - self.Yreal, Yimag_m - self.Yimag], axis=1)
-        # S_tec
-        log_prob = log_mv_gaussian_pdf(dx, self.L_Sigma)
-        # S_tec -> scalar
-        var_exp = np.sum(log_prob * self.w_tec, axis=0)
-        # Get KL
-        tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
-        # scalar
-        loss = np.negative(var_exp - tec_prior_KL)
-        return loss
-
     def loss_func(self, params):
         tec_mean, _tec_uncert = params[0], params[1]
         tec_uncert = constrain_tec(_tec_uncert)
         _var_exp = self.var_exp(tec_mean, tec_uncert, self.Yreal, self.Yimag, self.sigma_real, self.sigma_imag)
         # Get KL
-        tec_prior_KL = self._scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
+        tec_prior_KL = self.scalar_KL(tec_mean, tec_uncert, self.tec_mean_prior, self.tec_uncert_prior)
         # scalar
-        loss = np.negative(_var_exp - tec_prior_KL)
+        loss = tec_prior_KL - _var_exp
         return loss
 
 class UpdateGainsToTecAmps(UpdatePy):
@@ -287,11 +220,19 @@ class UpdateGainsToTecAmps(UpdatePy):
         basin = np.mean(np.abs(np.pi / s.tec_conv))*0.5
         num_basin = int(self.tec_scale/basin)+1
 
-        res = minimize(s.loss_func, np.array([prior_mu[0], deconstrain_tec(5.)]), method='BFGS').x
+        @jax.jit
+        def value_and_grad(x):
+            f,j = jax.value_and_grad(s.loss_func)
+            return f, np.array(j)
+
+        res = minimize(value_and_grad,
+                       np.array([prior_mu[0], deconstrain_tec(5.)]),
+                       jac=True,
+                       method='BFGS').x
         obj_try = np.stack([s.loss_func([res[0] + i * basin, res[1]]) for i in range(-num_basin, num_basin+1, 1)], axis=0)
         which_basin = np.argmin(obj_try, axis=0)
         x_next = np.array([res[0] + (which_basin - float(num_basin)) * basin, res[1]])
-        sol = minimize(s.loss_func, x_next, method='BFGS').x
+        sol = minimize(value_and_grad, x_next, jac=True, method='BFGS').x
 
         tec_mean = sol[0]
         tec_uncert = constrain_tec(sol[1])
@@ -300,3 +241,21 @@ class UpdateGainsToTecAmps(UpdatePy):
         post_cov = np.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
 
         return [post_mu, post_cov]
+
+def speed():
+    import numpy as onp
+    onp.random.seed(0)
+    freqs = np.linspace(121e6, 166e6, 24)
+    tec_true = 87.
+    phase_true = tec_true * TEC_CONV / freqs
+    Sigma = 0.2 ** 2 * np.eye(freqs.size * 2)
+    Y_obs = np.exp(1j * phase_true) + 0.2 * (onp.random.normal(size=phase_true.shape) + 1j * onp.random.normal(size=phase_true.shape))
+    amp = np.ones(freqs.size)
+
+    model = UpdateGainsToTecAmps(freqs, tec_scale=300., spacing=10.)
+
+    res = model._update_function(0, np.zeros(2), 100**2*np.eye(2), Y_obs, Sigma, amp)
+    print(res)
+
+if __name__=='__main__':
+    speed()
