@@ -204,9 +204,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
 
     dds5_h5parm = os.path.join(working_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
     linked_dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
-    
-    link_overwrite(dds5_h5parm, linked_dds5_h5parm)
-    logging.info("Looking for {}".format(dds5_h5parm))
+
+    logging.info("Looking for {}".format(dds4_h5parm))
     select = dict(pol=slice(0, 1, 1))
     dds4_datapack = DataPack(dds4_h5parm, readonly=False)
     logging.info("Creating smoothed/phase000+amplitude000")
@@ -215,6 +214,9 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
     logging.info("Creating directionally_referenced/tec000+const000")
     make_soltab(dds4_datapack, from_solset='sol000', to_solset='directionally_referenced', from_soltab='phase000',
                 to_soltab=['tec000', 'const000'], remake_solset=True, to_datapack=dds5_h5parm)
+
+    link_overwrite(dds5_h5parm, linked_dds5_h5parm)
+
     logging.info("Getting raw phases")
     dds4_datapack.current_solset = 'sol000'
     dds4_datapack.select(**select)
