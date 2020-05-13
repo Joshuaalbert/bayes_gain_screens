@@ -100,7 +100,7 @@ class DataPack(object):
         if isinstance(filename, DataPack):
             filename = filename.filename
         self.filename = os.path.abspath(filename)
-        if not os.path.isfile(self.filename):
+        if readonly and not os.path.isfile(self.filename):
             raise IOError("File {} doesn't exist".format(self.filename))
         self.readonly = readonly
         self._H = None
