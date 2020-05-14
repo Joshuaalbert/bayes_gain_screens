@@ -223,7 +223,7 @@ class UpdateGainsToTecAmps(UpdatePy):
         @jax.jit
         def value_and_grad(x):
             f,j = jax.value_and_grad(s.loss_func)(x)
-            return f, np.array(j)
+            return f, np.array(j[0])
 
         res = minimize(value_and_grad,
                        np.array([prior_mu[0], deconstrain_tec(5.)]),
