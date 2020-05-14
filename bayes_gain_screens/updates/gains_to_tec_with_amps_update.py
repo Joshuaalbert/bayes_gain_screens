@@ -2,6 +2,7 @@ from .update import UpdatePy
 from scipy.optimize import minimize
 import jax.numpy as np
 import jax
+import numpy as onp
 from jax.scipy.linalg import solve_triangular
 import tensorflow.compat.v1 as tf
 from scipy.stats import multivariate_normal
@@ -237,12 +238,12 @@ class UpdateGainsToTecAmps(UpdatePy):
         tec_mean = sol[0]
         tec_uncert = constrain_tec(sol[1])
 
-        post_mu = np.array([tec_mean, 0], np.float64)
-        post_cov = np.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
+        post_mu = onp.array([tec_mean, 0], np.float64)
+        post_cov = onp.array([[tec_uncert ** 2, 0.], [0., 1. ** 2]], np.float64)
 
         return [post_mu, post_cov]
 
-def speed():
+def test_speed():
     import numpy as onp
     onp.random.seed(0)
     freqs = np.linspace(121e6, 166e6, 24)
@@ -257,5 +258,3 @@ def speed():
     res = model._update_function(0, np.zeros(2), 100**2*np.eye(2), Y_obs, Sigma, amp)
     print(res)
 
-if __name__=='__main__':
-    speed()
