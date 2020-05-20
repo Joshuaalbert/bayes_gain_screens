@@ -33,7 +33,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
                             dds6_h5parm,
                             ref_dir_idx=ref_dir,
                             tec_solset='directionally_referenced',
-                            phase_solset='sol000',#'smoothed000',
+                            phase_solset='smoothed000',
                             flux_limit=0.01,
                             max_N=max_N,
                             min_spacing_arcmin=4.,
