@@ -50,7 +50,7 @@ def loss(params, y_real, y_imag, sigma_real, sigma_imag,tec_conv, clock_conv, am
     phase = tec * tec_conv + const + clock * clock_conv
     return np.sum(np.square((amp*np.cos(phase) - y_real) / sigma_real) + np.square((amp*np.sin(phase) - y_imag) / sigma_imag))
 
-def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_data_di, freqs, working_dir, debug=False):
+def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_data_di, freqs, working_dir, smooth_window, debug=False):
     """
     Run on blocks of time.
 
@@ -123,7 +123,7 @@ def sequential_solve(amps, Yreal_data_dd, Yimag_data_dd, Yreal_data_di, Yimag_da
         eff_phase_residual = np.polyfit(freqs/1e6, diff_phase.T, deg=1)[0, :]*(freqs[-1] - freqs[0])/1e6/2.
         eff_const = eff_phase_residual / 0.157
         #N
-        eff_const = median_filter(eff_const, size=(300,))
+        eff_const = median_filter(eff_const, size=(smooth_window,))
         const_array[d,:] = eff_const
         #N, Nf
         Y_mod = amp_data*np.exp(1j*(phase_data - eff_const[:, None]))
@@ -197,7 +197,7 @@ def smoothamps(amps):
     return ampssmoothed
 
 
-def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
+def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference, const_smooth_window):
     os.chdir(working_dir)
     logging.info("Performing TEC and constant variational inference.")
     dds4_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
@@ -282,7 +282,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference):
             dsk[str(c)] = (sequential_solve, amps_mod[start:stop, :, :],
                            Yreal_data_dd[start:stop, :, :], Yimag_data_dd[start:stop, :, :],
                            Yreal_data_di[start:stop, :, :], Yimag_data_di[start:stop, :, :],
-                           freqs, os.path.join(working_dir,'proc_{:04d}'.format(proc_idx)))
+                           freqs, os.path.join(working_dir,'proc_{:04d}'.format(proc_idx)),
+                           const_smooth_window)
             proc_idx += 1
             keys.append(str(c))
         logging.info("Running dask on {} processes".format(num_processes))
@@ -452,6 +453,8 @@ def add_args(parser):
                         default=0, type=int, required=False)
     parser.add_argument('--walking_reference', help='Whether to remove bias by rereferencing in a minimum distance spanning tree walk.',
                         default=False, type="bool", required=False)
+    parser.add_argument('--const_smooth_window', help='How long the constant smooth window is.',
+                        default=300, type=int, required=False)
 
 def test_main():
     main(data_dir='/home/albert/store/root_dense/L667218/download_archive',

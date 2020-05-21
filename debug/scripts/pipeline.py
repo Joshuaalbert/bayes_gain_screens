@@ -478,7 +478,8 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('ncpu', ncpu) \
         .add('data_dir', data_dir) \
         .add('ref_dir', ref_dir) \
-        .add('walking_reference', False)
+        .add('walking_reference', False) \
+        .add('const_smooth_window', 120)
 
     steps['slow_solve_dds4'].cmd \
         .add('ncpu', ncpu) \
