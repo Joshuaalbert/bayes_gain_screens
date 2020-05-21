@@ -151,9 +151,9 @@ class Deployment(object):
             ref_location = ref_location[0, :]
             ref_direction = ref_direction[0, :]
 
-            self.datapack.current_solset = self.screen_solset
-            self.datapack.select(time=slice(mid_time, mid_time + 1, 1))
-            X_screen, _, _ = get_coordinates(self.datapack, self.ref_ant_idx, self.ref_dir_idx)
+            self.save_datapack.current_solset = self.screen_solset
+            self.datasave_datapackpack.select(time=slice(mid_time, mid_time + 1, 1))
+            X_screen, _, _ = get_coordinates(self.save_datapack, self.ref_ant_idx, self.ref_dir_idx)
             # Nd_, Na ->  Na, Nd_, 6
             X_screen = X_screen[0, :, :, :].transpose((1, 0, 2))
 
