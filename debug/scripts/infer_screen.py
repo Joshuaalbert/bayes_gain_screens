@@ -49,7 +49,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
 
     link_overwrite(dds6_h5parm, linked_dds6_h5parm)
 
-    # deployment.run(generate_models)
+    deployment.run(generate_models)
 
     animate_datapack(dds6_h5parm, os.path.join(working_dir, 'tec_screen_plots'), num_processes=ncpu,
                      solset=deployment.screen_solset,
