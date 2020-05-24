@@ -215,59 +215,59 @@ class Deployment(object):
         post_phase_mean = post_tec_mean_array[None, ..., None, :] * tec_conv[:, None] + self.phase_di
         post_phase_std = np.abs(post_tec_uncert_array[None, ..., None, :] * tec_conv[:, None])
 
-        logging.info("Computing screen amplitude with radial basis function")
-        self.save_datapack.current_solset = self.screen_solset
-        self.save_datapack.select(**self.select)
-        axes = self.save_datapack.axes_phase
-        _, screen_directions = self.save_datapack.get_directions(axes['dir'])
-
-        self.save_datapack.current_solset = self.phase_solset
-        self.save_datapack.select(**self.select)
-        cal_amplitudes, _ = self.save_datapack.amplitude
-        #Npol, Na, Nf, Nt, Nd
-        cal_amplitudes = np.transpose(cal_amplitudes, (0, 2,3,4,1))
-        Npol, Na, Nf, Nt, Nd = cal_amplitudes.shape
-        #B, Nd
-        cal_amplitudes = np.reshape(cal_amplitudes, (-1, cal_amplitudes.shape[-1]))
-        axes = self.save_datapack.axes_phase
-        _, cal_directions = self.save_datapack.get_directions(axes['dir'])
-        cal_directions = np.stack([cal_directions.ra.deg, cal_directions.dec.deg], axis=1)
-        screen_directions = np.stack([screen_directions.ra.deg, screen_directions.dec.deg], axis=1)
-
-        #B, Nd
-        cal_amplitudes = cal_amplitudes
-
-        with tf.Session(graph=tf.Graph()) as smooth_sess:
-            # N, 2
-            x1_pl = tf.placeholder(tf.float32, shape=cal_directions.shape)
-            # M, 2
-            x2_pl = tf.placeholder(tf.float32, shape=screen_directions.shape)
-            # B, Nd
-            amp_pl = tf.placeholder(tf.float32, shape=cal_amplitudes.shape)
-            smooth = tf.constant(0.1, tf.float32)
-            # N, N
-            A11 = tf.linalg.norm(tf.math.squared_difference(x1_pl[:, None, :], x1_pl[None, :, :]), axis=-1)
-            A11 = A11 - tf.eye(tf.shape(A11)[-1], dtype=tf.float32) * smooth
-            # M,N
-            A21 = tf.linalg.norm(tf.math.squared_difference(x2_pl[:, None, :], x1_pl[None, :, :]), axis=-1)
-            # b,N, 1
-            w1 = tf.linalg.lstsq(tf.tile(A11[None, :, :], [cal_amplitudes.shape[0], 1, 1]), tf.math.log(amp_pl)[:, :, None],
-                                 fast=False)
-            # b, M
-            screen_amps_pred = tf.math.exp(tf.linalg.matmul(A21, w1)[..., 0])
-            screen_amps_pred = smooth_sess.run(screen_amps_pred, {x1_pl: cal_directions, x2_pl: screen_directions,
-                                                                  amp_pl: cal_amplitudes})
-        # Npol, Na, Nf, Nt, Nd_screen
-        screen_amps_pred = screen_amps_pred.reshape((Npol, Na, Nf, Nt,-1))
-        # Npol, Nd_screen, Na, Nf, Nt
-        screen_amps_pred = screen_amps_pred.transpose((0,4,1,2,3))
+        # logging.info("Computing screen amplitude with radial basis function")
+        # self.save_datapack.current_solset = self.screen_solset
+        # self.save_datapack.select(**self.select)
+        # axes = self.save_datapack.axes_phase
+        # _, screen_directions = self.save_datapack.get_directions(axes['dir'])
+        #
+        # self.save_datapack.current_solset = self.phase_solset
+        # self.save_datapack.select(**self.select)
+        # cal_amplitudes, _ = self.save_datapack.amplitude
+        # #Npol, Na, Nf, Nt, Nd
+        # cal_amplitudes = np.transpose(cal_amplitudes, (0, 2,3,4,1))
+        # Npol, Na, Nf, Nt, Nd = cal_amplitudes.shape
+        # #B, Nd
+        # cal_amplitudes = np.reshape(cal_amplitudes, (-1, cal_amplitudes.shape[-1]))
+        # axes = self.save_datapack.axes_phase
+        # _, cal_directions = self.save_datapack.get_directions(axes['dir'])
+        # cal_directions = np.stack([cal_directions.ra.deg, cal_directions.dec.deg], axis=1)
+        # screen_directions = np.stack([screen_directions.ra.deg, screen_directions.dec.deg], axis=1)
+        #
+        # #B, Nd
+        # cal_amplitudes = cal_amplitudes
+        #
+        # with tf.Session(graph=tf.Graph()) as smooth_sess:
+        #     # N, 2
+        #     x1_pl = tf.placeholder(tf.float32, shape=cal_directions.shape)
+        #     # M, 2
+        #     x2_pl = tf.placeholder(tf.float32, shape=screen_directions.shape)
+        #     # B, Nd
+        #     amp_pl = tf.placeholder(tf.float32, shape=cal_amplitudes.shape)
+        #     smooth = tf.constant(0.1, tf.float32)
+        #     # N, N
+        #     A11 = tf.linalg.norm(tf.math.squared_difference(x1_pl[:, None, :], x1_pl[None, :, :]), axis=-1)
+        #     A11 = A11 - tf.eye(tf.shape(A11)[-1], dtype=tf.float32) * smooth
+        #     # M,N
+        #     A21 = tf.linalg.norm(tf.math.squared_difference(x2_pl[:, None, :], x1_pl[None, :, :]), axis=-1)
+        #     # b,N, 1
+        #     w1 = tf.linalg.lstsq(tf.tile(A11[None, :, :], [cal_amplitudes.shape[0], 1, 1]), tf.math.log(amp_pl)[:, :, None],
+        #                          fast=False)
+        #     # b, M
+        #     screen_amps_pred = tf.math.exp(tf.linalg.matmul(A21, w1)[..., 0])
+        #     screen_amps_pred = smooth_sess.run(screen_amps_pred, {x1_pl: cal_directions, x2_pl: screen_directions,
+        #                                                           amp_pl: cal_amplitudes})
+        # # Npol, Na, Nf, Nt, Nd_screen
+        # screen_amps_pred = screen_amps_pred.reshape((Npol, Na, Nf, Nt,-1))
+        # # Npol, Nd_screen, Na, Nf, Nt
+        # screen_amps_pred = screen_amps_pred.transpose((0,4,1,2,3))
 
         logging.info("Storing screen phases and amplitudes.")
         self.save_datapack.current_solset = self.screen_solset
         self.save_datapack.select(**self.select)
         self.save_datapack.phase = post_phase_mean
         self.save_datapack.weights_phase = post_phase_std
-        self.save_datapack.amplitude = screen_amps_pred
+        # self.save_datapack.amplitude = screen_amps_pred
 
         logging.info("Saving weights")
         np.savez(os.path.join(self.working_dir, 'weights.npz'), weights=weights_array, names=self.names,
