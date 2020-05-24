@@ -46,9 +46,8 @@ def prepare_kms_sols(data_dir, obs_num):
     assert np.all(np.isclose(d['Sols']['G'], Sols['G']))
 
 def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
-    sol_name='DDS4_full'
-    pre_apply_sol_name='{}_smoothed'.format(sol_name)
-    out_sol_name='{}_slow'.format(sol_name)
+    pre_apply_sol_name='DDS5_full_smoothed'
+    out_sol_name='DDS7_full_slow'
 
     mslist = sorted(glob.glob(os.path.join(data_dir,'L{}*.ms'.format(obs_num))))
     if len(mslist) == 0:
@@ -109,7 +108,7 @@ def make_merged_h5parm(obs_num, data_dir, working_dir):
             print("Can't find {} in {}".format(slow_sol, f))
             continue
         sols.append(os.path.abspath(sol[0]))
-    solsfile = os.path.join(working_dir, 'solslist_dds4_slow.txt')
+    solsfile = os.path.join(working_dir, 'solslist_dds7_slow.txt')
     with open(solsfile, 'w') as f:
         for s in sols:
             f.write("{}\n".format(s))
@@ -125,12 +124,12 @@ def make_merged_h5parm(obs_num, data_dir, working_dir):
 
 def make_symlinks(data_dir, obs_num):
     print("Creating symbolic links")
-    smooth_merged_sol = os.path.join(data_dir, 'L{}_DDS4_full_smoothed_merged.sols.npz'.format(obs_num))
+    smooth_merged_sol = os.path.join(data_dir, 'L{}_DDS5_full_smoothed_merged.sols.npz'.format(obs_num))
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     sol_folders = glob.glob(os.path.join(solsdir, 'L{obs_num}*.ms'.format(obs_num=obs_num)))
     for f in sol_folders:
         src = smooth_merged_sol
-        dst = os.path.join(f, 'killMS.DDS4_full_smoothed.sols.npz')
+        dst = os.path.join(f, 'killMS.DDS5_full_smoothed.sols.npz')
         link_overwrite(src, dst)
 
 def cleanup_working_dir(working_dir):
