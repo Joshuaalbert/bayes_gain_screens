@@ -20,7 +20,7 @@ def main(data_dir, working_dir, obs_num, new_weights_col, outlier_frac_thresh):
     with open(mslist_file, 'w') as f:
         for ms in msfiles:
             f.write("{}\n".format(ms))
-    merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS4_full'))
+    merged_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
     with tables.open_file(merged_h5parm) as datapack:
         root = getattr(datapack, "root")
         directionally_referenced = getattr(root, "directionally_referenced")
