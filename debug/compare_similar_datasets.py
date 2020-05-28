@@ -20,12 +20,12 @@ def compare_datapacks(h5parms, solset, soltab, weight=False, select=None):
             dp2 = dps[j]
             data1, axes1 = dp1.get_soltab(soltab, weight=weight)
             data2, axes2 = dp2.get_soltab(soltab, weight=weight)
-            for k, v in axes1.items():
-                if ~np.all(np.isclose(v, axes2[k])):
-                    print("Axes are not the same of {} and {} on solset {} and soltab {}".format(h5parms[i], h5parms[j],
-                                                                                                 solset, soltab))
-                    correct[i, j] = False
-                    correct[j, i] = False
+            # for k, v in axes1.items():
+            #     if ~np.all(np.isclose(v, axes2[k])):
+            #         print("Axes are not the same of {} and {} on solset {} and soltab {}".format(h5parms[i], h5parms[j],
+            #                                                                                      solset, soltab))
+            #         correct[i, j] = False
+            #         correct[j, i] = False
 
             if ~np.all(np.isclose(data1, data2)):
                 print("Data are not the same of {} and {} on solset {} and soltab {}".format(h5parms[i], h5parms[j],
