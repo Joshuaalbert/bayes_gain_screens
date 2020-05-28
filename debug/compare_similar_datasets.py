@@ -13,7 +13,9 @@ def compare_datapacks(h5parms, solset, soltab, weight=False, select=None):
     if select is not None:
         for dp in dps:
             dp.select(**select)
-    correct = np.ones(len(dps), dtype=np.bool)
+    for dp in dps:
+        dp.current_solset = solset
+    correct = np.ones((len(dps),len(dps)), dtype=np.bool)
     for i in range(len(dps)):
         for j in range(i + 1, len(dps)):
             dp1 = dps[i]
