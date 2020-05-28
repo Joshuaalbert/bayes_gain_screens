@@ -133,9 +133,6 @@ def add_args(parser):
 
 
 if __name__ == '__main__':
-    sys.argv.append('--root_paths')
-    sys.argv.append('/test1')
-    sys.argv.append('/test2')
     parser = argparse.ArgumentParser(
         description='Compare two datasets for similarity.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
