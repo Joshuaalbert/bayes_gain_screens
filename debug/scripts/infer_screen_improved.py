@@ -2,7 +2,7 @@
 This will deploy the probabilistic screen solver on an H5Parm
 """
 
-from bayes_gain_screens.deploy_improved import Deployment
+from bayes_gain_screens.deploy import Deployment
 from bayes_gain_screens.plotting import animate_datapack
 import argparse
 import os

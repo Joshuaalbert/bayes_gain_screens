@@ -18,11 +18,15 @@ def link_overwrite(src, dst):
 def main(data_dir, working_dir, obs_num):
     os.chdir(working_dir)
     logging.info("Merging slow solutions into screen and smoothed.")
+
     smoothed_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+
     screen_h5parm = os.path.join(data_dir, 'L{}_DDS6_full_merged.h5'.format(obs_num))
+
     slow_h5parm = os.path.join(data_dir, 'L{}_DDS7_full_slow_merged.h5'.format(obs_num))
+
     merged_h5parm = os.path.join(working_dir, 'L{}_DDS8_full_merged.h5'.format(obs_num))
-    linked_merged_h5parm = os.path.join(data_dir, 'L{}_DDS8_full_merged.h5'.format(obs_num))
+    linked_merged_h5parm = os.path.join(data_dir, os.path.basename(merged_h5parm))
 
     select = dict(pol = slice(0, 1, 1))
 
