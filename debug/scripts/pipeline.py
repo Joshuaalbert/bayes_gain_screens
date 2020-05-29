@@ -283,6 +283,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
          bayes_gain_screens_simg,
          bayes_gain_screens_conda_env,
          auto_resume,
+         const_smooth_window,
          **do_kwargs):
     for key in do_kwargs.keys():
         if not key.startswith('do_'):
@@ -479,7 +480,7 @@ def main(archive_dir, root_working_dir, script_dir, obs_num, region_file, ncpu, 
         .add('data_dir', data_dir) \
         .add('ref_dir', ref_dir) \
         .add('walking_reference', False) \
-        .add('const_smooth_window', 60)
+        .add('const_smooth_window', const_smooth_window)
 
     steps['slow_solve_dds4'].cmd \
         .add('ncpu', ncpu) \
@@ -697,6 +698,11 @@ def add_args(parser):
     optional.add_argument('--auto_resume',
                           help='Int flag indicating whether or try to automatically resume operations based on the STATE file. Flags (-1) 0/1/2 with usual meaning (see do_*). If negative then forces resumes. Otherwise assert that previous run finished successfully first.',
                           required=False, default=2, type=int)
+
+    optional.add_argument('--const_smooth_window',
+                          help='How many time-intervals (typically in units of 30s) to smooth the constant-in-frequency term over.',
+                          required=False, default=300, type=int)
+
     try:
         workers = os.cpu_count()
         if 'sched_getaffinity' in dir(os):

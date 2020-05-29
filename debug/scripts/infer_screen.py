@@ -25,9 +25,9 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
     if deployment_type == 'tomographic':
         from bayes_gain_screens.tomographic_models import generate_models
 
-    dds5_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS5_full'))
-    dds6_h5parm = os.path.join(working_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS6_full'))
-    linked_dds6_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS6_full'))
+    dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+    dds6_h5parm = os.path.join(working_dir, 'L{}_DDS6_full_merged.h5'.format(obs_num))
+    linked_dds6_h5parm = os.path.join(data_dir, os.path.basename(dds6_h5parm))
 
     deployment = Deployment(dds5_h5parm,
                             dds6_h5parm,

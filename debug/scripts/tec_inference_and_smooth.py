@@ -204,7 +204,6 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference, const
 
     dds5_h5parm = os.path.join(working_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
     linked_dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
-    
 
     logging.info("Looking for {}".format(dds4_h5parm))
     select = dict(pol=slice(0, 1, 1))

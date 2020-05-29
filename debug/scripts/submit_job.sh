@@ -30,6 +30,7 @@ auto_resume=2
 no_download=False
 mock_run=
 retry_task_on_fail=0
+const_smooth_window=300
 
 ###
 # calibration steps
@@ -91,7 +92,8 @@ L=(obs_num \
     no_download \
     auto_resume \
     mock_run \
-    retry_task_on_fail)
+    retry_task_on_fail \
+    const_smooth_window)
 
 arg_parse_str="help"
 for arg in ${L[@]}; do
@@ -148,6 +150,7 @@ cmd="python "$script_dir"/pipeline.py \
         --region_file="$region_file" \
         --auto_resume="$auto_resume" \
         --ref_dir=0 \
+        --const_smooth_window="$const_smooth_window" \
         --ncpu="$ncpu" \
         --block_size=40 \
         --deployment_type=directional \
