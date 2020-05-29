@@ -35,98 +35,136 @@ def compare_datapacks(h5parms, solset, soltab, weight=False, select=None):
                 correct[i, j] = False
                 correct[j, i] = False
     for i, f in enumerate(h5parms):
-        print("{} -> {}".format(i, f))
+        print("{} -> {} {}:{}".format(i, f, solset, soltab))
         print("\t".join(h5parms))
-    print("Same matrix:")
+    print("Similarity matrix:")
     print(correct)
     return correct
 
 
-def assert_same(correct):
-    assert np.all(correct)
+def assert_same(correct,msg=""):
+    if not np.all(correct):
+        print(f"ASSERT failed: {msg} not the same")
+        return False
+    return True
 
 
-def assert_different(correct):
-    assert np.sum(correct) == np.sum(np.diag(correct))
+
+def assert_different(correct,msg=""):
+    if not (np.sum(correct) == np.sum(np.diag(correct))):
+        print(f"ASSERT failed: {msg} not different")
+        return False
+    return True
 
 
 def main(root_paths):
     root_paths = [os.path.abspath(p) for p in root_paths]
     data_dirs = [os.path.join(p, 'download_archive') for p in root_paths]
-    # solutions from first Kms solve
-    dds4_h5parms = [glob.glob(os.path.join(p, 'L*_DDS4_full_merged.h5'))[0] for p in data_dirs]
-    # smoothed000 and directionally_referenced solsets
-    dds5_h5parms = [glob.glob(os.path.join(p, 'L*_DDS5_full_merged.h5'))[0] for p in data_dirs]
-    # screen_posterior solset, amplitude000, phase000, tec000
-    dds6_h5parms = [glob.glob(os.path.join(p, 'L*_DDS6_full_merged.h5'))[0] for p in data_dirs]
-    # slow sols, sol000 phase and amplitude
-    dds7_h5parms = [glob.glob(os.path.join(p, 'L*_DDS7_full_slow_merged.h5'))[0] for p in data_dirs]
-    dds8_h5parms = [glob.glob(os.path.join(p, 'L*_DDS8_full_merged.h5'))[0] for p in data_dirs]
 
-    # same initial solutions
+    print("Comparing initial solutions from the first killMS solve.")
+    dds4_h5parms = [glob.glob(os.path.join(p, 'L*_DDS4_full_merged.h5'))[0] for p in data_dirs]
     try:
-        assert_same(compare_datapacks(dds4_h5parms, 'sol000', 'phase000', select=dict(pol=0)))
+        dds4_phase_same = assert_same(compare_datapacks(dds4_h5parms, 'sol000', 'phase000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds4")
     try:
-        assert_same(compare_datapacks(dds4_h5parms, 'sol000', 'amplitude000', select=dict(pol=0)))
+        dds4_amp_same = assert_same(compare_datapacks(dds4_h5parms, 'sol000', 'amplitude000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds4")
-    # same smoothed
+
+    dds4_same = dds4_amp_same and dds4_phase_same
+    if not dds4_same:
+        print("ERROR: original solutions are not the same between runs, which implies different calibrators were chosen.")
+
+    print("Comparing smoothed000 from tec_inference_and_smooth.")
+    dds5_h5parms = [glob.glob(os.path.join(p, 'L*_DDS5_full_merged.h5'))[0] for p in data_dirs]
     try:
-        assert_same(compare_datapacks(dds5_h5parms, 'smoothed000', 'phase000', select=dict(pol=0)))
+        dds5_phase_same = assert_same(compare_datapacks(dds5_h5parms, 'smoothed000', 'phase000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds5")
     try:
-        assert_same(compare_datapacks(dds5_h5parms, 'smoothed000', 'amplitude000', select=dict(pol=0)))
+        dds5_amp_same = assert_same(compare_datapacks(dds5_h5parms, 'smoothed000', 'amplitude000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds5")
-    # different tec
+
+    dds5_smooth_same = dds5_phase_same and dds5_amp_same
+    if dds4_same and not dds5_smooth_same:
+        print("ERROR: smoothing should be the same if original solutions were the same but are not. Implies smoothing depends on the difference in parmetrisation between datapacks. Should not be the case unless you are optimising the smoothing step.")
+
+    print("Comparing tec000 and const000 from tec_inference_and_smooth.")
     try:
-        assert_different(compare_datapacks(dds5_h5parms, 'directionally_referenced', 'tec000', select=dict(pol=0)))
+        dds5_tec_diff = assert_different(compare_datapacks(dds5_h5parms, 'directionally_referenced', 'tec000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds5")
     # different const
     try:
-        assert_different(compare_datapacks(dds5_h5parms, 'directionally_referenced', 'const000', select=dict(pol=0)))
+        dds5_const_diff = assert_different(compare_datapacks(dds5_h5parms, 'directionally_referenced', 'const000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds5")
-    # different screens tec-only
+
+    dds5_inference_diff = dds5_tec_diff and dds5_const_diff
+    if not dds5_inference_diff:
+        print("ERROR: tec inference is the same which implies things were run with the same setting on accident")
+
+    print("Comparing screen_posterior phase000, tec000 from infer_screen.")
+    dds6_h5parms = [glob.glob(os.path.join(p, 'L*_DDS6_full_merged.h5'))[0] for p in data_dirs]
     try:
-        assert_different(compare_datapacks(dds6_h5parms, 'screen_posterior', 'tec000', select=dict(pol=0)))
+        dds6_tec_diff = assert_different(compare_datapacks(dds6_h5parms, 'screen_posterior', 'tec000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds6")
     try:
-        assert_different(compare_datapacks(dds6_h5parms, 'screen_posterior', 'phase000', select=dict(pol=0)))
+        dds6_phase_diff = assert_different(compare_datapacks(dds6_h5parms, 'screen_posterior', 'phase000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds6")
-    # same slow solutions
+
+    dds6_diff = dds6_tec_diff and dds6_phase_diff
+    if dds5_inference_diff and not dds6_diff:
+        print("ERROR: calibrator inference was different but screen posterior is the same. Implies a file mix up.")
+
+    print("Comparing slow solutions, which should be the same if smooth000 was the same.")
+    dds7_h5parms = [glob.glob(os.path.join(p, 'L*_DDS7_full_slow_merged.h5'))[0] for p in data_dirs]
     try:
-        assert_same(compare_datapacks(dds7_h5parms, 'sol000', 'phase000', select=dict(pol=0)))
+        dds7_phase_same = assert_same(compare_datapacks(dds7_h5parms, 'sol000', 'phase000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds7")
     try:
-        assert_same(compare_datapacks(dds7_h5parms, 'sol000', 'amplitude000', select=dict(pol=0)))
+        dds7_amp_same = assert_same(compare_datapacks(dds7_h5parms, 'sol000', 'amplitude000', select=dict(pol=0)))
     except FileNotFoundError:
         print("Did not find dds7")
-    # same calibrators in final screen
+
+    dds7_same = dds7_amp_same and dds7_phase_same
+    if dds5_smooth_same and not dds7_same:
+        print("ERROR: smooth solutions were the same but the slow were different. Means something wrong in preparing the pre-apply solutions!")
+
+
+    print("Comparing final screen, on calibrators. Should be the same if smoothed000 and slow were the same")
+    dds8_h5parms = [glob.glob(os.path.join(p, 'L*_DDS8_full_merged.h5'))[0] for p in data_dirs]
     try:
-        assert_same(compare_datapacks(dds8_h5parms, 'screen_slow000', 'phase000', select=dict(pol=0, dir=slice(0, 45, 1))))
+        dds8_cal_phase_same = assert_same(compare_datapacks(dds8_h5parms, 'screen_slow000', 'phase000', select=dict(pol=0, dir=slice(0, 45, 1))))
     except FileNotFoundError:
         print("Did not find dds8")
     try:
-        assert_same(compare_datapacks(dds8_h5parms, 'screen_slow000', 'amplitude000', select=dict(pol=0, dir=slice(0, 45, 1))))
+        dds8_cal_amp_same = assert_same(compare_datapacks(dds8_h5parms, 'screen_slow000', 'amplitude000', select=dict(pol=0, dir=slice(0, 45, 1))))
     except FileNotFoundError:
         print("Did not find dds8")
-    # different non-calibrators
+
+    dds8_cal_same = dds8_cal_amp_same and dds8_cal_phase_same
+    if (dds5_smooth_same and dds7_same) and not dds8_cal_same:
+        print("ERROR: Final screen cals different, but smooth and slow are the same. Problem in merge step!")
+
+    print("Comparing final screen on non-calibrators. Should be different.")
     try:
-        assert_same(compare_datapacks(dds8_h5parms, 'screen_slow000', 'phase000', select=dict(pol=0, dir=slice(45, None, 1))))
+        dds8_ncal_phase_diff = assert_different(compare_datapacks(dds8_h5parms, 'screen_slow000', 'phase000', select=dict(pol=0, dir=slice(45, None, 1))))
     except FileNotFoundError:
         print("Did not find dds8")
     try:
-        assert_same(compare_datapacks(dds8_h5parms, 'screen_slow000', 'amplitude000', select=dict(pol=0, dir=slice(45, None, 1))))
+        dds8_ncal_amp_diff = assert_different(compare_datapacks(dds8_h5parms, 'screen_slow000', 'amplitude000', select=dict(pol=0, dir=slice(45, None, 1))))
     except FileNotFoundError:
         print("Did not find dds8")
+    dds8_ncal_diff = dds8_ncal_amp_diff and dds8_ncal_phase_diff
+
+    if not dds8_ncal_diff:
+        print("ERROR: Final screen non-calibrators are the same, which implies a file mixup, or accidental invokation with identical parameters!")
 
 
 def add_args(parser):
