@@ -109,10 +109,10 @@ def main(data_dir, working_dir, obs_num):
     phase_smooth_slow = phase_slow[..., time_map] + phase_smoothed
     amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
 
-    phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...] + const_cals[:, dir_map, ..., None, :]#Don't add slow to screen
+    phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...]#Slow fix all systematics
     phase_screen_slow[:, :Ncal, ...] = phase_smooth_slow
     # Amplitudes are fit with rbf during deploy, so we can keep those or replace with NN here
-    amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...] #amplitude_smoothed[:, dir_map, ...] #amplitude_screen # * amplitude_smooth_slow[:, dir_map, ...]
+    amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...] #
 
     datapack = DataPack(merged_h5parm)
     datapack.current_solset = 'screen_slow000'

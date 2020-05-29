@@ -200,6 +200,7 @@ def smoothamps(amps):
 def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference, const_smooth_window):
     os.chdir(working_dir)
     logging.info("Performing TEC and constant variational inference.")
+    logging.info("Tec will be kept and the constant will be thrown out. The slow resolve will take care of the systematic term.")
     dds4_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
 
     dds5_h5parm = os.path.join(working_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
@@ -208,7 +209,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference, const
     logging.info("Looking for {}".format(dds4_h5parm))
     select = dict(pol=slice(0, 1, 1))
     dds4_datapack = DataPack(dds4_h5parm, readonly=False)
-    logging.info("Creating smoothed/phase000+amplitude000")
+    logging.info("Creating smoothed000/phase000+amplitude000")
     make_soltab(dds4_datapack, from_solset='sol000', to_solset='smoothed000', from_soltab='phase000',
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack=dds5_h5parm)
     logging.info("Creating directionally_referenced/tec000+const000")
@@ -329,8 +330,8 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference, const
             Omega_array[:, solve_dir:solve_dir + 1, ...] = Omega
             smoothed_phase_array[:, solve_dir:solve_dir + 1, ...] = smoothed_phase
 
-    # phase_smooth_uncert = np.abs(tec_conv[:, None] * tec_uncert_array[..., None, :])
-    phase_model = tec_mean_array[..., None, :]*tec_conv[:, None] + smoothed_phase_array[:, ref_dir:ref_dir+1, ...] + const_array[...,None,:]
+    # phase is ddtec + 3parm smooth[ref dir]
+    phase_model = tec_mean_array[..., None, :]*tec_conv[:, None] + smoothed_phase_array[:, ref_dir:ref_dir+1, ...]# + const_array[...,None,:]
     res_real = amp_raw * np.cos(phase_raw) - amp_smooth*np.cos(phase_model)
     res_imag = amp_raw * np.sin(phase_raw) - amp_smooth*np.sin(phase_model)
 
@@ -338,7 +339,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, ncpu, walking_reference, const
     dds5_datapack = DataPack(dds5_h5parm)
     dds5_datapack.current_solset = 'smoothed000'
     dds5_datapack.select(**select)
-    dds5_datapack.phase = smoothed_phase_array
+    dds5_datapack.phase = phase_model#smoothed_phase_array <-- are 3 param are we want the slow sols to solve systematic
     dds5_datapack.amplitude = amp_smooth
 
     logging.info("Storing TEC and const")
