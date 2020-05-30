@@ -98,7 +98,8 @@ class Deployment(object):
                                                                 seed_directions=seed_directions,
                                                                 fill_in_distance=8., fill_in_flux_limit=0.01)
         self.screen_solset = 'screen_posterior'
-        make_soltab(dds5_datapack,from_solset=phase_solset,
+        make_soltab(dds5_datapack,
+                    from_solset=phase_solset,
                     to_solset=self.screen_solset,
                     from_soltab='phase000',
                     to_soltab=['amplitude000', 'phase000', 'tec000'],
