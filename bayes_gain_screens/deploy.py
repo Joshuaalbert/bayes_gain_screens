@@ -1,8 +1,7 @@
 from .model import AverageModel
 from .datapack import DataPack
-from typing import Union
 from . import logging
-from .misc import get_screen_directions_from_image, maybe_create_posterior_solsets, get_coordinates, make_soltab
+from .misc import get_screen_directions_from_image, get_coordinates, make_soltab
 from .outlier_detection import remove_outliers, Classifier
 from . import TEC_CONV
 from timeit import default_timer
