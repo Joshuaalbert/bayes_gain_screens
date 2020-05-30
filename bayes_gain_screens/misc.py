@@ -102,6 +102,7 @@ def voronoi_finite_polygons_2d(vor, radius):
     return new_regions, np.asarray(new_vertices)
 
 def rolling_window(a, window,padding='same'):
+    #
     if padding.lower() == 'same':
         pad_start = np.zeros(len(a.shape), dtype=np.int32)
         pad_start[-1] = window//2
@@ -371,7 +372,8 @@ def laplace_gaussian_marginalisation(L, y, order = 10):
     poly_coeffs_2 = np.array([ -c if i%2 == 1 else c for i,c in enumerate(poly_coeffs_1)], float_type)
     #TODO: finish the function
 
-def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000', select=None, directions=None, patch_names=None, remake_solset=False, to_datapack:str=None):
+def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', from_soltab='phase000', to_soltab='tec000',
+                select=None, directions=None, patch_names=None, remake_solset=False, to_datapack:str=None):
     if not isinstance(to_soltab, (list, tuple)):
         to_soltab = [to_soltab]
     if select is None:
@@ -385,8 +387,13 @@ def make_soltab(datapack:DataPack, from_solset='sol000', to_solset='sol000', fro
         datapack.select(**select)
         axes = getattr(datapack, "axes_{}".format(from_soltab.replace('000', '')))
         antenna_labels, antennas = datapack.get_antennas(axes['ant'])
-        if directions is None or patch_names is None:
-            patch_names, directions = datapack.get_directions(axes['dir'])
+        _patch_names, _directions = datapack.get_directions(axes['dir'])
+        if (directions is None):
+            directions = _directions
+        if (patch_names is None):
+            patch_names = _patch_names
+        if len(patch_names) != len(directions):
+            patch_names = ['Dir{:02d}'.format(d) for d in range(len(directions))]
         timestamps, times = datapack.get_times(axes['time'])
         freq_labels, freqs = datapack.get_freqs(axes['freq'])
         pol_labels, pols = datapack.get_pols(axes['pol'])
