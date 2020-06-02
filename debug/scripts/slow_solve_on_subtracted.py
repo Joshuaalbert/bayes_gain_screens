@@ -71,7 +71,7 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
 
     solsdir = os.path.join(data_dir, 'SOLSDIR')
 
-    for ms in mslist:
+    for i, ms in enumerate(mslist):
         cmd = ['kMS.py',
                '--MSName={ms}'.format(ms=ms),
                '--SolverType=KAFCA',
@@ -98,7 +98,7 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
 
         cmd = ' \\\n\t'.join(cmd)
 
-        with open(os.path.join(working_dir, 'instruct.sh'), 'w') as f:
+        with open(os.path.join(working_dir, 'instruct_{:02d}.sh'.format(i)), 'w') as f:
             f.write(cmd)
         print(cmd)
         cmd_call(cmd)
