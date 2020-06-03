@@ -230,7 +230,7 @@ class TrainingDataGen(object):
             _, Nd, Na, Nt = tec.shape
             directions = np.load(datapack)['directions'].copy()
             # Nd, Na, Nt
-            human_flags = np.load(datapacks)['human_flags'].copy()
+            human_flags = np.load(datapack)['human_flags'].copy()
 
             # Nd, Na, Nt -> Na, Nt, Nd
             mask = (human_flags != -1).astype(np.float32)
