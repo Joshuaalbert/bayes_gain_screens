@@ -239,6 +239,7 @@ class Model(tf.keras.Model):
             print(output)
         # [B, Nt, Nd, 8]
         shape = tf.shape(output)
+        print(output)
         B,Nt,Nd,F = shape[0],shape[1],shape[2],shape[3]
 
         #B*Nt, Nd, 8
