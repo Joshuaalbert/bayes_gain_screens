@@ -238,7 +238,8 @@ class Model(tf.keras.Model):
             saves.append(output)
             print(output)
         # [B, Nt, Nd, 8]
-        B,Nt,Nd,F = output.shape.as_list()
+        shape = tf.shape(output)
+        B,Nt,Nd,F = shape[0],shape[1],shape[2],shape[3]
 
         #B*Nt, Nd, 8
         output = tf.reshape(output, (B*Nt, Nd, F))
