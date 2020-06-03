@@ -212,7 +212,7 @@ class Model(tf.keras.Model):
 
         graph = batched_tensor_to_graph_tuple(output, cal_pos)
 
-        graph_roll = self.graph_network(graph, 1)
+        graph_roll = self.graph_network(graph, 4)
         logits = tf.reshape(graph_roll[-1].nodes, [B,Nt,Nd,1]) + self.class_bias
 
         return logits
@@ -235,7 +235,7 @@ class TrainingDataGen(object):
             # Nd, Na, Nt -> Na, Nt, Nd
             mask = (human_flags != -1).astype(np.float32)
             labels = np.where(mask, human_flags, 0).astype(np.float32)
-            inputs = tec[0,...].transpose((1,2, 0)).reshape((Na, Nt, Nd, 1)).astype(np.float32)
+            inputs = tec[0,...].transpose((1,2, 0)).reshape((Na, Nt, Nd, 1)).astype(np.float32)/55.
 
             directions = np.tile(directions[None, :, :], (self.crop_size, 1, 1))
 
