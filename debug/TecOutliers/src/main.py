@@ -385,7 +385,7 @@ class Trainer(object):
 
             eval_features = tf.placeholder(tf.float32, shape=[None, None, num_cal, 1])
             eval_logits = model(eval_features, cal_pos, training=False)
-            eval_prob = tf.nn.sigmoid(eval_logits, axis=-1)
+            eval_prob = tf.nn.sigmoid(eval_logits)
             eval_class = eval_prob > self.threshold
 
         self.eval_features = eval_features
