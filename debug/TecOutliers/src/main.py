@@ -353,6 +353,9 @@ class Trainer(object):
 
         # self.eval_features = eval_features
         # self.eval_class = eval_class
+        self.preds = tf.nn.sigmoid(logits)
+        self.labels = labels
+        self.mask = mask
         self.lr = lr
         self.opt_op = opt_op
         self.loss = loss
@@ -513,7 +516,7 @@ class Trainer(object):
                         try:
                             global_step, lr, loss, test_conf_mat, summaries, test_global_metrics, probs, labels, mask = sess.run(
                                 [self.global_step, self.lr, self.loss, self.global_conf_mat, self.test_summaries,
-                                 self.global_metrics],
+                                 self.global_metrics, self.preds, self.labels, self.mask],
                                 {self.training_pl: False},
                                 # options=run_options,
                                 # run_metadata=run_metadata
