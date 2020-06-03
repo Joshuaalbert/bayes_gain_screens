@@ -239,12 +239,12 @@ class Model(tf.keras.Model):
             print(output)
         # [B, Nt, Nd, 8]
         shape = tf.shape(output)
-        print(output)
-        B,Nt,Nd,F = shape[0],shape[1],shape[2],shape[3]
+        B,Nt,Nd,_ = shape[0],shape[1],shape[2],shape[3]
+        F = output.shape.as_list()[-1]
 
         #B*Nt, Nd, 8
-        output = tf.reshape(output, (B*Nt, Nd, -1))
-        cal_pos = tf.reshape(cal_pos, (B*Nt, Nd, -1))
+        output = tf.reshape(output, (B*Nt, Nd, F))
+        cal_pos = tf.reshape(cal_pos, (B*Nt, Nd, 2))
         print(output, cal_pos)
 
         graph = batched_tensor_to_graph_tuple(output, cal_pos)
