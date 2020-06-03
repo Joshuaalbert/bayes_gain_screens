@@ -303,7 +303,7 @@ class Trainer(object):
             global_step = tf.Variable(0, trainable=False)
             lr = tf.train.inverse_time_decay(1e-3, global_step, 1000, 0.25)
             optimiser = tf.train.AdamOptimizer(lr)
-            opt_op = optimiser.minimize(loss, var_list=model.all_trainable_variables)
+            opt_op = optimiser.minimize(loss, global_step=global_step, var_list=model.all_trainable_variables)
 
             self.threshold = tf.Variable(0.5, dtype=tf.float32)
             self.threshold_pl = tf.placeholder(tf.float32, [])
@@ -484,12 +484,12 @@ class Trainer(object):
                                 rate = self.processed_per_batch * print_freq / (default_timer() - t0)
                                 t0 = default_timer()
                                 print(
-                                    "Epoch {:02d} Step {:04d} [{:.1f} / second] Train loss {:.5f} Learning rate {:.5f} Avg. Acc. {:.5f}".format(
+                                    "Epoch {:02d} Step {:04d} [{:.1f} / second] Train loss {:.5f} Learning rate {:.5f} Avg. Acc. {:.5f} Avg. FPR {:.5f} Avg. FNR {:.5f}".format(
                                         epoch,
                                         global_step,
                                         rate,
                                         loss,
-                                        lr, train_global_metrics['avg_acc']))
+                                        lr, train_global_metrics['avg_acc'],train_global_metrics['avg_fpr'],train_global_metrics['avg_fnr']))
                                 # print('Saving...')
                                 save_path = saver.save(sess, os.path.join(training_dir, "model"),
                                                        global_step=self.global_step)
