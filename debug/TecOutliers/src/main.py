@@ -4,6 +4,7 @@ from sklearn.metrics import roc_curve
 import os, sys, glob, argparse
 from timeit import default_timer
 from graph_nets.modules import _unsorted_segment_softmax
+from graph_nets.graphs import GraphsTuple
 import sonnet as snt
 from graph_nets import modules, blocks
 from graph_nets import utils_tf
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
-def batched_tensor_to_graph_tuple(tensor, pos):
+def batched_tensor_to_graph_tuple_static(tensor, pos):
     """
     Convert tensor with batch dim to batch of GraphTuples.
     :param tensor: [B, num_nodes,F]
@@ -25,9 +26,41 @@ def batched_tensor_to_graph_tuple(tensor, pos):
     shape = tensor.shape.as_list()
     batch_size, num_nodes, F = shape
     data_dict = {"n_node": num_nodes}
+    graphs_with_nodes = GraphsTuple(utils_tf.repeat())
     graphs_with_nodes = utils_tf.data_dicts_to_graphs_tuple(batch_size * [data_dict])
     graphs_with_nodes = graphs_with_nodes.replace(
         nodes=tf.reshape(tensor, [batch_size*num_nodes, F]))
+
+    graphs_tuple_with_nodes_connectivity = utils_tf.fully_connect_graph_dynamic(
+        graphs_with_nodes, exclude_self_edges=False)
+
+    graphs_with_position = graphs_tuple_with_nodes_connectivity.replace(
+        nodes=tf.reshape(pos, [batch_size*num_nodes, -1]))
+
+    edge_distances = (
+            blocks.broadcast_receiver_nodes_to_edges(graphs_with_position) -
+            blocks.broadcast_sender_nodes_to_edges(graphs_with_position))
+
+    graphs_with_nodes_edges = graphs_tuple_with_nodes_connectivity.replace(edges=edge_distances)
+
+    graphs_with_nodes_edges_globals = utils_tf.set_zero_global_features(
+        graphs_with_nodes_edges, global_size=1)
+
+    return graphs_with_nodes_edges_globals
+
+def batched_tensor_to_graph_tuple(tensor, pos):
+    """
+    Convert tensor with batch dim to batch of GraphTuples.
+    :param tensor: [B, num_nodes,F]
+    :param pos: [B, num_nodes, D]
+    :return: GraphTuple with batch of graphs
+    """
+    shape = tf.shape(tensor)
+    batch_size, num_nodes, F = shape[0], shape[1], shape[2]
+    graphs_with_nodes = GraphsTuple(n_node=tf.fill([batch_size], num_nodes),
+                                    nodes=tf.reshape(tensor, [batch_size*num_nodes, F]),
+                                    edges=None, globals=None,
+                                    receivers=None, senders=None, n_edge=None)
 
     graphs_tuple_with_nodes_connectivity = utils_tf.fully_connect_graph_dynamic(
         graphs_with_nodes, exclude_self_edges=False)
@@ -346,13 +379,13 @@ class Trainer(object):
                                                                      family='test')
                                                     ])
 
-            # eval_features = tf.placeholder(tf.float32, shape=[None, None, None, 1])
-            # eval_logits, _ = model(eval_features, cal_pos, training=False)
-            # eval_prob = tf.nn.sigmoid(eval_logits, axis=-1)
-            # eval_class = eval_prob > self.threshold
+            eval_features = tf.placeholder(tf.float32, shape=[None, None, num_cal, 1])
+            eval_logits, _ = model(eval_features, cal_pos, training=False)
+            eval_prob = tf.nn.sigmoid(eval_logits, axis=-1)
+            eval_class = eval_prob > self.threshold
 
-        # self.eval_features = eval_features
-        # self.eval_class = eval_class
+        self.eval_features = eval_features
+        self.eval_class = eval_class
         self.preds = tf.nn.sigmoid(logits)
         self.labels = labels
         self.mask = mask
@@ -559,8 +592,8 @@ class Trainer(object):
                         print("TEST\t{}:{}".format(k, v))
 
             # save model
-            # print("Exporting model...")
-            # self.export_model(sess, model_dir, version)
+            print("Exporting model...")
+            self.export_model(sess, model_dir, version)
 
 def get_output_bias(datapacks):
     num_pos = 0
