@@ -60,7 +60,7 @@ def batched_tensor_to_graph_tuple(tensor, pos):
     graphs_with_nodes = GraphsTuple(n_node=tf.fill([batch_size], num_nodes),
                                     nodes=tf.reshape(tensor, [batch_size*num_nodes, F]),
                                     edges=None, globals=None,
-                                    receivers=None, senders=None, n_edge=None)
+                                    receivers=None, senders=None, n_edge=tf.fill([batch_size], 0))
 
     graphs_tuple_with_nodes_connectivity = utils_tf.fully_connect_graph_dynamic(
         graphs_with_nodes, exclude_self_edges=False)
