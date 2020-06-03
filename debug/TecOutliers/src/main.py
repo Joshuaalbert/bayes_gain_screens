@@ -1,5 +1,6 @@
 import tensorflow.compat.v1 as tf
 import numpy as np
+from sklearn.metrics import roc_curve
 import os, sys, glob, argparse
 from timeit import default_timer
 from graph_nets.modules import _unsorted_segment_softmax
@@ -307,7 +308,7 @@ class Trainer(object):
 
             self.threshold = tf.Variable(0.5, dtype=tf.float32)
             self.threshold_pl = tf.placeholder(tf.float32, [])
-            self.assign_thresholds = tf.assign(self.threshold, self.threshold_pl)
+            self.assign_threshold = tf.assign(self.threshold, self.threshold_pl)
 
             global_conf_mat = tf.Variable(tf.zeros([2, 2], dtype=tf.float32),
                                           trainable=False)
@@ -505,21 +506,36 @@ class Trainer(object):
                               self.shard_idx: 1})
                     test_loss = 0.
                     batch = 0
+                    test_preds, test_labels, test_masks = [],[],[]
                     # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                     # run_metadata = tf.RunMetadata()
                     while True:
                         try:
-                            global_step, lr, loss, test_conf_mat, summaries, test_global_metrics = sess.run(
+                            global_step, lr, loss, test_conf_mat, summaries, test_global_metrics, probs, labels, mask = sess.run(
                                 [self.global_step, self.lr, self.loss, self.global_conf_mat, self.test_summaries,
                                  self.global_metrics],
                                 {self.training_pl: False},
                                 # options=run_options,
                                 # run_metadata=run_metadata
                             )
+                            test_preds.append(probs)
+                            test_labels.append(labels)
+                            test_masks.append(mask)
                             test_loss = test_loss + loss
                             batch += 1
                         except tf.errors.OutOfRangeError:
                             break
+
+                    test_preds = np.concatenate(test_preds,axis=0)
+                    test_labels = np.concatenate(test_labels,axis=0)
+                    test_masks = np.concatenate(test_masks,axis=0)
+
+                    fpr, tpr, thresholds = roc_curve(test_labels.flatten(), test_preds.flatten(),
+                                                     sample_weight=test_masks.flatten())
+                    which = np.argmax(tpr - fpr)
+                    threshold = thresholds[which]
+                    print("New optimal threshold: {}".format(threshold))
+                    sess.run(self.assign_threshold, {self.threshold_pl : threshold})
 
                     # writer.add_run_metadata(run_metadata, 'step{:03d}'.format(global_step))
                     writer.add_summary(summaries, global_step)
