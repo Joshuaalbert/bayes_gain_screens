@@ -56,7 +56,8 @@ def batched_tensor_to_graph_tuple(tensor, pos):
     :return: GraphTuple with batch of graphs
     """
     shape = tf.shape(tensor)
-    batch_size, num_nodes, F = shape[0], shape[1], shape[2]
+    batch_size, num_nodes, _ = shape[0], shape[1], shape[2]
+    F = tensor.shape[-1]
     graphs_with_nodes = GraphsTuple(n_node=tf.fill([batch_size], num_nodes),
                                     nodes=tf.reshape(tensor, [batch_size*num_nodes, F]),
                                     edges=None, globals=None,
@@ -66,7 +67,7 @@ def batched_tensor_to_graph_tuple(tensor, pos):
         graphs_with_nodes, exclude_self_edges=False)
 
     graphs_with_position = graphs_tuple_with_nodes_connectivity.replace(
-        nodes=tf.reshape(pos, [batch_size*num_nodes, -1]))
+        nodes=tf.reshape(pos, [batch_size*num_nodes, 2]))
 
     edge_distances = (
             blocks.broadcast_receiver_nodes_to_edges(graphs_with_position) -
