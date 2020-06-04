@@ -31,7 +31,14 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         loaded_model = tf.saved_model.load(sess,tags=[tf.saved_model.tag_constants.SERVING],
                                            export_dir=model_path)
         # print(loaded_model.signatures.keys())
-        infer = loaded_model['predict_activity']
+        sig_def = loaded_model.signature_def['predict_activity']
+        inputs = sig_def.inputs
+        outputs = sig_def.outputs
+        probs = tf.get_default_graph().get_tensor_by_name(outputs['probability'])
+        classification = tf.get_default_graph().get_tensor_by_name(outputs['class'])
+        tec = tf.get_default_graph().get_tensor_by_name(inputs['tec'])
+        pos = tf.get_default_graph().get_tensor_by_name(inputs['pos'])
+
 
 
         dp = DataPack(datapack,readonly=False)
@@ -49,9 +56,8 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         for start in range(0, Na, batch_size):
             stop = min(start + batch_size, Na)
             print("Prediction out batch {}".format(slice(start, stop)))
-            output = infer(tec=inputs[start:stop,:,:,:], pos=directions)
-            detection = output['class'].astype(np.bool)#Na,Nt,Nd,1
-            probability = output['probability']#Na,Nt,Nd,1
+            output = sess.run(classification, dict(tec=inputs[start:stop,:,:,:], pos=directions))
+            detection = output.astype(np.bool)#Na,Nt,Nd,1
             outputs.append(detection)
 
     outputs = np.concatenate(outputs, axis=0)
