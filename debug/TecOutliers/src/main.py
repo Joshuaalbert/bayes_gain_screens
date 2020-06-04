@@ -259,11 +259,12 @@ class Model(tf.keras.Model):
     def all_trainable_variables(self):
         return list(self.trainable_variables) + list(self.graph_network.trainable_variables)
 
-    def call(self, tec, cal_pos, training=False):
+    def call(self, tec, cal_pos, ant_onehot, training=False):
         """
 
         :param tec: [B, Nt, Nd, 1]
         :param cal_pos: [B, Nt, Nd, 1]
+        :param ant_onehot: [B, Nt, Na]
         :param training: bool
         :return: logits [B, Nt, Nd, 1]
         """
@@ -286,7 +287,7 @@ class Model(tf.keras.Model):
         cal_pos = tf.reshape(cal_pos, (B*Nt, Nd, 2))
         print(output, cal_pos)
 
-        graph = batched_tensor_to_graph_tuple(output, cal_pos)
+        graph = batched_tensor_to_fully_connected_graph_tuple_dynamic(output, pos=cal_pos, globals=ant_onehot)
 
         graph_roll = self.graph_network(graph, 5)
         logits = tf.reshape(graph_roll[-1].nodes, [B,Nt,Nd,1]) + self.class_bias
@@ -305,6 +306,7 @@ class TrainingDataGen(object):
             tec = np.load(datapack)['tec'].copy()
             _, Nd, Na, Nt = tec.shape
             directions = np.load(datapack)['directions'].copy()
+            ref_directions = directions - directions[0:1,:]
             # Nd, Na, Nt
             human_flags = np.load(datapack)['human_flags'].copy().transpose((1,2, 0)).reshape((Na, Nt, Nd, 1))
 
@@ -313,10 +315,14 @@ class TrainingDataGen(object):
             labels = np.where(mask, human_flags, 0).astype(np.float32)
             inputs = tec[0,...].transpose((1,2, 0)).reshape((Na, Nt, Nd, 1)).astype(np.float32)/55.
 
+            ref_directions = np.tile(ref_directions[None, :, :], (self.crop_size, 1, 1))
             directions = np.tile(directions[None, :, :], (self.crop_size, 1, 1))
+
+            cal_pos = np.concatenate([directions, ref_directions], axis=-1)
 
             # buffer
             for b in range(Na):
+                ant_onehot = np.tile((np.arange(Na) == b)[None, :], [self.crop_size, 1]).astype(np.float32)
                 for start in range(0, Nt, self.crop_size):
                     stop = start + self.crop_size
                     if stop > Nt:
@@ -324,7 +330,7 @@ class TrainingDataGen(object):
                         start = stop - self.crop_size
                     if np.sum(mask[b, start:stop, :, :]) == 0:
                         continue
-                    yield (inputs[b, start:stop, :, :], labels[b, start:stop, :, :], mask[b, start:stop, :, :], directions)
+                    yield (inputs[b, start:stop, :, :], labels[b, start:stop, :, :], mask[b, start:stop, :, :], cal_pos, ant_onehot)
 
         return
 
@@ -332,7 +338,7 @@ class Trainer(object):
     # _module = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
     # flagging_models = os.path.join(_module, 'flagging_models')
 
-    def __init__(self, num_cal=45, batch_size=16, graph=None, output_bias=0., pos_weight=1., crop_size=60):
+    def __init__(self, num_cal=45, num_ant=62, batch_size=16, graph=None, output_bias=0., pos_weight=1., crop_size=60):
         if graph is None:
             graph = tf.Graph()
         self.graph = graph
@@ -350,11 +356,12 @@ class Trainer(object):
             dataset = dataset.interleave(lambda datapacks:
                                          tf.data.Dataset.from_generator(
                                              TrainingDataGen(self.crop_size),
-                                             output_types=(tf.float32, tf.float32, tf.float32, tf.float32),
+                                             output_types=(tf.float32, tf.float32, tf.float32, tf.float32, tf.float32),
                                              output_shapes=(tf.TensorShape((self.crop_size, num_cal, 1)),
                                                             tf.TensorShape((self.crop_size, num_cal,  1)),
                                                             tf.TensorShape((self.crop_size, num_cal,  1)),
-                                                            tf.TensorShape([self.crop_size, num_cal, 2])),
+                                                            tf.TensorShape([self.crop_size, num_cal, 4]),
+                                                            tf.TensorShape([self.crop_size, num_ant])),
                                              args=(datapacks,)),
                                          cycle_length=1,
                                          block_length=1
@@ -364,12 +371,12 @@ class Trainer(object):
 
             iterator_tensor = dataset.make_initializable_iterator()
             self.init = iterator_tensor.initializer
-            inputs, labels, mask, cal_pos = iterator_tensor.get_next()
+            inputs, labels, mask, cal_pos, ant_onehot = iterator_tensor.get_next()
 
             model = Model(class_bias=output_bias, rate=0.1)
 
 
-            logits = model(inputs, cal_pos, training=self.training_pl)
+            logits = model(inputs, cal_pos, ant_onehot, training=self.training_pl)
 
             loss = tf.nn.weighted_cross_entropy_with_logits(labels=labels,
                                                             logits=logits,
@@ -422,14 +429,18 @@ class Trainer(object):
                                                     ])
 
             eval_features_pl = tf.placeholder(tf.float32, shape=[None, None, None, 1])
-            eval_cal_pos_pl = tf.placeholder(tf.float32, shape=[None, 2])
+            eval_cal_pos_pl = tf.placeholder(tf.float32, shape=[None, 4])
             eval_cal_pos = tf.broadcast_to(eval_cal_pos_pl, tf.broadcast_dynamic_shape(tf.shape(eval_cal_pos_pl),tf.shape(eval_features_pl)))
-            eval_logits = model(eval_features_pl, eval_cal_pos, training=False)
+            eval_ant_onehot_pl = tf.placeholder(tf.float32, shape=[None, num_ant])
+            eval_ant_onehot = tf.broadcast_to(eval_ant_onehot_pl, tf.broadcast_dynamic_shape(tf.shape(eval_ant_onehot_pl),
+                                                                                       tf.shape(eval_features_pl[:,:,0,:])))
+            eval_logits = model(eval_features_pl, eval_cal_pos, eval_ant_onehot, training=False)
             eval_prob = tf.nn.sigmoid(eval_logits)
             eval_class = eval_prob > self.threshold
 
         self.eval_features = eval_features_pl
         self.eval_cal_pos = eval_cal_pos_pl
+        self.eval_ant_onehot = eval_ant_onehot_pl
         self.eval_prob = eval_prob
         self.eval_class = eval_class
         self.preds = tf.nn.sigmoid(logits)
@@ -506,12 +517,15 @@ class Trainer(object):
             # the inputs and outputs
             tensor_info_input = tf.saved_model.utils.build_tensor_info(self.eval_features)
             tensor_info_input_pos = tf.saved_model.utils.build_tensor_info(self.eval_cal_pos)
+            tensor_info_input_ant_onehot = tf.saved_model.utils.build_tensor_info(self.eval_ant_onehot)
             tensor_info_output_class = tf.saved_model.utils.build_tensor_info(self.eval_class)
             tensor_info_output_prob = tf.saved_model.utils.build_tensor_info(self.eval_prob)
             # signature made using util
             prediction_signature = tf.saved_model.signature_def_utils.build_signature_def(
                 inputs={'tec': tensor_info_input,
-                        'pos':tensor_info_input_pos},
+                        'pos':tensor_info_input_pos,
+                        'ant_onehot':tensor_info_input_ant_onehot
+                        },
                 outputs={'probability': tensor_info_output_prob,
                          'class':tensor_info_output_class
                          },
