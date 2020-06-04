@@ -263,7 +263,7 @@ class Model(tf.keras.Model):
         """
 
         :param tec: [B, Nt, Nd, 1]
-        :param cal_pos: [B, Nt, Nd, 1]
+        :param cal_pos: [B, Nt, Nd, D]
         :param ant_onehot: [B, Nt, Na]
         :param training: bool
         :return: logits [B, Nt, Nd, 1]
@@ -284,7 +284,8 @@ class Model(tf.keras.Model):
 
         #B*Nt, Nd, 8
         output = tf.reshape(output, (B*Nt, Nd, F))
-        cal_pos = tf.reshape(cal_pos, (B*Nt, Nd, 2))
+        D = cal_pos.shape.as_list()[-1]
+        cal_pos = tf.reshape(cal_pos, (B*Nt, Nd, D))
         print(output, cal_pos)
 
         graph = batched_tensor_to_fully_connected_graph_tuple_dynamic(output, pos=cal_pos, globals=ant_onehot)
