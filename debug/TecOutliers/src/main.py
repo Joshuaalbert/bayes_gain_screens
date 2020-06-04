@@ -303,13 +303,13 @@ class Trainer(object):
         self.processed_per_batch = batch_size
         with self.graph.as_default():
             self.datapacks_pl = tf.placeholder(tf.string, shape=[None], name='datapacks')
-            self.shard_idx = tf.placeholder(tf.int64, shape=[])
+            # self.shard_idx = tf.placeholder(tf.int64, shape=[])
             self.training_pl = tf.placeholder(tf.bool, shape=[])
 
             ###
             # train/test inputs
 
-            dataset = tf.data.Dataset.from_tensor_slices((self.datapacks_pl,)).shard(2, self.shard_idx)
+            dataset = tf.data.Dataset.from_tensors((self.datapacks_pl,))#.shard(2, self.shard_idx)
             dataset = dataset.interleave(lambda datapacks:
                                          tf.data.Dataset.from_generator(
                                              TrainingDataGen(self.crop_size),
@@ -503,8 +503,9 @@ class Trainer(object):
                     sess.run([self.init,  # reset data feed
                               self.reset_metric],  # reset global conf matrix
                              {
-                              self.datapacks_pl:datapacks,
-                              self.shard_idx:0})
+                              self.datapacks_pl:datapacks[::2],
+                              # self.shard_idx:0
+                             })
                     train_loss = 0.
                     batch = 0
                     # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
@@ -543,8 +544,9 @@ class Trainer(object):
                     sess.run([self.init,  # reset data feed
                               self.reset_metric],  # reset global conf matrix
                              {
-                              self.datapacks_pl: datapacks,
-                              self.shard_idx: 1})
+                              self.datapacks_pl: datapacks[1::2],
+                              # self.shard_idx: 1
+                             })
                     test_loss = 0.
                     batch = 0
                     test_preds, test_labels, test_masks = [],[],[]
