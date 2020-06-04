@@ -435,6 +435,7 @@ class Trainer(object):
             eval_ant_onehot_pl = tf.placeholder(tf.float32, shape=[None, num_ant])
             eval_ant_onehot = tf.broadcast_to(eval_ant_onehot_pl, tf.broadcast_dynamic_shape(tf.shape(eval_ant_onehot_pl),
                                                                                        tf.shape(eval_features_pl[:,:,0,:])))
+            print(eval_features_pl, eval_cal_pos, eval_ant_onehot)
             eval_logits = model(eval_features_pl, eval_cal_pos, eval_ant_onehot, training=False)
             eval_prob = tf.nn.sigmoid(eval_logits)
             eval_class = eval_prob > self.threshold
