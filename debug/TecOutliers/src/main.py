@@ -162,7 +162,8 @@ class EncodeProcessDecode(snt.AbstractModule):
         output_ops = []
         for _ in range(num_processing_steps):
             core_input = utils_tf.concat([latent0, latent], axis=1)
-            latent = self._core(core_input) + latent#residual
+            _latent = self._core(core_input)#residual
+            latent = _latent.replace(nodes=_latent.nodes + latent.nodes)
             decoded_op = self._decoder(latent)
             output_ops.append(self._output_transform(decoded_op))
         return output_ops
