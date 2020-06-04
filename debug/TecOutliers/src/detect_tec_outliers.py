@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
-def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_dir,ncpu):
+
+def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_dir, ncpu):
     """
     This will take the examples in the examples dir and split into train and test sets.
     Train a classifier.
@@ -26,9 +27,9 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
     """
     model_dir = os.path.abspath(os.path.expanduser(model_dir))
     datapack = os.path.abspath(os.path.expanduser(datapack))
-    model_path = os.path.join(model_dir,str(version))
+    model_path = os.path.join(model_dir, str(version))
     with tf.Session(graph=tf.Graph()) as sess:
-        loaded_model = tf.saved_model.load(sess,tags=[tf.saved_model.tag_constants.SERVING],
+        loaded_model = tf.saved_model.load(sess, tags=[tf.saved_model.tag_constants.SERVING],
                                            export_dir=model_path)
         # print(loaded_model.signatures.keys())
         sig_def = loaded_model.signature_def['predict_activity']
@@ -38,17 +39,19 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         classification = tf.get_default_graph().get_tensor_by_name(outputs['class'].name)
         tec_pl = tf.get_default_graph().get_tensor_by_name(inputs['tec'].name)
         pos_pl = tf.get_default_graph().get_tensor_by_name(inputs['pos'].name)
+        ant_pos_pl = tf.get_default_graph().get_tensor_by_name(inputs['ant_pos'].name)
 
-
-
-        dp = DataPack(datapack,readonly=False)
+        dp = DataPack(datapack, readonly=False)
         dp.current_solset = solset
         dp.select(pol=0)
-        tec, axes= dp.tec
+        tec, axes = dp.tec
         Npol, Nd, Na, Nt = tec.shape
         _, directions = dp.get_directions(axes['dir'])
-        directions = np.stack([directions.ra.deg, directions.dec.deg],axis=1)
-        inputs = tec[0,...].transpose((1,2,0)).reshape((Na,Nt,Nd,1))/55.
+        directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+        _, antennas = dp.get_antennas(axes['ant'])
+        antennas = antennas.cartesian.xyz.T.value / 1000.
+        ref_dist = antennas - antennas[0:1, :]
+        inputs = tec[0, ...].transpose((1, 2, 0)).reshape((Na, Nt, Nd, 1)) / 55.
 
         outputs = []
         if batch_size is None:
@@ -56,8 +59,10 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         for start in range(0, Na, batch_size):
             stop = min(start + batch_size, Na)
             print("Prediction out batch {}".format(slice(start, stop)))
-            output = sess.run(classification, {tec_pl:inputs[start:stop,:,:,:], pos_pl:directions})
-            detection = output.astype(np.bool)#Na,Nt,Nd,1
+            output = sess.run(classification, {tec_pl: inputs[start:stop, :, :, :],
+                                               pos_pl: directions,
+                                               ant_pos_pl: ref_dist[start:stop, :]})
+            detection = output.astype(np.bool)  # Na,Nt,Nd,1
             outputs.append(detection)
 
     outputs = np.concatenate(outputs, axis=0)
@@ -85,17 +90,21 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
                          phase_wrap=False,
                          overlay_solset=solset)
 
+
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.add_argument('--batch_size', help='Number of epochs to train for', default=None, type=int, required=False)
     parser.add_argument('--model_dir', help='Model save directory.', default='models', type=str, required=False)
     parser.add_argument('--plot_outliers', help='Whether to plot outliers.', default=True, type="bool", required=False)
-    parser.add_argument('--plot_dir', help='Where to plot outliers.', default='./outliers_plot', type=str, required=False)
+    parser.add_argument('--plot_dir', help='Where to plot outliers.', default='./outliers_plot', type=str,
+                        required=False)
     parser.add_argument('--ncpu', help='num cpu to plot with.', default=None, type=int, required=False)
     parser.add_argument('--datapack', help='H5parm to apply to.', default='training', type=str,
                         required=False)
     parser.add_argument('--version', help='Version of model to save as.', default=1, type=int, required=False)
-    parser.add_argument('--solset', help='Which solset to get tec from.', default='directionally_referenced', type=str, required=False)
+    parser.add_argument('--solset', help='Which solset to get tec from.', default='directionally_referenced', type=str,
+                        required=False)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
