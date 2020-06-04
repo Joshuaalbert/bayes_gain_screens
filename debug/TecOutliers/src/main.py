@@ -286,7 +286,9 @@ class Model(tf.keras.Model):
         output = tf.reshape(output, (B*Nt, Nd, F))
         D = cal_pos.shape.as_list()[-1]
         cal_pos = tf.reshape(cal_pos, (B*Nt, Nd, D))
-        print(output, cal_pos)
+        G = ant_onehot.shape.as_list()[-1]
+        ant_onehot = tf.reshape(ant_onehot, (B * Nt, G))
+        print(output, cal_pos, ant_onehot)
 
         graph = batched_tensor_to_fully_connected_graph_tuple_dynamic(output, pos=cal_pos, globals=ant_onehot)
 
