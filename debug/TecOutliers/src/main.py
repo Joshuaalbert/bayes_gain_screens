@@ -421,12 +421,16 @@ class Trainer(object):
                                                                      family='test')
                                                     ])
 
-            eval_features = tf.placeholder(tf.float32, shape=[None, None, num_cal, 1])
-            eval_logits = model(eval_features, cal_pos, training=False)
+            eval_features_pl = tf.placeholder(tf.float32, shape=[None, None, None, 1])
+            eval_cal_pos_pl = tf.placeholder(tf.float32, shape=[None, 2])
+            eval_cal_pos = tf.broadcast_to(eval_cal_pos_pl, tf.shape(eval_features_pl))
+            eval_logits = model(eval_features_pl, eval_cal_pos, training=False)
             eval_prob = tf.nn.sigmoid(eval_logits)
             eval_class = eval_prob > self.threshold
 
-        self.eval_features = eval_features
+        self.eval_features = eval_features_pl
+        self.eval_cal_pos = eval_cal_pos_pl
+        self.eval_prob = eval_prob
         self.eval_class = eval_class
         self.preds = tf.nn.sigmoid(logits)
         self.labels = labels
@@ -501,11 +505,16 @@ class Trainer(object):
             builder = tf.saved_model.builder.SavedModelBuilder(export_path)
             # the inputs and outputs
             tensor_info_input = tf.saved_model.utils.build_tensor_info(self.eval_features)
-            tensor_info_output = tf.saved_model.utils.build_tensor_info(self.eval_class)
+            tensor_info_input_pos = tf.saved_model.utils.build_tensor_info(self.eval_cal_pos)
+            tensor_info_output_class = tf.saved_model.utils.build_tensor_info(self.eval_class)
+            tensor_info_output_prob = tf.saved_model.utils.build_tensor_info(self.eval_prob)
             # signature made using util
             prediction_signature = tf.saved_model.signature_def_utils.build_signature_def(
-                inputs={'features': tensor_info_input},
-                outputs={'probability': tensor_info_output},
+                inputs={'tec': tensor_info_input,
+                        'pos':tensor_info_input_pos},
+                outputs={'probability': tensor_info_output_prob,
+                         'class':tensor_info_output_class
+                         },
                 method_name=tf.saved_model.signature_constants
                     .PREDICT_METHOD_NAME)
             # adds just the required ops to evaluate
