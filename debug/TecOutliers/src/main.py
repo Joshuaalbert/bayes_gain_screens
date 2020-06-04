@@ -309,7 +309,7 @@ class Trainer(object):
             ###
             # train/test inputs
 
-            dataset = tf.data.Dataset.from_tensors((self.datapacks_pl,)).shard(2, self.shard_idx)
+            dataset = tf.data.Dataset.from_tensor_slices((self.datapacks_pl,)).shard(2, self.shard_idx)
             dataset = dataset.interleave(lambda datapacks:
                                          tf.data.Dataset.from_generator(
                                              TrainingDataGen(self.crop_size),
