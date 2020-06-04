@@ -30,7 +30,7 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
     with tf.Session(graph=tf.Graph()) as sess:
         loaded_model = tf.saved_model.load(sess,tags=[tf.saved_model.tag_constants.SERVING],
                                            export_dir=model_path)
-        print(loaded_model.signatures.keys())
+        # print(loaded_model.signatures.keys())
         infer = loaded_model['predict_activity']
 
 
