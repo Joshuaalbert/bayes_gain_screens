@@ -56,7 +56,7 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         for start in range(0, Na, batch_size):
             stop = min(start + batch_size, Na)
             print("Prediction out batch {}".format(slice(start, stop)))
-            output = sess.run(classification, dict(tec=inputs[start:stop,:,:,:], pos=directions))
+            output = sess.run(classification, {tec:inputs[start:stop,:,:,:], pos:directions})
             detection = output.astype(np.bool)#Na,Nt,Nd,1
             outputs.append(detection)
 
