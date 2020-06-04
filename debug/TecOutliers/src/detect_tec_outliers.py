@@ -36,8 +36,8 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         outputs = sig_def.outputs
         probs = tf.get_default_graph().get_tensor_by_name(outputs['probability'].name)
         classification = tf.get_default_graph().get_tensor_by_name(outputs['class'].name)
-        tec = tf.get_default_graph().get_tensor_by_name(inputs['tec'].name)
-        pos = tf.get_default_graph().get_tensor_by_name(inputs['pos'].name)
+        tec_pl = tf.get_default_graph().get_tensor_by_name(inputs['tec'].name)
+        pos_pl = tf.get_default_graph().get_tensor_by_name(inputs['pos'].name)
 
 
 
@@ -56,7 +56,7 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         for start in range(0, Na, batch_size):
             stop = min(start + batch_size, Na)
             print("Prediction out batch {}".format(slice(start, stop)))
-            output = sess.run(classification, {tec:inputs[start:stop,:,:,:], pos:directions})
+            output = sess.run(classification, {tec_pl:inputs[start:stop,:,:,:], pos_pl:directions})
             detection = output.astype(np.bool)#Na,Nt,Nd,1
             outputs.append(detection)
 
