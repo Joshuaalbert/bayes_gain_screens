@@ -48,6 +48,8 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         Npol, Nd, Na, Nt = tec.shape
         _, directions = dp.get_directions(axes['dir'])
         directions = np.stack([directions.ra.deg, directions.dec.deg], axis=1)
+        ref_directions = directions - directions[0:1, :]
+        directions = np.concatenate([directions, ref_directions], axis=-1)
         _, antennas = dp.get_antennas(axes['ant'])
         antennas = antennas.cartesian.xyz.T.value / 1000.
         ref_dist = antennas - antennas[0:1, :]
