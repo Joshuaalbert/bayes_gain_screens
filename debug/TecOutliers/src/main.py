@@ -17,6 +17,43 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
+def batched_tensor_to_fully_connected_graph_tuple_dynamic(nodes_tensor, pos=None, globals=None):
+    """
+    Convert tensor with batch dim to batch of GraphTuples.
+    :param nodes_tensor: [B, num_nodes, F] Tensor to turn into nodes. F must be statically known.
+    :param pos: [B, num_nodes, D] Tensor to calculate edge distance. D must be statically known.
+    :param globals: [B, G] Tensor to use as global. G must be statically known.
+    :return: GraphTuple with batch of fully connected graphs
+    """
+    shape = tf.shape(nodes_tensor)
+    batch_size, num_nodes = shape[0], shape[1]
+    F = nodes_tensor.shape.as_list()[-1]
+    graphs_with_nodes = GraphsTuple(n_node=tf.fill([batch_size], num_nodes),
+                                    n_edge=tf.fill([batch_size], 0),
+                                    nodes=tf.reshape(nodes_tensor, [batch_size * num_nodes, F]),
+                                    edges=None, globals=None, receivers=None, senders=None)
+    graphs_tuple_with_nodes_connectivity = utils_tf.fully_connect_graph_dynamic(
+        graphs_with_nodes, exclude_self_edges=False)
+
+    if pos is not None:
+        D = pos.shape.as_list()[-1]
+        graphs_with_position = graphs_tuple_with_nodes_connectivity.replace(
+            nodes=tf.reshape(pos, [batch_size*num_nodes, D]))
+        edge_distances = (
+                blocks.broadcast_receiver_nodes_to_edges(graphs_with_position) -
+                blocks.broadcast_sender_nodes_to_edges(graphs_with_position))
+        graphs_with_nodes_edges = graphs_tuple_with_nodes_connectivity.replace(edges=edge_distances)
+    else:
+        graphs_with_nodes_edges = utils_tf.set_zero_edge_features(graphs_tuple_with_nodes_connectivity, 1, dtype=nodes_tensor.dtype)
+
+    if globals is not None:
+        graphs_with_nodes_edges_globals = graphs_with_nodes_edges.replace(globals=globals)
+    else:
+        graphs_with_nodes_edges_globals = utils_tf.set_zero_global_features(
+            graphs_with_nodes_edges, global_size=1)
+
+    return graphs_with_nodes_edges_globals
+
 def batched_tensor_to_graph_tuple_static(tensor, pos):
     """
     Convert tensor with batch dim to batch of GraphTuples.
@@ -251,7 +288,7 @@ class Model(tf.keras.Model):
 
         graph = batched_tensor_to_graph_tuple(output, cal_pos)
 
-        graph_roll = self.graph_network(graph, 4)
+        graph_roll = self.graph_network(graph, 5)
         logits = tf.reshape(graph_roll[-1].nodes, [B,Nt,Nd,1]) + self.class_bias
 
         return logits
