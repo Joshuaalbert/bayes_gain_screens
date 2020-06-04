@@ -636,7 +636,7 @@ def main(data_dir, epochs, batch_size, crop_size, model_dir, training_dir, versi
 
     """
     data_dir = os.path.abspath(data_dir)
-    datapacks = glob.glob(os.path.join(data_dir,'*.joint.npz'))
+    datapacks = sorted(glob.glob(os.path.join(data_dir,'*.joint.npz')))
     # log
     output_bias, pos_weight = get_output_bias(datapacks)
 
