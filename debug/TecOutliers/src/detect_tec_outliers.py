@@ -34,10 +34,10 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
         sig_def = loaded_model.signature_def['predict_activity']
         inputs = sig_def.inputs
         outputs = sig_def.outputs
-        probs = tf.get_default_graph().get_tensor_by_name(outputs['probability'])
-        classification = tf.get_default_graph().get_tensor_by_name(outputs['class'])
-        tec = tf.get_default_graph().get_tensor_by_name(inputs['tec'])
-        pos = tf.get_default_graph().get_tensor_by_name(inputs['pos'])
+        probs = tf.get_default_graph().get_tensor_by_name(outputs['probability'].name)
+        classification = tf.get_default_graph().get_tensor_by_name(outputs['class'].name)
+        tec = tf.get_default_graph().get_tensor_by_name(inputs['tec'].name)
+        pos = tf.get_default_graph().get_tensor_by_name(inputs['pos'].name)
 
 
 
