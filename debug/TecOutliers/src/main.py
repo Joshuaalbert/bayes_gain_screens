@@ -100,9 +100,9 @@ class MLPGraphNetwork(snt.AbstractModule):
     def __init__(self, layer_sizes, name="MLPGraphNetwork"):
         super(MLPGraphNetwork, self).__init__(name=name)
         with self._enter_variable_scope():
-            self._network = modules.GraphNetwork(make_mlp_model(layer_sizes, residual=True),
-                                                 make_mlp_model(layer_sizes, residual=True),
-                                                 make_mlp_model(layer_sizes, residual=True))
+            self._network = modules.GraphNetwork(make_mlp_model(layer_sizes),
+                                                 make_mlp_model(layer_sizes),
+                                                 make_mlp_model(layer_sizes))
 
     def _build(self, inputs):
         return self._network(inputs)
