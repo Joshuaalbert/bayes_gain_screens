@@ -423,7 +423,7 @@ class Trainer(object):
 
             eval_features_pl = tf.placeholder(tf.float32, shape=[None, None, None, 1])
             eval_cal_pos_pl = tf.placeholder(tf.float32, shape=[None, 2])
-            eval_cal_pos = tf.broadcast_to(eval_cal_pos_pl, tf.shape(eval_features_pl))
+            eval_cal_pos = tf.broadcast_to(eval_cal_pos_pl, tf.broadcast_dynamic_shape(tf.shape(eval_cal_pos_pl),tf.shape(eval_features_pl)))
             eval_logits = model(eval_features_pl, eval_cal_pos, training=False)
             eval_prob = tf.nn.sigmoid(eval_logits)
             eval_class = eval_prob > self.threshold
