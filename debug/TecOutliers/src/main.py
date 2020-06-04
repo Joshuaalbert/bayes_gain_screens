@@ -1,6 +1,7 @@
 import tensorflow.compat.v1 as tf
 import numpy as np
 from sklearn.metrics import roc_curve
+import pylab as plt
 import os, sys, glob, argparse
 from timeit import default_timer
 from graph_nets.modules import _unsorted_segment_softmax
@@ -574,6 +575,17 @@ class Trainer(object):
                                                      sample_weight=test_masks.flatten())
                     which = np.argmax(tpr - fpr)
                     threshold = thresholds[which]
+
+                    plt.plot(fpr, tpr,c='black')
+                    plt.scatter(fpr[which],tpr[which],c='red', label='opt')
+                    for t in np.arange(1,10)/10.:
+                        _which = np.argmin(np.abs(thresholds - t))
+                        plt.scatter(fpr[_which], tpr[_which], label='{:.1f}'.format(t))
+                    plt.legend()
+                    plt.savefig("./thresholds.png")
+                    plt.close('all')
+
+
                     print("New optimal threshold: {}".format(threshold))
                     sess.run(self.assign_threshold, {self.threshold_pl : threshold})
 
