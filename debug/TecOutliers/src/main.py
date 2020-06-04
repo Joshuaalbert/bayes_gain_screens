@@ -309,7 +309,7 @@ class Trainer(object):
             ###
             # train/test inputs
 
-            dataset = tf.data.Dataset.from_tensors((self.datapacks_pl,))
+            dataset = tf.data.Dataset.from_tensors((self.datapacks_pl,)).shard(2, self.shard_idx)
             dataset = dataset.interleave(lambda datapacks:
                                          tf.data.Dataset.from_generator(
                                              TrainingDataGen(self.crop_size),
@@ -322,7 +322,7 @@ class Trainer(object):
                                          cycle_length=1,
                                          block_length=1
                                          )
-            dataset = dataset.shard(2, self.shard_idx).shuffle(1000)
+            dataset = dataset.shuffle(1000)
             dataset = dataset.batch(batch_size=batch_size, drop_remainder=True)
 
             iterator_tensor = dataset.make_initializable_iterator()
