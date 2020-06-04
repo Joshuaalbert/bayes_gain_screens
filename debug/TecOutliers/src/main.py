@@ -329,7 +329,7 @@ class TrainingDataGen(object):
 
             cal_pos = np.concatenate([directions, ref_directions], axis=-1)
 
-            ref_dist = np.tile(ref_directions[:, None, :], [1, self.crop_size, 1])  # Na,cropsize, 3
+            ref_dist = np.tile(ref_dist[:, None, :], [1, self.crop_size, 1])  # Na,cropsize, 3
 
             # buffer
             for b in range(Na):
