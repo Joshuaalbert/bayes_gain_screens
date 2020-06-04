@@ -27,31 +27,32 @@ def main(datapack, model_dir, version, solset, plot_outliers, batch_size, plot_d
     model_dir = os.path.abspath(os.path.expanduser(model_dir))
     datapack = os.path.abspath(os.path.expanduser(datapack))
     model_path = os.path.join(model_dir,str(version))
+    with tf.Session(graph=tf.Graph()) as sess:
+        loaded_model = tf.saved_model.load(sess,tags=[tf.saved_model.tag_constants.SERVING],
+                                           export_dir=model_path)
+        print(loaded_model.signatures.keys())
+        infer = loaded_model['predict_activity']
 
-    loaded_model = tf.saved_model.load(model_path)
-    print(loaded_model.signatures.keys())
-    infer = loaded_model['predict_activity']
 
+        dp = DataPack(datapack,readonly=False)
+        dp.current_solset = solset
+        dp.select(pol=0)
+        tec, axes= dp.tec
+        Npol, Nd, Na, Nt = tec.shape
+        _, directions = dp.get_directions(axes['dir'])
+        directions = np.stack([directions.ra.deg, directions.dec.deg],axis=1)
+        inputs = tec[0,...].transpose((1,2,0)).reshape((Na,Nt,Nd,1))/55.
 
-    dp = DataPack(datapack,readonly=False)
-    dp.current_solset = solset
-    dp.select(pol=0)
-    tec, axes= dp.tec
-    Npol, Nd, Na, Nt = tec.shape
-    _, directions = dp.get_directions(axes['dir'])
-    directions = np.stack([directions.ra.deg, directions.dec.deg],axis=1)
-    inputs = tec[0,...].transpose((1,2,0)).reshape((Na,Nt,Nd,1))/55.
-
-    outputs = []
-    if batch_size is None:
-        batch_size = Na
-    for start in range(0, Na, batch_size):
-        stop = min(start + batch_size, Na)
-        print("Prediction out batch {}".format(slice(start, stop)))
-        output = infer(tec=inputs[start:stop,:,:,:], pos=directions)
-        detection = output['class'].astype(np.bool)#Na,Nt,Nd,1
-        probability = output['probability']#Na,Nt,Nd,1
-        outputs.append(detection)
+        outputs = []
+        if batch_size is None:
+            batch_size = Na
+        for start in range(0, Na, batch_size):
+            stop = min(start + batch_size, Na)
+            print("Prediction out batch {}".format(slice(start, stop)))
+            output = infer(tec=inputs[start:stop,:,:,:], pos=directions)
+            detection = output['class'].astype(np.bool)#Na,Nt,Nd,1
+            probability = output['probability']#Na,Nt,Nd,1
+            outputs.append(detection)
 
     outputs = np.concatenate(outputs, axis=0)
     detection = outputs.transpose((3, 2, 0, 1))  # 1,Nd,Na,Nt
