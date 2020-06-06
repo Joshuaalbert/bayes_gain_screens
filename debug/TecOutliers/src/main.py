@@ -679,7 +679,7 @@ def make_fake_data(test_dir):
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.add_argument('--epochs', help='Number of epochs to train for', default=20, type=int, required=False)
-    parser.add_argument('--batch_size', help='Number of epochs to train for', default=16, type=int, required=False)
+    parser.add_argument('--batch_size', help='Number of epochs to train for', default=1, type=int, required=False)
     parser.add_argument('--crop_size', help='length of tec series to train on at a time', default=50, type=int,
                         required=False)
     parser.add_argument('--model_dir', help='Model save directory.', default='models', type=str, required=False)
@@ -689,13 +689,17 @@ def add_args(parser):
     parser.add_argument('--version', help='Version of model to save as.', default=6, type=int, required=False)
 
 
-def test_main():
-    make_fake_data('../test_dir')
-    main(data_dir='../test_dir', epochs=1, batch_size=2, crop_size=10,
-         model_dir='../models', training_dir='../training', version=1)
+# def test_main():
+#     make_fake_data('../test_dir')
+#     main(data_dir='../test_dir', epochs=1, batch_size=2, crop_size=10,
+#          model_dir='../models', training_dir='../training', version=1)
 
 
 if __name__ == '__main__':
+    import sys
+    sys.argv.append('--data_dir')
+    sys.argv.append('/home/albert/store/outlier_data')
+
     parser = argparse.ArgumentParser(
         description='Tec outlier detection.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
