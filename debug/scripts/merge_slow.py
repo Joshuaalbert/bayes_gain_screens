@@ -28,6 +28,8 @@ def main(data_dir, working_dir, obs_num):
     merged_h5parm = os.path.join(working_dir, 'L{}_DDS8_full_merged.h5'.format(obs_num))
     linked_merged_h5parm = os.path.join(data_dir, os.path.basename(merged_h5parm))
 
+    link_overwrite(merged_h5parm, linked_merged_h5parm)
+
     select = dict(pol = slice(0, 1, 1))
 
     ###
@@ -58,7 +60,7 @@ def main(data_dir, working_dir, obs_num):
     ###
     # get screen phase and amplitude
 
-    datapack = DataPack(screen_h5parm, readonly=False)
+    datapack = DataPack(screen_h5parm, readonly=True)
     logging.info("Getting screen_posterior/phase000+amplitude000")
     datapack.current_solset = 'screen_posterior'
     datapack.select(**select)
@@ -74,8 +76,7 @@ def main(data_dir, working_dir, obs_num):
     ###
     # get smoothed000 phase and amplitude
 
-    datapack = DataPack(smoothed_h5parm, readonly=False)
-
+    datapack = DataPack(smoothed_h5parm, readonly=True)
     logging.info("Getting smoothed000/phase000+amplitude000")
     datapack.current_solset = 'smoothed000'
     datapack.select(**select)
@@ -98,23 +99,25 @@ def main(data_dir, working_dir, obs_num):
     make_soltab(smoothed_h5parm, from_solset='smoothed000', to_solset='smoothed_slow000', from_soltab='phase000',
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack= merged_h5parm)
 
-    link_overwrite(merged_h5parm, linked_merged_h5parm)
-
     logging.info("Creating time mapping")
     time_map = np.array([np.argmin(np.abs(time_slow - t)) for t in time_screen])
     logging.info("Creating direction mapping")
     dir_map = np.array([np.argmin(great_circle_sep(directions_slow[:,0], directions_slow[:,1], ra, dec))
                         for (ra, dec) in zip(directions_screen[:,0], directions_screen[:, 1])])
 
-    phase_smooth_slow = phase_slow[..., time_map] + phase_smoothed
-    amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
+    phase_slow = phase_slow[..., time_map]
+    amplitude_slow = amplitude_slow[..., time_map]
 
-    phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...]#Slow fix all systematics
+    phase_smooth_slow = phase_slow + phase_smoothed
+    amplitude_smooth_slow = amplitude_slow * amplitude_smoothed
+
+    logging.info("Replacing calibrators with the smoothed000+slow.")
+    phase_screen_slow = phase_screen + phase_slow[:, dir_map, ...]#Slow fix all systematics
     phase_screen_slow[:, :Ncal, ...] = phase_smooth_slow
     # Amplitudes are fit with rbf during deploy, so we can keep those or replace with NN here
     amplitude_screen_slow = amplitude_smooth_slow[:, dir_map, ...] #
 
-    datapack = DataPack(merged_h5parm)
+    datapack = DataPack(merged_h5parm, readonly=False)
     datapack.current_solset = 'screen_slow000'
     datapack.select(**select)
     datapack.phase = phase_screen_slow
