@@ -28,6 +28,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
     dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
     dds6_h5parm = os.path.join(working_dir, 'L{}_DDS6_full_merged.h5'.format(obs_num))
     linked_dds6_h5parm = os.path.join(data_dir, os.path.basename(dds6_h5parm))
+    link_overwrite(dds6_h5parm, linked_dds6_h5parm)
 
     deployment = Deployment(dds5_h5parm,
                             dds6_h5parm,
@@ -47,7 +48,7 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
                             working_dir=working_dir,
                             remake_posterior_solsets=True)
 
-    link_overwrite(dds6_h5parm, linked_dds6_h5parm)
+
 
     deployment.run(generate_models)
 
@@ -56,11 +57,11 @@ def main(data_dir, working_dir, obs_num, ref_dir, deployment_type, block_size, r
                      observable='tec', vmin=-60., vmax=60.,labels_in_radec=True,plot_crosses=False,phase_wrap=False)
                      # overlay_solset='directionally_referenced')
 
-    animate_datapack(dds6_h5parm, os.path.join(working_dir, 'amplitude_screen_plots'), num_processes=ncpu,
-                     solset=deployment.screen_solset,
-                     observable='amplitude', vmin=0.5, vmax=2., labels_in_radec=True, plot_crosses=False,
-                     phase_wrap=False,
-                     )
+    # animate_datapack(dds6_h5parm, os.path.join(working_dir, 'amplitude_screen_plots'), num_processes=ncpu,
+    #                  solset=deployment.screen_solset,
+    #                  observable='amplitude', vmin=0.5, vmax=2., labels_in_radec=True, plot_crosses=False,
+    #                  phase_wrap=False,
+    #                  )
 
     # animate_datapack(merged_h5parm, os.path.join(working_dir, 'const_screen_plots'), num_processes=ncpu,
     #                  solset=deployment.screen_solset,
