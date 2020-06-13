@@ -1,7 +1,6 @@
-import born_rime.variational_hmm
 import jax.numpy as jnp
-from born_rime.variational_hmm.forward_update import ForwardUpdateEquation
-from born_rime.variational_hmm.utils import windowed_mean, batched_diag, batched_multi_dot
+from bayes_gain_screens.variational_hmm.forward_update import ForwardUpdateEquation
+from bayes_gain_screens.variational_hmm.utils import windowed_mean, batched_diag, batched_multi_dot
 from jax.lax import scan, while_loop
 from jax import vmap, jacobian
 from collections import namedtuple

@@ -1,8 +1,5 @@
-import born_rime.variational_hmm
-from born_rime.optimize import minimize
-from born_rime.variational_hmm.utils import constrain_std, deconstrain_std, constrain_tec, deconstrain_tec, \
-    constrain_omega, deconstrain_omega, \
-    constrain_sigma, deconstrain_sigma, scalar_KL
+from bayes_gain_screens.optimize import minimize
+from bayes_gain_screens.variational_hmm.utils import constrain_std, deconstrain_std, scalar_KL
 from jax import numpy as jnp
 from jax import jit
 

@@ -1,12 +1,12 @@
+import bayes_gain_screens.variational_hmm
 from jax.test_util import check_grads
 
-import born_rime.variational_hmm
 from functools import partial
-from born_rime.variational_hmm.utils import constrain_sigma, deconstrain_sigma, windowed_mean, mvn_kl, \
+from bayes_gain_screens.variational_hmm.utils import constrain_sigma, deconstrain_sigma, windowed_mean, mvn_kl, \
     scalar_KL, fill_triangular, fill_triangular_inverse
-from born_rime.variational_hmm.forward_update import ForwardUpdateEquation, TecAmpsDiagSigmaDiagOmega, \
+from bayes_gain_screens.variational_hmm.forward_update import ForwardUpdateEquation, TecAmpsDiagSigmaDiagOmega, \
     TecOnlyAmpDiagLinearPhaseDiagSigma, TecClockAmpDiagLinearPhaseDiagSigma
-from born_rime.variational_hmm.nlds_smoother import NonLinearDynamicsSmoother
+from bayes_gain_screens.variational_hmm.nlds_smoother import NonLinearDynamicsSmoother
 from jax import numpy as jnp, numpy as np
 from jax import jit, vmap
 import jax
@@ -289,3 +289,12 @@ def test_fill_triangular():
     assert np.all(y == fill_triangular(x, upper=True))
 
     assert np.all(fill_triangular_inverse(y, upper=True) == x)
+
+
+def test_polyfit():
+    import numpy as onp
+    x = onp.random.normal(size=5)
+    y = onp.random.normal(size=5)
+    c1 = onp.polyfit(x, y, deg=2)
+    c2 = polyfit(x, y, deg=2)
+    assert jnp.isclose(c1, c2).all()
