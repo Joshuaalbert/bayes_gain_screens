@@ -57,9 +57,10 @@ class ForwardUpdateEquation(object):
 
 
 class TecAmpsDiagSigmaDiagOmega(ForwardUpdateEquation):
-    def __init__(self, freqs):
+    def __init__(self, freqs, basin=False):
         self.freqs = freqs
         self.tec_scale = 300.
+        self.basin = basin
         self.tec_conv = -8.4479745e6 / freqs
 
     @property
@@ -100,17 +101,18 @@ class TecAmpsDiagSigmaDiagOmega(ForwardUpdateEquation):
         x0 = jnp.concatenate([prior_mu, deconstrain_std(prior_gamma)])
         x1 = do_minimisation(x0)
 
-        # basin = jnp.mean(jnp.abs(jnp.pi / self.tec_conv)) * 0.5
-        # num_basin = int(self.tec_scale / basin) + 1
-        #
-        # obj_try = jnp.stack(
-        #     [neg_elbo(jnp.array([x1[0] + i * basin, x1[1]])) for i in range(-num_basin, num_basin + 1, 1)],
-        #     axis=0)
-        # which_basin = jnp.argmin(obj_try, axis=0)
-        # x0_next = jnp.array([x1[0] + (which_basin - float(num_basin)) * basin, x1[1]])
-        # x2 = do_minimisation(x0_next)
+        if self.basin:
+            basin = jnp.mean(jnp.abs(jnp.pi / self.tec_conv)) * 0.5
+            num_basin = int(self.tec_scale / basin) + 1
 
-        x2 = x1
+            obj_try = jnp.stack(
+                [neg_elbo(jnp.array([x1[0] + i * basin, x1[1]])) for i in range(-num_basin, num_basin + 1, 1)],
+                axis=0)
+            which_basin = jnp.argmin(obj_try, axis=0)
+            x0_next = jnp.array([x1[0] + (which_basin - float(num_basin)) * basin, x1[1]])
+            x2 = do_minimisation(x0_next)
+        else:
+            x2 = x1
 
         tec_mean = x2[0]
         tec_uncert = constrain_std(x2[1])
