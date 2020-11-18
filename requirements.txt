@@ -13,7 +13,7 @@ tables==3.5.2
 seaborn==0.9.0
 networkx==2.3
 jupyter==1.0.0
-notebook==6.0.1
+notebook==6.1.5
 dm-sonnet==1.35
 git+https://github.com/deepmind/graph_nets
 pymc3==3.7
