@@ -142,11 +142,11 @@ def get_data(solution_file):
     return Y_obs, times, freqs
 
 
-def prepare_soltabs(solution_file):
-    with DataPack(solution_file, readonly=False) as datapack:
-        logger.info("Creating sol001/phase000+amplitude000+tec000+const000+clock000")
-        make_soltab(datapack, from_solset='sol000', to_solset='sol001', from_soltab='phase000',
-                    to_soltab=['phase000', 'amplitude000', 'tec000', 'const000', 'clock000'], remake_solset=True)
+def prepare_soltabs(dds4_h5parm, dds5_h5parm):
+    logger.info("Creating sol000/phase000+amplitude000+tec000+const000+clock000")
+    make_soltab(dds4_h5parm, from_solset='sol000', to_solset='sol000', from_soltab='phase000',
+                to_soltab=['phase000', 'amplitude000', 'tec000', 'const000', 'clock000'], remake_solset=True,
+                to_datapack=dds5_h5parm)
 
 
 def log_laplace(x, mean, uncert):
@@ -250,29 +250,40 @@ def solve_and_smooth(Y_obs, times, freqs):
         chunked_pmap(lambda *args: constrained_solve(freqs, *args),
                      random.split(random.PRNGKey(int(default_timer())), T), Y_obs,
                      amp, const_mean, clock_mean)
-    Y_mean = Y_mean.reshape((Nd,Na,Nt, Nf)).transpose((0, 1,3,2))
-    Y_std = Y_std.reshape((Nd,Na,Nt, Nf)).transpose((0, 1,3,2))
-    tec_mean = tec_mean.reshape((Nd,Na,Nt))
-    tec_std = tec_std.reshape((Nd,Na,Nt))
-    const_mean = const_mean.reshape((Nd,Na,Nt))
-    clock_mean = clock_mean.reshape((Nd,Na,Nt))
+    Y_mean = Y_mean.reshape((Nd, Na, Nt, Nf)).transpose((0, 1, 3, 2))
+    Y_std = Y_std.reshape((Nd, Na, Nt, Nf)).transpose((0, 1, 3, 2))
+    tec_mean = tec_mean.reshape((Nd, Na, Nt))
+    tec_std = tec_std.reshape((Nd, Na, Nt))
+    const_mean = const_mean.reshape((Nd, Na, Nt))
+    clock_mean = clock_mean.reshape((Nd, Na, Nt))
 
     return Y_mean, Y_std, tec_mean, tec_std, const_mean, clock_mean
+
+
+def link_overwrite(src, dst):
+    if os.path.islink(dst):
+        print("Unlinking pre-existing sym link {}".format(dst))
+        os.unlink(dst)
+    print("Linking {} -> {}".format(src, dst))
+    os.symlink(src, dst)
 
 
 def main(data_dir, working_dir, obs_num, ncpu):
     os.environ['XLA_FLAGS'] = f"--xla_force_host_platform_device_count={ncpu}"
     logger.info("Performing data smoothing via tec+const+clock inference.")
-    merged_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
-    logger.info("Working on {}".format(merged_h5parm))
-    prepare_soltabs(solution_file=merged_h5parm)
-    Y_obs, times, freqs = get_data(solution_file=merged_h5parm)
+    dds4_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
+    dds5_h5parm = os.path.join(working_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+    linked_dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
+    logger.info("Looking for {}".format(dds4_h5parm))
+    link_overwrite(dds5_h5parm, linked_dds5_h5parm)
+    prepare_soltabs(dds4_h5parm, dds5_h5parm)
+    Y_obs, times, freqs = get_data(solution_file=dds4_h5parm)
     Y_mean, Y_std, tec_mean, tec_std, const_mean, clock_mean = solve_and_smooth(Y_obs, times, freqs)
-    phase_mean = jnp.arctan2(Y_mean[:,:,freqs.size:,:], Y_mean[:,:,:freqs.size,:])
-    amp_mean = jnp.sqrt(Y_mean[:,:,freqs.size:,:]**2 + Y_mean[:,:,:freqs.size,:]**2)
+    phase_mean = jnp.arctan2(Y_mean[:, :, freqs.size:, :], Y_mean[:, :, :freqs.size, :])
+    amp_mean = jnp.sqrt(Y_mean[:, :, freqs.size:, :] ** 2 + Y_mean[:, :, :freqs.size, :] ** 2)
     logger.info("Storing smoothed phase, amplitudes, tec, const, and clock")
-    with DataPack(merged_h5parm, readonly=False) as h:
-        h.current_solset = 'sol001'
+    with DataPack(dds5_h5parm, readonly=False) as h:
+        h.current_solset = 'sol000'
         h.select(pol=slice(0, 1, 1))
         h.phase = phase_mean
         h.amplitude = amp_mean
@@ -280,35 +291,53 @@ def main(data_dir, working_dir, obs_num, ncpu):
         h.weights_tec = tec_std
         h.const = const_mean
         h.clock = clock_mean
-    
-    logger.info("Plotting results.")
+        axes = h.axes_phase
+        patch_names, _ = h.get_directions(axes['dir'])
+        antenna_labels, _ = h.get_antennas(axes['ant'])
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
-                     solset='sol001',
+    logger.info("Plotting results.")
+    data_plot_dir = os.path.join(working_dir, 'data_plots')
+    os.makedirs(data_plot_dir, exist_ok=True)
+    Nd, Na, Nf, Nt = Y_obs.shape
+    for d in range(Nd):
+        for a in range(Na):
+            fig, axs = plt.subplots(2, 1, sharex=True, sharey=True)
+            axs[0].imshow(Y_obs[d, a, :, :], aspect='auto', origin='lower',
+                          extent=(times.min(), times.max(), freqs.min() / 1e6, freqs.max() / 1e6))
+            axs[1].imshow(Y_mean[d, a, :, :], aspect='auto', origin='lower',
+                          extent=(times.min(), times.max(), freqs.min() / 1e6, freqs.max() / 1e6))
+            axs[1].set_xlabel('Time [s]')
+            axs[1].set_ylabel('Freq [MHz]')
+            axs[0].set_title("{} {}".format(patch_names[d], antenna_labels[a]))
+            fig.savefig(os.path.join(data_plot_dir, 'gains_dir{:02d}_ant{:02d}.png'.format(d, a)))
+            plt.close('all')
+
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
+                     solset='sol000',
                      observable='tec', vmin=-60., vmax=60., plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'const_plots'), num_processes=ncpu,
-                     solset='sol001',
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'const_plots'), num_processes=ncpu,
+                     solset='sol000',
                      observable='const', vmin=-np.pi, vmax=np.pi, plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=True,
                      flag_outliers=False)
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'clock_plots'), num_processes=ncpu,
-                     solset='sol001',
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'clock_plots'), num_processes=ncpu,
+                     solset='sol000',
                      observable='clock', vmin=-1., vmax=1., plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
-                     solset='sol001',
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
+                     solset='sol000',
                      observable='weights_tec', vmin=0., vmax=10., plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False,
                      flag_outliers=False)
 
-    animate_datapack(merged_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
-                     solset='sol001',
+    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
+                     solset='sol000',
                      observable='amplitude', vmin=0.6, vmax=1.4, plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False)
 
@@ -326,9 +355,6 @@ def add_args(parser):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 1:
-        test_main()
-        exit(0)
     parser = argparse.ArgumentParser(
         description='Infer tec, const, clock and smooth the gains.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
