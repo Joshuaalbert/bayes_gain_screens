@@ -6,8 +6,7 @@ from setuptools import find_packages
 __minimum_numpy_version__ = '1.19.0'
 
 setup_requires = ['numpy<' + __minimum_numpy_version__,
-                  'h5parm',
-                  'jaxns']
+                  'h5parm']
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
