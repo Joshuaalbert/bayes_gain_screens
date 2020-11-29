@@ -540,101 +540,101 @@ def log_normal_cdf_solve(x1, x2, P1=0.05, P2=0.95, as_tensor=False):
         return tf.constant(mu, float_type, name='lognormal_mu'), tf.constant(sigma, float_type, name='lognormal_sigma')
     return mu, sigma
 
-# def make_example_datapack(Nd, Nf, Nt, pols=None,
-#                           index_n=1, gain_noise=0.05,
-#                           name='test.hdf5', obs_type='DDTEC',
-#                           clobber=False, seed=0,
-#                           square=False,
-#                           kernel_hyperparams=dict(variance=1.,lengthscales=15.,b=100.,a=250., timescale=50.),
-#                           return_full=False):
-#     """
-#
-#     :param Nd:
-#     :param Nf:
-#     :param Nt:
-#     :param pols:
-#     :param time_corr:
-#     :param dir_corr:
-#     :param tec_scale:
-#     :param tec_noise:
-#     :param name:
-#     :param clobber:
-#     :return: DataPack
-#         New object referencing a file
-#     """
-#     from bayes_filter.feeds import TimeFeed, IndexFeed, CoordinateFeed, init_feed
-#
-#     np.random.seed(seed)
-#
-#     logging.info("=== Creating example datapack ===")
-#     name = os.path.abspath(name)
-#     if os.path.isfile(name) and clobber:
-#         os.unlink(name)
-#
-#     datapack = DataPack(name, readonly=False)
-#     with datapack:
-#         datapack.add_solset('sol000')
-#         time0 = at.Time("2019-01-01T00:00:00.000", format='isot')
-#         altaz = ac.AltAz(location=datapack.array_center.earth_location, obstime=time0)
-#         up = ac.SkyCoord(alt=90.*au.deg,az=0.*au.deg,frame=altaz).transform_to('icrs')
-#         directions = np.stack([np.random.normal(up.ra.rad, np.pi / 180. * 2.5, size=[Nd]),
-#                                np.random.normal(up.dec.rad, np.pi / 180. * 2.5, size=[Nd])],axis=1)
-#         datapack.set_directions(None,directions)
-#         patch_names, _ = datapack.directions
-#         _, directions = datapack.get_directions(patch_names)
-#         directions = np.stack([directions.ra.to(angle_type).value, directions.dec.to(angle_type).value], axis=1)
-#         antenna_labels, _ = datapack.antennas
-#         _, antennas = datapack.get_antennas(antenna_labels)
-#         antennas = antennas.cartesian.xyz.to(dist_type).value.T
-#         # antennas /= 1000.
-#         # print(directions)
-#         Na = antennas.shape[0]
-#
-#
-#         ref_dist = np.linalg.norm(antennas - antennas[0:1, :], axis=1)[None, None, :, None]  # 1,1,Na,1
-#
-#         times = at.Time(time0.gps+np.linspace(0, Nt * 8, Nt), format='gps').mjd[:, None] * 86400.  # mjs
-#         freqs = np.linspace(120, 160, Nf) * 1e6
-#         if pols is not None:
-#             use_pols = True
-#             assert isinstance(pols, (tuple, list))
-#         else:
-#             use_pols = False
-#             pols = ['XX']
-#         Npol = len(pols)
-#         tec_conversion = TEC_CONV / freqs  # Nf
-#         dtecs = []
-#         with tf.Session(graph=tf.Graph()) as sess:
-#             index_feed = IndexFeed(index_n)
-#             time_feed = TimeFeed(index_feed, times)
-#             coord_feed = CoordinateFeed(time_feed, directions, antennas, coord_map=tf_coord_transform(
-#                 itrs_to_enu_with_references(antennas[0, :], [up.ra.rad, up.dec.rad], antennas[0, :])))
-#             init, next = init_feed(coord_feed)
-#             kern = DTECIsotropicTimeGeneral(obs_type=obs_type, kernel_params={'resolution':5}, **kernel_hyperparams)
-#             K = kern.K(next)
-#             Z = tf.random.normal(shape=tf.shape(K)[0:1],dtype=K.dtype)
-#             ddtec = tf.matmul(safe_cholesky(K),Z[:,None])[:,0]
-#             sess.run(init)
-#             for t in times[::index_n]:
-#                 # plt.imshow(sess.run(K))
-#                 # plt.show()
-#                 dtecs.append(sess.run(ddtec))
-#
-#         dtecs = np.concatenate(dtecs, axis=0)
-#         dtecs = np.reshape(dtecs, (Nt, Nd, Na))
-#         dtecs = np.transpose(dtecs, (1, 2, 0))  # Nd, Na, Nt
-#         dtecs = np.tile(dtecs[None, ...], (Npol, 1, 1, 1))  # Npol, Nd, Na, Nt
-#         # dtecs -= dtecs[:,:,0:1,:]
-#
-#         phase = dtecs[...,None,:]*tec_conversion[:,None]# Npol, Nd, Na, Nf, Nt
-#         phase = np.angle(np.exp(1j*phase) + gain_noise * (np.random.laplace(size=phase.shape) + 1j*np.random.laplace(size=phase.shape)))
-#
-#
-#         datapack.add_soltab('phase000', values=phase, ant=antenna_labels, dir = patch_names, time=times[:, 0], freq=freqs, pol=pols)
-#         datapack.add_soltab('tec000', values=dtecs, ant=antenna_labels, dir = patch_names, time=times[:, 0], pol=pols)
-#         if not return_full:
-#             return datapack
-#         return dict(datapack=datapack, directions=directions, antennas=antennas, freqs=freqs, times=times, pols=pols, dtec=dtecs, phase=phase)
+def make_example_datapack(Nd, Nf, Nt, pols=None,
+                          index_n=1, gain_noise=0.05,
+                          name='test.hdf5', obs_type='DDTEC',
+                          clobber=False, seed=0,
+                          square=False,
+                          kernel_hyperparams=dict(variance=1.,lengthscales=15.,b=100.,a=250., timescale=50.),
+                          return_full=False):
+    """
+
+    :param Nd:
+    :param Nf:
+    :param Nt:
+    :param pols:
+    :param time_corr:
+    :param dir_corr:
+    :param tec_scale:
+    :param tec_noise:
+    :param name:
+    :param clobber:
+    :return: DataPack
+        New object referencing a file
+    """
+    from bayes_filter.feeds import TimeFeed, IndexFeed, CoordinateFeed, init_feed
+
+    np.random.seed(seed)
+
+    logging.info("=== Creating example datapack ===")
+    name = os.path.abspath(name)
+    if os.path.isfile(name) and clobber:
+        os.unlink(name)
+
+    datapack = DataPack(name, readonly=False)
+    with datapack:
+        datapack.add_solset('sol000')
+        time0 = at.Time("2019-01-01T00:00:00.000", format='isot')
+        altaz = ac.AltAz(location=datapack.array_center.earth_location, obstime=time0)
+        up = ac.SkyCoord(alt=90.*au.deg,az=0.*au.deg,frame=altaz).transform_to('icrs')
+        directions = np.stack([np.random.normal(up.ra.rad, np.pi / 180. * 2.5, size=[Nd]),
+                               np.random.normal(up.dec.rad, np.pi / 180. * 2.5, size=[Nd])],axis=1)
+        datapack.set_directions(None,directions)
+        patch_names, _ = datapack.directions
+        _, directions = datapack.get_directions(patch_names)
+        directions = np.stack([directions.ra.to(angle_type).value, directions.dec.to(angle_type).value], axis=1)
+        antenna_labels, _ = datapack.antennas
+        _, antennas = datapack.get_antennas(antenna_labels)
+        antennas = antennas.cartesian.xyz.to(dist_type).value.T
+        # antennas /= 1000.
+        # print(directions)
+        Na = antennas.shape[0]
+
+
+        ref_dist = np.linalg.norm(antennas - antennas[0:1, :], axis=1)[None, None, :, None]  # 1,1,Na,1
+
+        times = at.Time(time0.gps+np.linspace(0, Nt * 8, Nt), format='gps').mjd[:, None] * 86400.  # mjs
+        freqs = np.linspace(120, 160, Nf) * 1e6
+        if pols is not None:
+            use_pols = True
+            assert isinstance(pols, (tuple, list))
+        else:
+            use_pols = False
+            pols = ['XX']
+        Npol = len(pols)
+        tec_conversion = TEC_CONV / freqs  # Nf
+        dtecs = []
+        with tf.Session(graph=tf.Graph()) as sess:
+            index_feed = IndexFeed(index_n)
+            time_feed = TimeFeed(index_feed, times)
+            coord_feed = CoordinateFeed(time_feed, directions, antennas, coord_map=tf_coord_transform(
+                itrs_to_enu_with_references(antennas[0, :], [up.ra.rad, up.dec.rad], antennas[0, :])))
+            init, next = init_feed(coord_feed)
+            kern = DTECIsotropicTimeGeneral(obs_type=obs_type, kernel_params={'resolution':5}, **kernel_hyperparams)
+            K = kern.K(next)
+            Z = tf.random.normal(shape=tf.shape(K)[0:1],dtype=K.dtype)
+            ddtec = tf.matmul(safe_cholesky(K),Z[:,None])[:,0]
+            sess.run(init)
+            for t in times[::index_n]:
+                # plt.imshow(sess.run(K))
+                # plt.show()
+                dtecs.append(sess.run(ddtec))
+
+        dtecs = np.concatenate(dtecs, axis=0)
+        dtecs = np.reshape(dtecs, (Nt, Nd, Na))
+        dtecs = np.transpose(dtecs, (1, 2, 0))  # Nd, Na, Nt
+        dtecs = np.tile(dtecs[None, ...], (Npol, 1, 1, 1))  # Npol, Nd, Na, Nt
+        # dtecs -= dtecs[:,:,0:1,:]
+
+        phase = dtecs[...,None,:]*tec_conversion[:,None]# Npol, Nd, Na, Nf, Nt
+        phase = np.angle(np.exp(1j*phase) + gain_noise * (np.random.laplace(size=phase.shape) + 1j*np.random.laplace(size=phase.shape)))
+
+
+        datapack.add_soltab('phase000', values=phase, ant=antenna_labels, dir = patch_names, time=times[:, 0], freq=freqs, pol=pols)
+        datapack.add_soltab('tec000', values=dtecs, ant=antenna_labels, dir = patch_names, time=times[:, 0], pol=pols)
+        if not return_full:
+            return datapack
+        return dict(datapack=datapack, directions=directions, antennas=antennas, freqs=freqs, times=times, pols=pols, dtec=dtecs, phase=phase)
 
 def great_circle_sep(ra1, dec1, ra2, dec2):
     dra = np.abs(ra1-ra2)
