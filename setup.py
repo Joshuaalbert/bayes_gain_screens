@@ -5,7 +5,9 @@ from setuptools import find_packages
 
 __minimum_numpy_version__ = '1.19.0'
 
-setup_requires = ['numpy<' + __minimum_numpy_version__]
+setup_requires = ['numpy<' + __minimum_numpy_version__,
+                  'h5parm',
+                  'jaxns']
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -24,7 +26,7 @@ setup(name='bayes_gain_screens',
       ],
       package_dir={'': './'},
       packages=find_packages('./'),
-package_data= {'bayes_gain_screens':['arrays/*', 'flagging_models/*']},
+      package_data={'bayes_gain_screens': ['arrays/*', 'flagging_models/*', 'steps/*']},
       classifiers=[
           "Programming Language :: Python :: 3",
           "License :: OSI Approved :: Apache Software License",
@@ -32,4 +34,3 @@ package_data= {'bayes_gain_screens':['arrays/*', 'flagging_models/*']},
       ],
       python_requires='>=3.6',
       )
-
