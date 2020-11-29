@@ -19,9 +19,7 @@ def cmd_call(cmd):
         raise ValueError("Failed to  run: {}".format(cmd))
 
 
-def main(archive_dir, root_working_dir, obs_num, region_file, ncpu, ref_dir, ref_image_fits,
-         block_size,
-         deployment_type,
+def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, ref_image_fits,
          retry_task_on_fail,
          no_download,
          bind_dirs,
@@ -31,7 +29,8 @@ def main(archive_dir, root_working_dir, obs_num, region_file, ncpu, ref_dir, ref
          bayes_gain_screens_conda_env,
          auto_resume,
          **do_kwargs):
-    script_dir = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
+    if script_dir is None:
+        script_dir = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
 
     for key in do_kwargs.keys():
         if not key.startswith('do_'):
@@ -372,6 +371,10 @@ def add_args(parser):
                           default=workers, type=int, required=False)
     optional.add_argument('--retry_task_on_fail', help='How many times to retry if there is a failure.',
                           default=0, type=int, required=False)
+    optional.add_argument('--script_dir',
+                          help='Where the scripts are located, by default uses those installed with package.',
+                          default=None, type=str, required=False)
+
     required.add_argument('--obs_num', help='Obs number L*',
                           default=None, type=int, required=True)
     required.add_argument('--archive_dir',
@@ -379,8 +382,7 @@ def add_args(parser):
                           default=None, type=str, required=True)
     required.add_argument('--root_working_dir', help='Where the root of all working dirs are.',
                           default=None, type=str, required=True)
-    required.add_argument('--script_dir', help='Where the scripts are located.',
-                          default=None, type=str, required=True)
+
     env_args.add_argument('--bind_dirs', help='Which directories to bind to singularity.',
                           default=None, type='str_or_none', required=False)
     env_args.add_argument('--lofar_sksp_simg',
@@ -403,43 +405,39 @@ def add_args(parser):
 
 
 def test_main():
-    main(archive_dir='/disks/paradata/shimwell/LoTSS-DR2/archive/P126+65/',
-         root_working_dir='/home/albert/nederrijn_1/screens/root',
-         script_dir='/home/albert/nederrijn_1/screens/scripts',
-         obs_num=562061,
+    main(archive_dir='/home/albert/store/lockman/archive',
+         root_working_dir='/home/albert/store/root',
+         script_dir=None,
+         obs_num=342938,
          region_file=None,
-         ncpu=56,
-         ref_dir=0,
+         ncpu=32,
          ref_image_fits=None,
-         block_size=40,
-         deployment_type='directional',
          no_download=False,
-         bind_dirs='/net/nederrijn/data1,/disks/paradata/shimwell',
-         lofar_sksp_simg='/home/albert/nederrijn_1/screens/lofar_sksp_ddf.simg',
-         lofar_gain_screens_simg='/home/albert/nederrijn_1/screens/lofar_sksp_ddf_gainscreens_premerge.simg',
+         bind_dirs='/beegfs/lofar',
+         lofar_sksp_simg='/home/albert/store/lofar_sksp_ddf.simg',
+         lofar_gain_screens_simg='/home/albert/store/lofar_sksp_ddf_gainscreens_premerge.simg',
          bayes_gain_screens_simg=None,
-         bayes_gain_screens_conda_env='tf_py',
+         bayes_gain_screens_conda_env='bayes_gain_screens_py',
          auto_resume=0,
-         do_choose_calibrators=0,
-         do_download_archive=0,
-         do_subtract=0,
+         do_choose_calibrators=1,
+         do_download_archive=1,
+         do_subtract=1,
          do_image_subtract_dirty=0,
-         do_solve_dds4=0,
-         do_smooth_dds4=0,
-         do_slow_solve_dds4=0,
-         do_tec_inference=0,
-         do_merge_slow=2,
-         do_flag_visibilities=2,
-         do_infer_screen=2,
+         do_solve_dds4=1,
+         do_tec_inference_and_smooth=1,
+         do_slow_solve_dds4=1,
+         do_merge_slow=0,
+         do_flag_visibilities=0,
+         do_infer_screen=0,
          do_image_dds4=0,
          do_image_subtract_dds4=0,
-         do_image_smooth=0,
-         do_image_smooth_slow=0,
+         do_image_smooth=1,
+         do_image_smooth_slow=1,
          do_image_screen=0,
          do_image_screen_slow=0,
          do_subtract_outside_pb=0,
          do_image_smooth_slow_restricted=0,
-         do_image_screen_slow_restricted=2,
+         do_image_screen_slow_restricted=0,
          retry_task_on_fail=0)
 
 
