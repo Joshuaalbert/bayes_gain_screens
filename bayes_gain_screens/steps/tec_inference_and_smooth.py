@@ -2,7 +2,6 @@ import os
 import numpy as np
 import pylab as plt
 import argparse
-import sys
 from timeit import default_timer
 from jax import numpy as jnp, vmap, jit, local_device_count, tree_multimap, pmap, tree_map, random
 import logging
@@ -10,7 +9,6 @@ import astropy.units as au
 
 logger = logging.getLogger(__name__)
 
-from bayes_gain_screens import logging
 from bayes_gain_screens.plotting import animate_datapack
 
 from h5parm import DataPack
@@ -279,7 +277,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
     prepare_soltabs(dds4_h5parm, dds5_h5parm)
     Y_obs, times, freqs = get_data(solution_file=dds4_h5parm)
     Y_mean, Y_std, tec_mean, tec_std, const_mean, clock_mean = solve_and_smooth(Y_obs, times, freqs)
-    phase_mean = jnp.arctan2(Y_mean[:, :, freqs.size:, :], Y_mean[:, :, :freqs.size, :])
+    phase_mean = jnp.arctan2(Yphase_mean[:, :, freqs.size:, :], Y_mean[:, :, :freqs.size, :])
     amp_mean = jnp.sqrt(Y_mean[:, :, freqs.size:, :] ** 2 + Y_mean[:, :, :freqs.size, :] ** 2)
     logger.info("Storing smoothed phase, amplitudes, tec, const, and clock")
     with DataPack(dds5_h5parm, readonly=False) as h:

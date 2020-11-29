@@ -47,4 +47,3 @@ DDF.py \
     --Mask-SigTh=5.0 \
     --DDESolutions-DDSols={sols} \
     --Predict-InitDicoModel={init_dico}
-

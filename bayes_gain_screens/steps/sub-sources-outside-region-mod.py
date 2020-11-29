@@ -8,13 +8,17 @@ import pyregion
 from astropy.io import fits
 from astropy.wcs import WCS
 import glob
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_call(cmd):
-    print("{}".format(cmd))
+    logger.info("{}".format(cmd))
     exit_status = subprocess.call(cmd, shell=True)
     if exit_status:
         raise ValueError("Failed to  run: {}".format(cmd))
+
 
 def getimsize(image):
     imsizeddf = None
@@ -25,7 +29,7 @@ def getimsize(image):
             imsizeddf = line
 
     if imsizeddf == 'None':
-        print('Could not determine the image size, should have been 20000(?) or 6000(?)')
+        logger.info('Could not determine the image size, should have been 20000(?) or 6000(?)')
         sys.exit()
 
     imsizeddf = np.int(imsizeddf.split('=')[1])
@@ -38,7 +42,7 @@ def columnchecker(mslist, colname):
     for ms in mslist:
         t = pt.table(ms, ack=False)
         if colname not in t.colnames():
-            print(colname, ' not present in ', ms)
+            logger.info(colname, ' not present in ', ms)
             sys.exit()
         t.close()
 
@@ -63,7 +67,7 @@ def addextraweights(msfiles):
                 ws_tmp = ts.getcol('WEIGHT_SPECTRUM_FROM_IMAGING_WEIGHT')
                 n, nfreq, npol = np.shape(ws_tmp)
                 for i in range(npol):
-                    print('Copying over correlation ', i, ms)
+                    logger.info('Copying over correlation ', i, ms)
                     ws_tmp[:, :, i] = iw
                     ts.putcol('WEIGHT_SPECTRUM_FROM_IMAGING_WEIGHT', ws_tmp)
 
@@ -76,7 +80,7 @@ def make_region_mask(infilename, ds9region, outfilename):
     :param outfilename:
     :return:
     """
-    print('Making: {}'.format(outfilename))
+    logger.info('Making: {}'.format(outfilename))
     hdu = fits.open(infilename)
     hduflat = flatten(hdu)
     r = pyregion.open(ds9region)
@@ -145,7 +149,7 @@ def add_args(parser):
 
 
 def get_filenames(data_dir):
-    print("Locating archive mask, dico, and clustercat.")
+    logger.info("Locating archive mask, dico, and clustercat.")
     fullmask = os.path.join(data_dir, os.path.basename('image_full_ampphase_di_m.NS.mask01.fits'))
     indico = os.path.join(data_dir, os.path.basename('image_full_ampphase_di_m.NS.DicoModel'))
     clustercat = os.path.join(data_dir, os.path.basename('image_dirin_SSD_m.npy.ClusterCat.npy'))
@@ -159,30 +163,31 @@ def get_filenames(data_dir):
     if not os.path.isfile(mslist_file):
         raise IOError("Missing mslist_file {}".format(mslist_file))
     mslist = []
-    print('Reading {}'.format(mslist_file))
+    logger.info('Reading {}'.format(mslist_file))
     with open(mslist_file, 'r') as f:
         for line in f.readlines():
             mslist.append(line.strip())
     return mslist_file, mslist, fullmask, indico, clustercat
 
+
 def make_filtered_dico(region_mask, full_dico_model, masked_dico_model):
     """
     Filter dico model to only include sources in mask.
-
     :param region_mask:
     :param full_dico_model:
     :param masked_dico_model:
     :return:
     """
-    print("Making dico containing only calibrators: {}".format(masked_dico_model))
+    logger.info("Making dico containing only calibrators: {}".format(masked_dico_model))
     cmd = 'MaskDicoModel.py --MaskName={region_mask} --InDicoModel={full_dico_model} --OutDicoModel={masked_dico_model} --InvertMask=1'.format(
         region_mask=region_mask, full_dico_model=full_dico_model, masked_dico_model=masked_dico_model)
     cmd_call(cmd)
     if not os.path.isfile(masked_dico_model):
         raise IOError("Failed to make {}".format(masked_dico_model))
 
+
 def make_predict_dico(indico, predict_dico, predict_mask):
-    print("Making dico containing all but calibrators: {}".format(predict_dico))
+    logger.info("Making dico containing all but calibrators: {}".format(predict_dico))
     cmd_call(
         "MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(predict_mask, indico, predict_dico))
     if not os.path.isfile(predict_dico):
@@ -190,9 +195,10 @@ def make_predict_dico(indico, predict_dico, predict_mask):
 
 
 def cleanup_working_dir(working_dir):
-    print("Deleting cache since we're done.")
-    for f in glob.glob(os.path.join(working_dir,"*.ddfcache")):
+    logger.info("Deleting cache since we're done.")
+    for f in glob.glob(os.path.join(working_dir, "*.ddfcache")):
         cmd_call("rm -r {}".format(f))
+
 
 def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours, predict_column, sub_column):
     data_dir = os.path.abspath(data_dir)
@@ -209,10 +215,13 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
     os.chdir(working_dir)
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     mslist_file, mslist, fullmask, indico, clustercat = get_filenames(data_dir)
-    predict_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.not_{sub_column}.DicoModel'.format(sub_column=sub_column))
-    filtered_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.{sub_column}.DicoModel'.format(sub_column=sub_column))
+    predict_dico = os.path.join(data_dir,
+                                'image_full_ampphase_di_m.NS.not_{sub_column}.DicoModel'.format(sub_column=sub_column))
+    filtered_dico = os.path.join(data_dir,
+                                 'image_full_ampphase_di_m.NS.{sub_column}.DicoModel'.format(sub_column=sub_column))
 
-    predict_mask = os.path.join(data_dir, 'predict_mask_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
+    predict_mask = os.path.join(data_dir, 'predict_mask_{sub_column}.fits'.format(
+        sub_column=sub_column))  # just a name, can be anything
 
     if keeplongbaselines:
         uvsel = "[0.100000,5000.000000]"
@@ -233,9 +242,10 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
     make_predict_dico(indico, predict_dico, predict_mask)
     args = dict(chunkhours=chunkhours, mslist_file=mslist_file, data_colname=data_colname, ncpu=ncpu,
                 clustercat=clustercat,
-                robust=robust, imagenpix=imagenpix, imagecell=imagecell, predict_mask=predict_mask, predict_dico=predict_dico, uvsel=uvsel,
+                robust=robust, imagenpix=imagenpix, imagecell=imagecell, predict_mask=predict_mask,
+                predict_dico=predict_dico, uvsel=uvsel,
                 solsdir=solsdir, predict_column=predict_column)
-    print("Predicting...")
+    logger.info("Predicting...")
     cmd_call("DDF.py --Output-Name=image_full_ampphase_di_m.NS_SUB --Data-ChunkHours={chunkhours} --Data-MS={mslist_file} \
     --Deconv-PeakFactor=0.001000 --Data-ColName={data_colname} --Parallel-NCPU={ncpu} --Facets-CatNodes={clustercat} \
     --Beam-CenterNorm=1 --Deconv-Mode=SSD --Beam-Model=LOFAR --Beam-LOFARBeamMode=A --Weight-Robust={robust} \
@@ -249,7 +259,7 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
     --Predict-InitDicoModel={predict_dico} --Selection-UVRangeKm={uvsel} --GAClean-MinSizeInit=10 --Cache-Reset=1 \
     --Beam-Smooth=1 --Predict-ColName={predict_column} --DDESolutions-SolsDir={solsdir}".format(**args))
     # subtract
-    print("Subtracting...")
+    logger.info("Subtracting...")
     for ms in mslist:
         with pt.table(ms, readonly=False, ack=True) as t:
             colnames = t.colnames()
@@ -262,18 +272,17 @@ def main(data_dir, working_dir, region_file, ncpu, keeplongbaselines, chunkhours
                 t.addcols(newdesc, newdmi)
 
             for row in range(0, t.nrows(), 3000000):
-                print('Reading {}'.format(predict_column))
+                logger.info('Reading {}'.format(predict_column))
                 f = t.getcol(predict_column, startrow=row, nrow=3000000, rowincr=1)
-                print('Reading', data_colname)
+                logger.info('Reading', data_colname)
                 d = t.getcol(data_colname, startrow=row, nrow=3000000, rowincr=1)
 
-                print('Writing', sub_column)
+                logger.info('Writing', sub_column)
                 t.putcol(sub_column, d - f, startrow=row, nrow=3000000, rowincr=1)
 
     addextraweights(mslist)
 
     cleanup_working_dir(working_dir)
-
 
 
 if __name__ == '__main__':
@@ -282,7 +291,7 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()
-    print("Running with:")
+    logger.info("Running with:")
     for option, value in vars(flags).items():
-        print("    {} -> {}".format(option, value))
+        logger.info("    {} -> {}".format(option, value))
     main(**vars(flags))

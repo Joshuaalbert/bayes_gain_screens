@@ -116,7 +116,7 @@ def add_args(parser):
     parser.add_argument('--new_weights_col', help='Name of weight column to insert flags.',
                         default="OUTLIER_FLAGS", type=str, required=False)
     parser.add_argument('--outlier_frac_thresh', help='What fraction of directions outliers before flagging.',
-                        default=0.25, type=float, required=False)
+                        default=30./45., type=float, required=False)
 
 
 if __name__ == '__main__':

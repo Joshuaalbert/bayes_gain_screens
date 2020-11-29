@@ -10,13 +10,17 @@ from astropy.wcs import WCS
 import glob
 from DDFacet.Other import MyPickle
 from DDFacet.ToolsDir.ModToolBox import EstimateNpix
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_call(cmd):
-    print("{}".format(cmd))
+    logger.info("{}".format(cmd))
     exit_status = subprocess.call(cmd, shell=True)
     if exit_status:
         raise ValueError("Failed to  run: {}".format(cmd))
+
 
 def getimsize(image):
     imsizeddf = None
@@ -27,7 +31,7 @@ def getimsize(image):
             imsizeddf = line
 
     if imsizeddf == 'None':
-        print('Could not determine the image size, should have been 20000(?) or 6000(?)')
+        logger.info('Could not determine the image size, should have been 20000(?) or 6000(?)')
         sys.exit()
 
     imsizeddf = np.int(imsizeddf.split('=')[1])
@@ -40,7 +44,7 @@ def columnchecker(mslist, colname):
     for ms in mslist:
         t = pt.table(ms, ack=False)
         if colname not in t.colnames():
-            print(colname, ' not present in ', ms)
+            logger.info(colname, ' not present in ', ms)
             sys.exit()
         t.close()
 
@@ -65,12 +69,9 @@ def addextraweights(msfiles):
                 ws_tmp = ts.getcol('WEIGHT_SPECTRUM_FROM_IMAGING_WEIGHT')
                 n, nfreq, npol = np.shape(ws_tmp)
                 for i in range(npol):
-                    print('Copying over correlation ', i, ms)
+                    logger.info('Copying over correlation ', i, ms)
                     ws_tmp[:, :, i] = iw
                     ts.putcol('WEIGHT_SPECTRUM_FROM_IMAGING_WEIGHT', ws_tmp)
-
-
-
 
 
 def flatten(f):
@@ -132,7 +133,7 @@ def add_args(parser):
 
 
 def get_filenames(data_dir):
-    print("Locating archive mask, dico, and clustercat.")
+    logger.info("Locating archive mask, dico, and clustercat.")
     fullmask = os.path.join(data_dir, os.path.basename('image_full_ampphase_di_m.NS.mask01.fits'))
     indico = os.path.join(data_dir, os.path.basename('image_full_ampphase_di_m.NS.DicoModel'))
     clustercat = os.path.join(data_dir, os.path.basename('image_dirin_SSD_m.npy.ClusterCat.npy'))
@@ -146,14 +147,14 @@ def get_filenames(data_dir):
     if not os.path.isfile(mslist_file):
         raise IOError("Missing mslist_file {}".format(mslist_file))
     mslist = []
-    print('Reading {}'.format(mslist_file))
+    logger.info('Reading {}'.format(mslist_file))
     with open(mslist_file, 'r') as f:
         for line in f.readlines():
             mslist.append(line.strip())
     return mslist_file, mslist, fullmask, indico, clustercat
 
-def fix_dico_shape(fulldico, outdico, NPixOut):
 
+def fix_dico_shape(fulldico, outdico, NPixOut):
     # dico_model = 'image_full_ampphase_di_m.NS.DicoModel'
     # save_dico = dico_model.replace('.DicoModel', '.restricted.DicoModel')
     # NPixOut = 10000
@@ -164,7 +165,7 @@ def fix_dico_shape(fulldico, outdico, NPixOut):
     NPix0, _ = EstimateNpix(float(NPix), Padding=1)
     if NPix != NPix0:
         raise ValueError("NPix != NPix0")
-    print("Changing image size: %i -> %i pixels" % (NPix, NPixOut))
+    logger.info("Changing image size: %i -> %i pixels" % (NPix, NPixOut))
     xc0 = NPix // 2
     xc1 = NPixOut // 2
     dx = xc0 - xc1
@@ -184,21 +185,21 @@ def fix_dico_shape(fulldico, outdico, NPixOut):
         c0 = (x1 >= 0) & (x1 < NPixOut)
         c1 = (y1 >= 0) & (y1 < NPixOut)
         if c0 & c1:
-            print("Mapping (%i,%i)->(%i,%i)" % (x0, y0, x1, y1))
+            logger.info("Mapping (%i,%i)->(%i,%i)" % (x0, y0, x1, y1))
             DCompOut['Comp'][(x1, y1)] = dico['Comp'][(x0, y0)]
-    print("Saving in {}".format(outdico))
+    logger.info("Saving in {}".format(outdico))
     MyPickle.Save(DCompOut, outdico)
 
-def make_filtered_dico(fullmask, region_mask, full_dico_model, masked_dico_model,npix_out=10000):
+
+def make_filtered_dico(fullmask, region_mask, full_dico_model, masked_dico_model, npix_out=10000):
     """
     Filter dico model to only include sources in mask.
-
     :param region_mask:
     :param full_dico_model:
     :param masked_dico_model:
     :return:
     """
-    print("Making dico containing only calibrators: {}".format(masked_dico_model))
+    logger.info("Making dico containing only calibrators: {}".format(masked_dico_model))
     cmd = 'MaskDicoModel.py --MaskName={region_mask} --InDicoModel={full_dico_model} --OutDicoModel={masked_dico_model} --InvertMask=1'.format(
         region_mask=region_mask, full_dico_model=full_dico_model, masked_dico_model=masked_dico_model)
     cmd_call(cmd)
@@ -210,10 +211,10 @@ def make_filtered_dico(fullmask, region_mask, full_dico_model, masked_dico_model
         w = WCS(f[0].header)
         newf = fits.PrimaryHDU()
         npix_in = f[0].data.shape[-1]
-        trim = (npix_in - npix_out)//2
+        trim = (npix_in - npix_out) // 2
         if trim < 0:
             raise ValueError("Npix out {} should be less than npix in {}".format(npix_out, npix_in))
-        if 2*trim + npix_out != npix_in:
+        if 2 * trim + npix_out != npix_in:
             raise ValueError("Trim {} is not matching up with npix in {} and {}".format(trim, npix_in, npix_out))
         newf.data = f[0].data[:, :, trim:-trim, trim:-trim]
         newf.header = f[0].header
@@ -223,7 +224,8 @@ def make_filtered_dico(fullmask, region_mask, full_dico_model, masked_dico_model
         if not os.path.isfile(trimmed_mask):
             raise IOError("Trimmed mask {} not made".format(trimmed_mask))
 
-def make_predict_mask(infilename, ds9region, outfilename,npix_out=10000):
+
+def make_predict_mask(infilename, ds9region, outfilename, npix_out=10000):
     """
     Make mask that is `infilename` everywhere except in regions specified by `ds9region` which is zero.
     :param infilename:
@@ -231,10 +233,10 @@ def make_predict_mask(infilename, ds9region, outfilename,npix_out=10000):
     :param outfilename:
     :return:
     """
-    print('Making: {}'.format(outfilename))
+    logger.info('Making: {}'.format(outfilename))
     npix_in = getimsize(infilename)
-    s="image;box({},{},{},{},0)".format(npix_in//2, npix_in//2,npix_out, npix_out)
-    with open(ds9region,'w') as f:
+    s = "image;box({},{},{},{},0)".format(npix_in // 2, npix_in // 2, npix_out, npix_out)
+    with open(ds9region, 'w') as f:
         f.write(s)
     with fits.open(infilename) as hdu:
         hduflat = flatten(hdu)
@@ -245,8 +247,9 @@ def make_predict_mask(infilename, ds9region, outfilename,npix_out=10000):
     if not os.path.isfile(outfilename):
         raise IOError("Did not successfully create {}".format(outfilename))
 
-def make_predict_dico(indico, predict_dico, predict_mask,npix_out=10000):
-    print("Making dico containing all but calibrators: {}".format(predict_dico))
+
+def make_predict_dico(indico, predict_dico, predict_mask, npix_out=10000):
+    logger.info("Making dico containing all but calibrators: {}".format(predict_dico))
     cmd_call(
         "MaskDicoModel.py --MaskName={} --InDicoModel={} --OutDicoModel={}".format(predict_mask, indico, predict_dico))
     if not os.path.isfile(predict_dico):
@@ -254,9 +257,10 @@ def make_predict_dico(indico, predict_dico, predict_mask,npix_out=10000):
 
 
 def cleanup_working_dir(working_dir):
-    print("Deleting cache since we're done.")
-    for f in glob.glob(os.path.join(working_dir,"*.ddfcache")):
+    logger.info("Deleting cache since we're done.")
+    for f in glob.glob(os.path.join(working_dir, "*.ddfcache")):
         cmd_call("rm -r {}".format(f))
+
 
 def main(data_dir, working_dir, ncpu, keeplongbaselines, chunkhours, predict_column, sub_column, npix_out):
     data_dir = os.path.abspath(data_dir)
@@ -272,10 +276,13 @@ def main(data_dir, working_dir, ncpu, keeplongbaselines, chunkhours, predict_col
     os.chdir(working_dir)
     solsdir = os.path.join(data_dir, 'SOLSDIR')
     mslist_file, mslist, fullmask, indico, clustercat = get_filenames(data_dir)
-    predict_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.not_{sub_column}.DicoModel'.format(sub_column=sub_column))
-    filtered_dico = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.{sub_column}.DicoModel'.format(sub_column=sub_column))
-    predict_mask = os.path.join(data_dir, 'predict_mask_{sub_column}.fits'.format(sub_column=sub_column))  # just a name, can be anything
-    region_file = os.path.join(working_dir,'box_subtract_region.reg')
+    predict_dico = os.path.join(data_dir,
+                                'image_full_ampphase_di_m.NS.not_{sub_column}.DicoModel'.format(sub_column=sub_column))
+    filtered_dico = os.path.join(data_dir,
+                                 'image_full_ampphase_di_m.NS.{sub_column}.DicoModel'.format(sub_column=sub_column))
+    predict_mask = os.path.join(data_dir, 'predict_mask_{sub_column}.fits'.format(
+        sub_column=sub_column))  # just a name, can be anything
+    region_file = os.path.join(working_dir, 'box_subtract_region.reg')
     if keeplongbaselines:
         uvsel = "[0.100000,5000.000000]"
     else:
@@ -299,9 +306,10 @@ def main(data_dir, working_dir, ncpu, keeplongbaselines, chunkhours, predict_col
 
     args = dict(chunkhours=chunkhours, mslist_file=mslist_file, data_colname=data_colname, ncpu=ncpu,
                 clustercat=clustercat,
-                robust=robust, imagenpix=imagenpix, imagecell=imagecell, predict_mask=predict_mask, predict_dico=predict_dico, uvsel=uvsel,
+                robust=robust, imagenpix=imagenpix, imagecell=imagecell, predict_mask=predict_mask,
+                predict_dico=predict_dico, uvsel=uvsel,
                 solsdir=solsdir, predict_column=predict_column)
-    print("Predicting...")
+    logger.info("Predicting...")
     cmd_call("DDF.py --Output-Name=image_full_ampphase_di_m.NS_SUB --Data-ChunkHours={chunkhours} --Data-MS={mslist_file} \
     --Deconv-PeakFactor=0.001000 --Data-ColName={data_colname} --Parallel-NCPU={ncpu} --Facets-CatNodes={clustercat} \
     --Beam-CenterNorm=1 --Deconv-Mode=SSD --Beam-Model=LOFAR --Beam-LOFARBeamMode=A --Weight-Robust={robust} \
@@ -315,7 +323,7 @@ def main(data_dir, working_dir, ncpu, keeplongbaselines, chunkhours, predict_col
     --Predict-InitDicoModel={predict_dico} --Selection-UVRangeKm={uvsel} --GAClean-MinSizeInit=10 --Cache-Reset=1 \
     --Beam-Smooth=1 --Predict-ColName={predict_column} --DDESolutions-SolsDir={solsdir}".format(**args))
     # subtract
-    print("Subtracting...")
+    logger.info("Subtracting...")
     for ms in mslist:
         with pt.table(ms, readonly=False, ack=True) as t:
             colnames = t.colnames()
@@ -328,17 +336,18 @@ def main(data_dir, working_dir, ncpu, keeplongbaselines, chunkhours, predict_col
                 t.addcols(newdesc, newdmi)
 
             for row in range(0, t.nrows(), 3000000):
-                print('Reading {}'.format(predict_column))
+                logger.info('Reading {}'.format(predict_column))
                 f = t.getcol(predict_column, startrow=row, nrow=3000000, rowincr=1)
-                print('Reading', data_colname)
+                logger.info('Reading', data_colname)
                 d = t.getcol(data_colname, startrow=row, nrow=3000000, rowincr=1)
 
-                print('Writing', sub_column)
+                logger.info('Writing', sub_column)
                 t.putcol(sub_column, d - f, startrow=row, nrow=3000000, rowincr=1)
 
     addextraweights(mslist)
 
     cleanup_working_dir(working_dir)
+
 
 def test_main():
     main(data_dir='/home/albert/nederrijn_1/screens/root/L562061/download_archive',
@@ -361,7 +370,7 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()
-    print("Running with:")
+    logger.info("Running with:")
     for option, value in vars(flags).items():
-        print("    {} -> {}".format(option, value))
+        logger.info("    {} -> {}".format(option, value))
     main(**vars(flags))

@@ -3,18 +3,23 @@ import astropy.coordinates as ac
 import astropy.units as au
 from astropy import wcs
 import matplotlib as mpl
+
 mpl.use('Agg')
 import pylab as plt
 import numpy as np
 from matplotlib.patches import Circle
 import argparse
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def great_circle_sep(ra1, dec1, ra2, dec2):
     dra = np.abs(ra1 - ra2)
     # ddec = np.abs(dec1-dec2)
     num2 = (np.cos(dec2) * np.sin(dra)) ** 2 + (
-                np.cos(dec1) * np.sin(dec2) - np.sin(dec1) * np.cos(dec2) * np.cos(dra)) ** 2
+            np.cos(dec1) * np.sin(dec2) - np.sin(dec1) * np.cos(dec2) * np.cos(dra)) ** 2
     den = np.sin(dec1) * np.sin(dec2) + np.cos(dec1) * np.cos(dec2) * np.cos(dra)
     return np.arctan2(np.sqrt(num2), den)
 
@@ -32,10 +37,9 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
     """
 
 
-
 def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1.,
-                                     seed_directions=None, fill_in_distance=None,
-                                     fill_in_flux_limit=0., working_dir=None):
+                          seed_directions=None, fill_in_distance=None,
+                          fill_in_flux_limit=0., working_dir=None):
     """Given a srl file containing the sources extracted from the apparent flux image of the field,
     decide the screen directions
 
@@ -44,7 +48,7 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
     :return: float, array [N, 2]
         The `N` sources' coordinates as an ``astropy.coordinates.ICRS`` object
     """
-    print("Getting screen directions from image.")
+    logger.info("Getting screen directions from image.")
 
     with fits.open(ref_image_fits) as hdul:
         # ra,dec, _, freq
@@ -59,19 +63,17 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
         f = []
         sizes = []
         if seed_directions is not None:
-            print("Using seed directions.")
+            logger.info("Using seed directions.")
             ra = list(seed_directions[:, 0])
             dec = list(seed_directions[:, 1])
             f = list(flux_limit * np.ones(len(ra)))
-            sizes = list(120*np.ones(len(ra)))
+            sizes = list(120 * np.ones(len(ra)))
         idx = []
         for i in arg_sort:
             if max_N is not None:
                 if len(ra) >= max_N:
                     break
             pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
-            #             logging.info("{} -> {}".format(i, pix))
-            #             pix = np.reshape(np.array(np.unravel_index(i, [Nra, Ndec, 1, 1])), (1, 4))
             coords = w.wcs_pix2world([pix], 1)  # degrees
             ra_ = coords[0, 0] * np.pi / 180.
             dec_ = coords[0, 1] * np.pi / 180.
@@ -80,7 +82,7 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
                 ra.append(ra_)
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                print(
+                logger.info(
                     "Auto-append first: Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
 
                 idx.append(i)
@@ -92,7 +94,7 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
                 sizes.append(120.)
-                print("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
+                logger.info("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                 idx.append(i)
 
         first_found = len(idx)
@@ -117,8 +119,8 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
                     ra.append(ra_)
                     dec.append(dec_)
                     f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                    sizes.append(0.5*np.men(dist)*3600.)
-                    print(
+                    sizes.append(0.5 * np.men(dist) * 3600.)
+                    logger.info(
                         "Found filler {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                     idx.append(i)
 
@@ -132,11 +134,12 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
     dec = np.array(dec)
     sizes = list(sizes)
     # plotting
-    plt.scatter(ra*180./np.pi, dec*180./np.pi, c=np.linspace(0., 1., len(ra)), cmap='jet', s=np.sqrt(10000. * f), alpha=1.)
-    target = Circle((np.mean(ra)*180/np.pi, np.mean(dec)*180/np.pi), radius=3.56 / 2., fc=None, alpha=0.2)
+    plt.scatter(ra * 180. / np.pi, dec * 180. / np.pi, c=np.linspace(0., 1., len(ra)), cmap='jet',
+                s=np.sqrt(10000. * f), alpha=1.)
+    target = Circle((np.mean(ra) * 180 / np.pi, np.mean(dec) * 180 / np.pi), radius=3.56 / 2., fc=None, alpha=0.2)
     ax = plt.gca()
     ax.add_patch(target)
-    target = Circle((np.mean(ra)*180/np.pi, np.mean(dec)*180/np.pi), radius=4.75 / 2., fc=None, alpha=0.2)
+    target = Circle((np.mean(ra) * 180 / np.pi, np.mean(dec) * 180 / np.pi), radius=4.75 / 2., fc=None, alpha=0.2)
     ax = plt.gca()
     ax.add_patch(target)
     plt.title("Brightest {} sources".format(len(f)))
@@ -144,7 +147,7 @@ def get_screen_directions(ref_image_fits, flux_limit=0.1, max_N=None, min_spacin
     plt.ylabel('DEC [deg]')
     plt.savefig(os.path.join(working_dir, 'calibrators.png'))
     plt.close('all')
-    print("Found {} sources.".format(len(ra)))
+    logger.info("Found {} sources.".format(len(ra)))
     if seed_directions is not None:
         ra = list(seed_directions[:, 0]) + list(ra)
         dec = list(seed_directions[:, 1]) + list(dec)
@@ -164,7 +167,7 @@ def write_reg_file(filename, radius_arcsec, directions, color='green'):
             f.write('circle({},{},{}")\n'.format(
                 d.ra.to_string(unit=au.hour, sep=(":", ":"), alwayssign=False, precision=3),
                 d.dec.to_string(unit=au.deg, sep=(":", ":"), alwayssign=True, precision=2), r))
-        print("Wrote calibrators to file: {}".format(filename))
+        logger.info("Wrote calibrators to file: {}".format(filename))
 
 
 def add_args(parser):
@@ -206,8 +209,8 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     flags, unparsed = parser.parse_known_args()
-    print("Running with:")
+    logger.info("Running with:")
     for option, value in vars(flags).items():
-        print("    {} -> {}".format(option, value))
+        logger.info("    {} -> {}".format(option, value))
 
     main(**vars(flags))
