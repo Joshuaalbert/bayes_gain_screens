@@ -4,12 +4,9 @@
 function usage()
 {
    cat << HEREDOC
-
    Usage: $progname --obs_num [--archive_dir --root_working_dir --script_dir --region_file --simg_dir --bind_dirs --ncpu]
-
    optional arguments:
      -h, --help           show this help message and exit
-
 HEREDOC
 }
 
@@ -24,7 +21,7 @@ script_dir=
 region_file=None
 bind_dirs=
 ncpu=$(grep -c ^processor /proc/cpuinfo)
-conda_env=tf_py
+conda_env=bayes_gain_screens_py
 force_conda=
 auto_resume=2
 no_download=False
@@ -39,9 +36,7 @@ do_choose_calibrators=2
 do_subtract=2
 do_subtract_outside_pb=2
 do_solve_dds4=2
-do_smooth_dds4=0
 do_slow_solve_dds4=2
-do_tec_inference=0
 do_tec_inference_and_smooth=2
 do_infer_screen=2
 do_merge_slow=2
@@ -82,9 +77,7 @@ L=(obs_num \
     do_subtract \
     do_subtract_outside_pb \
     do_solve_dds4 \
-    do_smooth_dds4 \
     do_slow_solve_dds4 \
-    do_tec_inference \
     do_tec_inference_and_smooth \
     do_infer_screen \
     do_merge_slow \
@@ -95,10 +88,11 @@ L=(obs_num \
     no_download \
     auto_resume \
     mock_run \
-    retry_task_on_fail)
+    retry_task_on_fail \
+    const_smooth_window)
 
 arg_parse_str="help"
-for arg in ${L[@]}; do
+for arg in "${L[@]}"; do
     arg_parse_str=${arg_parse_str},${arg}:
 done
 #echo $arg_parse_str
@@ -115,7 +109,7 @@ while true; do
     -- ) shift; break ;;
   esac
   found=
-  for arg in ${L[@]}; do
+  for arg in "${L[@]}"; do
     if [ "$1" == "--$arg" ]; then
         declare ${arg}="$2";
         shift 2;
@@ -145,44 +139,42 @@ fi
 
 singularity exec -B /tmp,/dev/shm "$simg_dir"/lofar_sksp_ddf.simg CleanSHM.py
 
-cmd="python "$script_dir"/pipeline.py \
-        --archive_dir="$archive_dir" \
-        --root_working_dir="$root_working_dir" \
-        --script_dir="$script_dir" \
-        --region_file="$region_file" \
-        --auto_resume="$auto_resume" \
+cmd="python $script_dir/pipeline.py \
+        --archive_dir=$archive_dir \
+        --root_working_dir=$root_working_dir \
+        --script_dir=$script_dir \
+        --region_file=$region_file \
+        --auto_resume=$auto_resume \
         --ref_dir=0 \
-        --ncpu="$ncpu" \
-        --block_size=40 \
+        --const_smooth_window=$const_smooth_window \
+        --ncpu=$ncpu \
         --deployment_type=directional \
-        --retry_task_on_fail="$retry_task_on_fail" \
-        --no_download="$no_download" \
-        --do_download_archive="$do_download_archive" \
-        --do_choose_calibrators="$do_choose_calibrators" \
-        --do_subtract="$do_subtract" \
-        --do_subtract_outside_pb="$do_subtract_outside_pb" \
-        --do_solve_dds4="$do_solve_dds4" \
-        --do_smooth_dds4="$do_smooth_dds4" \
-        --do_slow_solve_dds4="$do_slow_solve_dds4" \
-        --do_tec_inference="$do_tec_inference" \
-        --do_tec_inference_and_smooth="$do_tec_inference_and_smooth" \
-        --do_infer_screen="$do_infer_screen" \
-        --do_merge_slow="$do_merge_slow" \
-        --do_flag_visibilities="$do_flag_visibilities" \
-        --do_image_smooth="$do_image_smooth" \
-        --do_image_subtract_dds4="$do_image_subtract_dds4" \
-        --do_image_dds4="$do_image_dds4" \
-        --do_image_smooth_slow="$do_image_smooth_slow" \
-        --do_image_smooth_slow_restricted="$do_image_smooth_slow_restricted" \
-        --do_image_screen_slow="$do_image_screen_slow" \
-        --do_image_screen_slow_restricted="$do_image_screen_slow_restricted" \
-        --do_image_screen="$do_image_screen" \
-        --obs_num="$obs_num" \
-        --bind_dirs="$bind_dirs" \
-        --lofar_sksp_simg="$simg_dir"/lofar_sksp_ddf.simg \
-        --lofar_gain_screens_simg="$simg_dir"/lofar_sksp_ddf_gainscreens_premerge.simg \
-        --bayes_gain_screens_simg="$bayes_gain_screens_simg" \
-        --bayes_gain_screens_conda_env="$conda_env""
+        --retry_task_on_fail=$retry_task_on_fail \
+        --no_download=$no_download \
+        --do_download_archive=$do_download_archive \
+        --do_choose_calibrators=$do_choose_calibrators \
+        --do_subtract=$do_subtract \
+        --do_subtract_outside_pb=$do_subtract_outside_pb \
+        --do_solve_dds4=$do_solve_dds4 \
+        --do_slow_solve_dds4=$do_slow_solve_dds4 \
+        --do_tec_inference_and_smooth=$do_tec_inference_and_smooth \
+        --do_infer_screen=$do_infer_screen \
+        --do_merge_slow=$do_merge_slow \
+        --do_flag_visibilities=$do_flag_visibilities \
+        --do_image_smooth=$do_image_smooth \
+        --do_image_subtract_dds4=$do_image_subtract_dds4 \
+        --do_image_dds4=$do_image_dds4 \
+        --do_image_smooth_slow=$do_image_smooth_slow \
+        --do_image_smooth_slow_restricted=$do_image_smooth_slow_restricted \
+        --do_image_screen_slow=$do_image_screen_slow \
+        --do_image_screen_slow_restricted=$do_image_screen_slow_restricted \
+        --do_image_screen=$do_image_screen \
+        --obs_num=$obs_num \
+        --bind_dirs=$bind_dirs \
+        --lofar_sksp_simg=$simg_dir/lofar_sksp_ddf.simg \
+        --lofar_gain_screens_simg=$simg_dir/lofar_sksp_ddf_gainscreens_premerge.simg \
+        --bayes_gain_screens_simg=$bayes_gain_screens_simg \
+        --bayes_gain_screens_conda_env=$conda_env"
 
 if [ -z "$mock_run" ]; then
   eval $cmd
@@ -190,6 +182,3 @@ else
   echo $cmd
   echo Mock run, exitting before run.
 fi
-
-
-
