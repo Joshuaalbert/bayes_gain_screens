@@ -1,11 +1,11 @@
 
 from .common_setup import *
-from ..misc import make_example_datapack
+from ..utils import make_example_datapack
 import numpy as np
 import pylab as plt
 import os
 
-from bayes_filter.plotting import animate_datapack, plot_vornoi_map
+from bayes_gain_screens.plotting import animate_datapack, plot_vornoi_map
 
 
 

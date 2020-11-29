@@ -1,7 +1,6 @@
 
 
 from __future__ import (absolute_import, unicode_literals, division, print_function)
-import numpy as np
 import astropy.units as u
 from astropy.coordinates.baseframe import (BaseCoordinateFrame, RepresentationMapping, frame_transform_graph)
 from astropy.coordinates.transformations import FunctionTransform
