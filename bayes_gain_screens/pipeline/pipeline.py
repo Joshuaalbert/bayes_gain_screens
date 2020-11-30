@@ -173,39 +173,38 @@ def setup_auto_resume(auto_resume, state_file, steps):
                 for line in f.readlines():
                     if "END" not in line:
                         continue
-                    name = line.split(" ")[-1].strip()
-                    if name == 'endpoint':
+                    if step == 'endpoint':
                         continue
-                    # split = line.split("|")
-                    # if len(split) == 3:
-                    #     name = split[1].strip()
-                    #     status = split[2].strip()
-                    # else:
-                    #     continue
-                    if name not in steps.keys():
-                        raise ValueError("Could not find step {}".format(name))
-                    logger.info("Auto-resume infers {} should be skipped.".format(name))
-                    steps[name].flag = 0
+                    step = line.split(" ")[-1].strip()
+                    if step not in steps.keys():
+                        raise ValueError("Could not find step {}".format(step))
+                    logger.info("Auto-resume infers {} should be skipped.".format(step))
+                    if steps[step].flag > 0:
+                        logger.info(
+                            "Changing step user requested flag {} : {} -> {}".format(step, steps[step].flag,
+                                                                                     0))
+                        steps[step].flag = 0
 
 
 class Pipeline(object):
     def __init__(self, auto_resume, root_working_dir, state_file, timing_file, steps):
         self._steps = steps
+        # possibly auto resuming by setting flag
+        setup_auto_resume(self._auto_resume, self._state_file, self._steps)
+        self._root_working_dir = root_working_dir
+        for k, step in self._steps.items():
+            step.build_working_dir(self._root_working_dir)
         self._state_file = state_file
         self._timing_file = timing_file
         self._auto_resume = auto_resume
-        self._root_working_dir = root_working_dir
 
     def build(self):
         """
         Builds the commands required to run the pipeline, and sets autoresume flags.
         """
         logger.info("Building the pipeline.")
-        # possibly auto resuming by setting flag
-        setup_auto_resume(self._auto_resume, self._state_file, self._steps)
         # make required working directories (no deleting
         for k, step in self._steps.items():
-            step.build_working_dir(self._root_working_dir)
             step.build_cmd()
             step.cmd.add('working_dir', step.working_dir)
 

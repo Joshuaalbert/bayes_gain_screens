@@ -30,7 +30,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
          auto_resume,
          **do_kwargs):
     if script_dir is None:
-        script_dir = os.path.dirname(sys.modules["bayes_gain_screens"].__file__)
+        script_dir = os.path.join(os.path.dirname(sys.modules["bayes_gain_screens"].__file__),'steps')
 
     for key in do_kwargs.keys():
         if not key.startswith('do_'):
@@ -125,14 +125,14 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
              script_name='sub-sources-outside-pb.py', exec_env=lofar_sksp_env),
         Step('solve_dds4', ['subtract'], script_dir=script_dir, script_name='solve_on_subtracted.py',
              exec_env=lofar_sksp_env),
-        Step('slow_solve_dds4', ['solve_dds4', 'smooth_dds4'], script_dir=script_dir,
+        Step('slow_solve_dds4', ['solve_dds4', 'tec_inference_and_smooth'], script_dir=script_dir,
              script_name='slow_solve_on_subtracted.py', exec_env=lofar_sksp_env),
         Step('tec_inference_and_smooth', ['solve_dds4'], script_dir=script_dir,
              script_name='tec_inference_and_smooth.py', exec_env=bayes_gain_screens_env),
         Step('infer_screen', ['tec_inference_and_smooth'], script_dir=script_dir,
              script_name='infer_screen.py',
              exec_env=bayes_gain_screens_env),
-        Step('merge_slow', ['slow_solve_dds4', 'smooth_dds4', 'infer_screen', 'tec_inference_and_smooth'],
+        Step('merge_slow', ['slow_solve_dds4', 'infer_screen', 'tec_inference_and_smooth'],
              script_dir=script_dir,
              script_name='merge_slow.py', exec_env=bayes_gain_screens_env),
         Step('flag_visibilities', ['infer_screen'],
@@ -140,31 +140,31 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
              script_name='flag_visibilities.py', exec_env=lofar_gain_screens_env),
         Step('image_subtract_dirty', ['subtract'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_sksp_env),
-        Step('image_subtract_dds4', ['solve_dds4', 'image_subtract_dirty'], script_dir=script_dir,
+        Step('image_subtract_dds4', ['tec_inference_and_smooth'], script_dir=script_dir,
              script_name='image.py', exec_env=lofar_sksp_env),
-        Step('image_dds4', ['solve_dds4', 'image_subtract_dds4'], script_dir=script_dir, script_name='image.py',
+        Step('image_dds4', ['solve_dds4'], script_dir=script_dir, script_name='image.py',
              exec_env=lofar_sksp_env),
-        Step('image_smooth', ['smooth_dds4', 'image_dds4', 'tec_inference_and_smooth'], script_dir=script_dir,
+        Step('image_smooth', ['tec_inference_and_smooth'], script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_smooth_slow', ['smooth_dds4', 'merge_slow', 'image_smooth', 'tec_inference_and_smooth'],
+        Step('image_smooth_slow', ['merge_slow'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_screen', ['flag_visibilities', 'infer_screen', 'image_smooth_slow'], script_dir=script_dir,
+        Step('image_screen', ['infer_screen'], script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
-        Step('image_screen_slow', ['flag_visibilities', 'infer_screen', 'merge_slow', 'image_screen'],
+        Step('image_screen_slow', ['merge_slow'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
         Step('image_screen_slow_restricted',
-             ['flag_visibilities', 'infer_screen', 'merge_slow', 'image_screen', 'subtract_outside_pb'],
+             ['merge_slow', 'subtract_outside_pb'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
         Step('image_smooth_slow_restricted',
-             ['smooth_dds4', 'merge_slow', 'image_smooth', 'subtract_outside_pb', 'tec_inference_and_smooth'],
+             ['merge_slow', 'subtract_outside_pb'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env)
@@ -185,7 +185,10 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
                 break
         steps[step.name] = step
 
+    pipeline = Pipeline(auto_resume, root_working_dir, state_file, timing_file, steps)
+
     data_dir = steps['download_archive'].working_dir
+    logger.info(data_dir)
 
     steps['download_archive'] \
         .add_cmd_arg('obs_num', obs_num) \
@@ -267,8 +270,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('data_dir', data_dir) \
         .add_cmd_arg('script_dir', script_dir) \
         .add_cmd_arg('use_init_dico', True) \
-        .add_cmd_arg('init_dico', os.path.join(steps['download_archive'].working_dir,
-                                               'image_full_ampphase_di_m.NS.DATA_SUB.DicoModel'))
+        .add_cmd_arg('init_dico', os.path.join(data_dir, 'image_full_ampphase_di_m.NS.DATA_SUB.DicoModel'))
 
     steps['image_smooth'] \
         .add_cmd_arg('image_type', 'smoothed:data') \
@@ -309,7 +311,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('data_dir', data_dir) \
         .add_cmd_arg('script_dir', script_dir) \
         .add_cmd_arg('use_init_dico', True) \
-        .add_cmd_arg('init_dico', os.path.join(steps['download_archive'].working_dir,
+        .add_cmd_arg('init_dico', os.path.join(data_dir,
                                                'image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'))
 
     steps['image_screen_slow_restricted'] \
@@ -319,10 +321,9 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('data_dir', data_dir) \
         .add_cmd_arg('script_dir', script_dir) \
         .add_cmd_arg('use_init_dico', True) \
-        .add_cmd_arg('init_dico', os.path.join(steps['download_archive'].working_dir,
+        .add_cmd_arg('init_dico', os.path.join(data_dir,
                                                'image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'))
 
-    pipeline = Pipeline(auto_resume, root_working_dir, state_file, timing_file, steps)
     pipeline.build()
     pipeline.run(retry_task_on_fail=retry_task_on_fail)
 
@@ -369,8 +370,6 @@ def add_args(parser):
     optional.add_argument('--ncpu',
                           help='Number of processes to use at most. If not then set to number of available physical cores.',
                           default=workers, type=int, required=False)
-    optional.add_argument('--retry_task_on_fail', help='How many times to retry if there is a failure.',
-                          default=0, type=int, required=False)
     optional.add_argument('--script_dir',
                           help='Where the scripts are located, by default uses those installed with package.',
                           default=None, type=str, required=False)
@@ -418,10 +417,11 @@ def test_main():
          lofar_gain_screens_simg='/home/albert/store/lofar_sksp_ddf_gainscreens_premerge.simg',
          bayes_gain_screens_simg=None,
          bayes_gain_screens_conda_env='bayes_gain_screens_py',
-         auto_resume=0,
+         auto_resume=1,
          do_choose_calibrators=1,
          do_download_archive=1,
          do_subtract=1,
+         do_subtract_outside_pb=1,
          do_image_subtract_dirty=0,
          do_solve_dds4=1,
          do_tec_inference_and_smooth=1,
@@ -432,10 +432,9 @@ def test_main():
          do_image_dds4=0,
          do_image_subtract_dds4=0,
          do_image_smooth=1,
-         do_image_smooth_slow=1,
+         do_image_smooth_slow=0,
          do_image_screen=0,
          do_image_screen_slow=0,
-         do_subtract_outside_pb=0,
          do_image_smooth_slow_restricted=0,
          do_image_screen_slow_restricted=0,
          retry_task_on_fail=0)

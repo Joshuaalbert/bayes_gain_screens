@@ -78,6 +78,9 @@ class Step(object):
         self.flag = None
         self.cmd_args = []
 
+    def __repr__(self):
+        return "Step {} flag {} deps: {}".format(self.name, self.flag, self.deps)
+
     def add_cmd_arg(self, name, value):
         self.cmd_args.append((name, value))
         return self
