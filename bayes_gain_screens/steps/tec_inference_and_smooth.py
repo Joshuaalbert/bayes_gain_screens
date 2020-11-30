@@ -88,7 +88,7 @@ def chunked_pmap(f, *args, chunksize=None):
     if (remainder != 0) and (N > chunksize):
         args = [jnp.concatenate([arg, arg[:remainder]], axis=0) for arg in args]
         N = len(args[0])
-    logger.info("Running on ", chunksize)
+    logger.info("Running on {}".format(chunksize))
     results = []
     for start in range(0, N, chunksize):
         stop = min(start + chunksize, N)
@@ -98,7 +98,7 @@ def chunked_pmap(f, *args, chunksize=None):
         #     results[-1][0].block_until_ready()
         # else:
         #     results[-1].block_until_ready()
-        logger.info("Time:", default_timer() - t0)
+        logger.info("Time: {}".format(default_timer() - t0))
     result = tree_multimap(lambda *args: jnp.concatenate(args, axis=0), *results)
     if remainder != 0:
         result = tree_map(lambda x: x[:-remainder], result)
@@ -106,6 +106,7 @@ def chunked_pmap(f, *args, chunksize=None):
 
 
 def get_data(solution_file):
+    logger.info("Getting DDS4 data.")
     with DataPack(solution_file, readonly=True) as h:
         select = dict(pol=slice(0, 1, 1))
         h.select(**select)
@@ -117,7 +118,7 @@ def get_data(solution_file):
         freqs = freqs.to(au.Hz).value
         _, times = h.get_times(axes['time'])
         times = times.mjd / 86400.
-        logger.info("Shape:", phase.shape)
+        logger.info("Shape: {}".format( phase.shape))
 
         (Nd, Na, Nf, Nt) = phase.shape
 
@@ -133,10 +134,10 @@ def get_data(solution_file):
             log_amp = vmap(lambda log_amp: poly_smooth(freqs, log_amp, deg=3))(log_amp)
             amp = jnp.exp(log_amp)
             return amp
-
+        logger.info("Smoothing amplitudes")
         amp = chunked_pmap(smooth, amp.reshape((Nd * Na, Nf, Nt)).transpose((0, 2, 1)))  # Nd*Na,Nt,Nf
         amp = amp.transpose((0, 2, 1)).reshape((Nd, Na, Nf, Nt))
-        Y_obs = jnp.concatenate([amp * jnp.cos(phase), amp * jnp.sin(phase)], axis=1)
+        Y_obs = jnp.concatenate([amp * jnp.cos(phase), amp * jnp.sin(phase)], axis=2)
     return Y_obs, times, freqs
 
 
@@ -170,7 +171,7 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
                        sampler_name='slice',
                        uncert_mean=lambda uncert, **kwargs: uncert,
                        tec_mean=lambda tec, **kwargs: tec,
-                       const_mean=lambda const, **kwargs: jnp.exp(1j * const),
+                       const_mean=lambda const, **kwargs: jnp.concatenate([jnp.cos(const),jnp.sin(const)]),
                        clock_mean=lambda clock, **kwargs: clock,
                        )
 
@@ -180,7 +181,7 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
                  collect_samples=False,
                  termination_frac=0.01,
                  sampler_kwargs=dict(depth=1, num_slices=3))
-    const_mean = jnp.angle(results.marginalised['const_mean'])
+    const_mean = jnp.arctan2(results.marginalised['const_mean'][1], results.marginalised['const_mean'][0])
     clock_mean = results.marginalised['clock_mean']
     return (const_mean, clock_mean)
 
@@ -226,8 +227,9 @@ def constrained_solve(freqs, key, Y_obs, amp, const_mu, clock_mu):
 
 
 def solve_and_smooth(Y_obs, times, freqs):
-    Nd, Na, Nf, Nt = Y_obs.shape
-    Y_obs = Y_obs.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, Nf))  # Nd*Na*Nt, Nf
+    Nd, Na, twoNf, Nt = Y_obs.shape
+    Nf = twoNf//2
+    Y_obs = Y_obs.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, 2*Nf))  # Nd*Na*Nt, 2*Nf
     amp = jnp.sqrt(Y_obs[:, :freqs.size] ** 2 + Y_obs[:, freqs.size:] ** 2)
     T = Y_obs.shape[0]
     const_mean, clock_mean = chunked_pmap(lambda *args: unconstrained_solve(freqs, *args),
@@ -248,8 +250,8 @@ def solve_and_smooth(Y_obs, times, freqs):
         chunked_pmap(lambda *args: constrained_solve(freqs, *args),
                      random.split(random.PRNGKey(int(default_timer())), T), Y_obs,
                      amp, const_mean, clock_mean)
-    Y_mean = Y_mean.reshape((Nd, Na, Nt, Nf)).transpose((0, 1, 3, 2))
-    Y_std = Y_std.reshape((Nd, Na, Nt, Nf)).transpose((0, 1, 3, 2))
+    Y_mean = Y_mean.reshape((Nd, Na, Nt, 2*Nf)).transpose((0, 1, 3, 2))
+    Y_std = Y_std.reshape((Nd, Na, Nt, 2*Nf)).transpose((0, 1, 3, 2))
     tec_mean = tec_mean.reshape((Nd, Na, Nt))
     tec_std = tec_std.reshape((Nd, Na, Nt))
     const_mean = const_mean.reshape((Nd, Na, Nt))
@@ -277,7 +279,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
     prepare_soltabs(dds4_h5parm, dds5_h5parm)
     Y_obs, times, freqs = get_data(solution_file=dds4_h5parm)
     Y_mean, Y_std, tec_mean, tec_std, const_mean, clock_mean = solve_and_smooth(Y_obs, times, freqs)
-    phase_mean = jnp.arctan2(Yphase_mean[:, :, freqs.size:, :], Y_mean[:, :, :freqs.size, :])
+    phase_mean = jnp.arctan2(Y_mean[:, :, freqs.size:, :], Y_mean[:, :, :freqs.size, :])
     amp_mean = jnp.sqrt(Y_mean[:, :, freqs.size:, :] ** 2 + Y_mean[:, :, :freqs.size, :] ** 2)
     logger.info("Storing smoothed phase, amplitudes, tec, const, and clock")
     with DataPack(dds5_h5parm, readonly=False) as h:
