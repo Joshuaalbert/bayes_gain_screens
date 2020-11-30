@@ -5,8 +5,7 @@ matplotlib.use('Agg')
 import numpy as np
 import os
 from concurrent import futures
-from .datapack import DataPack
-from . import logging
+from h5parm import DataPack
 import astropy.units as au
 from scipy.spatial import ConvexHull, cKDTree
 from scipy.spatial.distance import pdist
@@ -16,6 +15,9 @@ from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 from scipy.spatial import Voronoi
 from . import TEC_CONV
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import cmocean
@@ -174,7 +176,7 @@ class DatapackPlotter(object):
         for group in range(points.shape[0]):
             points_g = points_i[i == group, :]
             if points_g.size == 0:
-                logging.debug("Facet {} has zero size".format(group))
+                logger.debug("Facet {} has zero size".format(group))
                 poly = Polygon(points[group:group + 1, :], closed=False)
             else:
                 hull = ConvexHull(points_g)
@@ -183,7 +185,7 @@ class DatapackPlotter(object):
             patches.append(poly)
         if ax is None:
             fig, ax = plt.subplots()
-            logging.info("Making new plot")
+            logger.info("Making new plot")
         if values is None:
             values = np.zeros(len(patches))  # random.uniform(size=len(patches))
         p = PatchCollection(patches)
@@ -232,7 +234,7 @@ class DatapackPlotter(object):
             values = np.zeros([Ndec, Nra])
         if ax is None:
             fig, ax = plt.subplots()
-            logging.info("Making new plot")
+            logger.info("Making new plot")
 
         x = np.linspace(np.min(points[0]), np.max(points[0]), Nra)
         y = np.linspace(np.min(points[1]), np.max(points[1]), Ndec)
@@ -314,7 +316,7 @@ class DatapackPlotter(object):
 
         with self.datapack:
             self.datapack.current_solset = solset
-            logging.info(
+            logger.info(
                 "Applying selection: ant={},time={},freq={},dir={},pol={}".format(ant_sel, time_sel, freq_sel, dir_sel,
                                                                                   pol_sel))
             self.datapack.select(ant=ant_sel, time=time_sel, freq=freq_sel, dir=None, pol=pol_sel)
@@ -334,7 +336,7 @@ class DatapackPlotter(object):
                 overlay_obs, overlay_axes = self.datapack.__getattr__(observable)
                 weights, _ = self.datapack.__getattr__("weights_" + observable)
                 _, flag_directions = self.datapack.get_directions(overlay_axes['dir'])
-                logging.info("Flagging observables based on inf uncertanties")
+                logger.info("Flagging observables based on inf uncertanties")
                 flags = weights == np.inf
                 self.datapack.current_solset = solset
             else:
@@ -393,9 +395,9 @@ class DatapackPlotter(object):
             Nd = len(directions)
             Nf = len(freqs)
             fixfreq = Nf >> 1
-            logging.info("Plotting {} directions".format(Nd))
-            logging.info("Plotting {} antennas".format(Na))
-            logging.info("Plotting {} timestamps".format(Nt))
+            logger.info("Plotting {} directions".format(Nd))
+            logger.info("Plotting {} antennas".format(Na))
+            logger.info("Plotting {} timestamps".format(Nt))
 
             _, antennas_ = self.datapack.get_antennas([self.datapack.ref_ant])
 
@@ -443,7 +445,7 @@ class DatapackPlotter(object):
             if Nt > len(fignames):
                 fignames = fignames[:Nt]
             if Nt < len(fignames):
-                print(Nt, fignames)
+                logger.info(Nt, fignames)
                 raise ValueError("Gave too few fignames.")
 
         if mode == 'perantenna':
@@ -497,7 +499,7 @@ class DatapackPlotter(object):
                                   norm=norm, orientation='vertical')
 
             for j in range(Nt):
-                logging.info("Plotting {}".format(timestamps[j]))
+                logger.info("Plotting {}".format(timestamps[j]))
                 for i in range(Na):
                     if not plot_screen:
                         datum = obs[:, i, fixfreq, j]
@@ -596,7 +598,7 @@ def make_animation(datafolder, prefix='fig', fps=4):
     if os.system(
             'ffmpeg -framerate {} -i {}/{}-%04d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -r 30 {}/animation.mp4'.format(
                 fps, datafolder, prefix, datafolder)):
-        logging.info("{}/animation.mp4 exists already".format(datafolder))
+        logger.info("{}/animation.mp4 exists already".format(datafolder))
 
 
 def plot_phase_vs_time(datapack, output_folder, solsets='sol000',
@@ -837,7 +839,7 @@ def plot_freq_vs_time(datapack, output_folder, solset='sol000', soltab='phase', 
         os.makedirs(output_folder, exist_ok=True)
         for k in range(Nd):
             filename = os.path.join(os.path.abspath(output_folder), "{}_{}_dir_{}.png".format(solset, soltab, k))
-            logging.info("Plotting {}".format(filename))
+            logger.info("Plotting {}".format(filename))
             fig, axs = plt.subplots(nrows=M, ncols=M, figsize=(4 * M, 4 * M), sharex=True, sharey=True)
             for i in range(M):
 
