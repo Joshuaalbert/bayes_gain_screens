@@ -29,7 +29,7 @@ except ImportError:
 
 def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.PuOr,
                     relim=False):
-    if cmap is 'phase':
+    if cmap == 'phase':
         cmap = phase_cmap
 
     if norm is None:
