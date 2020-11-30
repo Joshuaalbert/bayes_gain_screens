@@ -41,7 +41,7 @@ def chunked_pmap(f, *args, chunksize=None):
     if (remainder != 0) and (N > chunksize):
         args = [jnp.concatenate([arg, arg[:remainder]], axis=0) for arg in args]
         N = len(args[0])
-    logger.info("Running on ", chunksize)
+    logger.info("Running on {}".format(chunksize))
     results = []
     for start in range(0, N, chunksize):
         stop = min(start + chunksize, N)
@@ -51,7 +51,7 @@ def chunked_pmap(f, *args, chunksize=None):
         #     results[-1][0].block_until_ready()
         # else:
         #     results[-1].block_until_ready()
-        logger.info("Time:", default_timer() - t0)
+        logger.info("Time: {}".format(default_timer() - t0))
     result = tree_multimap(lambda *args: jnp.concatenate(args, axis=0), *results)
     if remainder != 0:
         result = tree_map(lambda x: x[:-remainder], result)
