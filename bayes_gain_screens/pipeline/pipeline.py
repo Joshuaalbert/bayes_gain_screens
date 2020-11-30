@@ -99,7 +99,7 @@ def execute_dask(dsk, key, timing_file=None, state_file=None, retry_task_on_fail
                             update_timing(timing_file, k, time_to_run)
                         break
                     else:
-                        if try_idx <= retry_task_on_fail:
+                        if try_idx < retry_task_on_fail:
                             try_idx += 1
                             state.write("{} | RETRY | {}\n".format(now(), k))
                             continue
