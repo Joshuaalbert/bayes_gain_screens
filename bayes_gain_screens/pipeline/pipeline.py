@@ -189,14 +189,15 @@ def setup_auto_resume(auto_resume, state_file, steps):
 class Pipeline(object):
     def __init__(self, auto_resume, root_working_dir, state_file, timing_file, steps):
         self._steps = steps
+        self._auto_resume = auto_resume
+        self._state_file = state_file
         # possibly auto resuming by setting flag
         setup_auto_resume(self._auto_resume, self._state_file, self._steps)
         self._root_working_dir = root_working_dir
         for k, step in self._steps.items():
             step.build_working_dir(self._root_working_dir)
-        self._state_file = state_file
         self._timing_file = timing_file
-        self._auto_resume = auto_resume
+
 
     def build(self):
         """
