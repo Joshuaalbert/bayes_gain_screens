@@ -12,7 +12,7 @@ from bayes_gain_screens.utils import chunked_pmap
 
 logger = logging.getLogger(__name__)
 
-from bayes_gain_screens.plotting import animate_datapack
+from bayes_gain_screens.plotting import animate_datapack, add_colorbar_to_axes
 
 from h5parm import DataPack
 from h5parm.utils import make_soltab
@@ -248,6 +248,9 @@ def link_overwrite(src, dst):
     os.symlink(src, dst)
 
 
+def wrap(phi):
+    return (phi + jnp.pi) % (2 * jnp.pi) - jnp.pi
+
 def main(data_dir, working_dir, obs_num, ncpu):
     os.environ['XLA_FLAGS'] = f"--xla_force_host_platform_device_count={ncpu}"
     logger.info("Performing data smoothing via tec+const+clock inference.")
@@ -279,18 +282,72 @@ def main(data_dir, working_dir, obs_num, ncpu):
     data_plot_dir = os.path.join(working_dir, 'data_plots')
     os.makedirs(data_plot_dir, exist_ok=True)
     Nd, Na, Nf, Nt = phase_mean.shape
-    for d in range(Nd):
-        for a in range(Na):
-            fig, axs = plt.subplots(2, 1, sharex=True, sharey=True)
-            axs[0].imshow(Y_obs[d, a, :, :], aspect='auto', origin='lower',
-                          extent=(times.min(), times.max(), freqs.min() / 1e6, freqs.max() / 1e6))
-            axs[1].imshow(Y_mean[d, a, :, :], aspect='auto', origin='lower',
-                          extent=(times.min(), times.max(), freqs.min() / 1e6, freqs.max() / 1e6))
-            axs[1].set_xlabel('Time [s]')
-            axs[1].set_ylabel('Freq [MHz]')
-            axs[0].set_title("{} {}".format(patch_names[d], antenna_labels[a]))
-            fig.savefig(os.path.join(data_plot_dir, 'gains_dir{:02d}_ant{:02d}.png'.format(d, a)))
-            plt.close('all')
+
+    for ia in range(Na):
+        for id in range(Nd):
+            fig, axs = plt.subplots(3, 1, sharex=True)
+
+            axs[0].plot(times, tec_mean[:, ia, id], c='black', label='tec')
+            axs[0].plot(times, tec_mean[:, ia, id] + tec_std[:, ia, id], ls='dotted', c='black')
+            axs[0].plot(times, tec_mean[:, ia, id] - tec_std[:, ia, id], ls='dotted', c='black')
+
+            axs[1].plot(times, const_mean[:, ia, id], c='black', label='const')
+            # axs[1].plot(times, const_mean[:, ia, id] + const_std[:, ia, id], ls='dotted', c='black')
+            # axs[1].plot(times, const_mean[:, ia, id] - const_std[:, ia, id], ls='dotted', c='black')
+
+            axs[2].plot(times, clock_mean[:, ia, id], c='black', label='clock')
+            # axs[2].plot(times, clock_mean[:, ia, id] + clock_std[:, ia, id], ls='dotted', c='black')
+            # axs[2].plot(times, clock_mean[:, ia, id] - clock_std[:, ia, id], ls='dotted', c='black')
+
+            axs[0].legend()
+            axs[1].legend()
+            axs[2].legend()
+
+            axs[0].set_ylabel("DTEC [mTECU]")
+            axs[1].set_ylabel("phase [rad]")
+            axs[2].set_ylabel("delay [ns]")
+            axs[2].set_xlabel("time [s]")
+
+            fig.savefig(os.path.join(data_plot_dir, 'sol_ant{:02d}_dir{:02d}.png'.format(ia, id)))
+            plt.close("all")
+
+            fig, axs = plt.subplots(3, 1)
+
+            vmin = jnp.percentile(Y_mean[:, :, ia, id], 2)
+            vmax = jnp.percentile(Y_mean[:, :, ia, id], 98)
+
+            axs[0].imshow(Y_obs[:, :, ia, id].T, vmin=vmin, vmax=vmax, cmap='PuOr', aspect='auto',
+                          interpolation='nearest')
+            axs[0].set_title("Y_obs")
+            add_colorbar_to_axes(axs[0], "PuOr", vmin=vmin, vmax=vmax)
+
+            axs[1].imshow(Y_mean[:, :, ia, id].T, vmin=vmin, vmax=vmax, cmap='PuOr', aspect='auto',
+                          interpolation='nearest')
+            axs[1].set_title("Y mean")
+            add_colorbar_to_axes(axs[1], "PuOr", vmin=vmin, vmax=vmax)
+
+            # vmin = jnp.percentile(Y_std[:, :, ia, id], 2)
+            # vmax = jnp.percentile(Y_std[:, :, ia, id], 98)
+            #
+            # axs[2].imshow(Y_std[:, :, ia, id].T, vmin=vmin, vmax=vmax, cmap='PuOr', aspect='auto',
+            #               interpolation='nearest')
+            # axs[2].set_title("Y std")
+            # add_colorbar_to_axes(axs[2], "PuOr", vmin=vmin, vmax=vmax)
+
+            phase_obs = jnp.arctan2(Y_obs[:, freqs.size:, ia, id], Y_obs[:, :freqs.size, ia, id])
+            phase = jnp.arctan2(Y_mean[:, freqs.size:, ia, id], Y_mean[:, :freqs.size, ia, id])
+            dphase = wrap(phase - phase_obs)
+
+            vmin = -0.3
+            vmax = 0.3
+
+            axs[2].imshow(dphase.T, vmin=vmin, vmax=vmax, cmap='coolwarm', aspect='auto',
+                          interpolation='nearest')
+            axs[2].set_title("diff phase")
+            add_colorbar_to_axes(axs[2], "coolwarm", vmin=vmin, vmax=vmax)
+
+            fig.savefig(os.path.join(data_plot_dir,'gains_ant{:02d}_dir{:02d}.png'.format(ia, id)))
+            plt.close("all")
 
     animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
                      solset='sol000',

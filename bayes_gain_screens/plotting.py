@@ -13,8 +13,9 @@ import pylab as plt
 
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.spatial import Voronoi
-from . import TEC_CONV
+from bayes_gain_screens import TEC_CONV
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,25 @@ try:
     phase_cmap = cmocean.cm.phase
 except ImportError:
     phase_cmap = plt.cm.hsv
+
+
+def add_colorbar_to_axes(ax, cmap, norm=None, vmin=None, vmax=None):
+    """
+    Add colorbar to axes easily.
+
+    Args:
+        ax: Axes
+        cmap: str or cmap
+        norm: Normalize or None
+        vmin: lower limit of color if norm is None
+        vmax: upper limit of color if norm is None
+    """
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes('right', size='5%', pad=0.05)
+    if norm is None:
+        norm = plt.Normalize(vmin=vmin, vmax=vmax)
+    sm = plt.cm.ScalarMappable(norm, cmap=plt.cm.get_cmap(cmap))
+    ax.figure.colorbar(sm, cax=cax, orientation='vertical')
 
 
 def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.PuOr,
