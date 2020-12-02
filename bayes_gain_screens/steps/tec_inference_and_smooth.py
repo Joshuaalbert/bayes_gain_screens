@@ -75,7 +75,7 @@ def poly_smooth(x, y, deg=5):
 def get_data(solution_file):
     logger.info("Getting DDS4 data.")
     with DataPack(solution_file, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1), time=slice(0, 16, 1), ant=slice(55, None))
+        select = dict(pol=slice(0, 1, 1))
         h.select(**select)
         phase, axes = h.phase
         phase = phase[0, ...]
@@ -262,7 +262,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
     logger.info("Storing smoothed phase, amplitudes, tec, const, and clock")
     with DataPack(dds5_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
-        h.select(pol=slice(0, 1, 1), time=slice(0, 16, 1), ant=slice(55, None))
+        h.select(pol=slice(0, 1, 1))
         h.phase = np.asarray(phase_mean)[None, ...]
         h.amplitude = np.asarray(amp_mean)[None, ...]
         h.tec = np.asarray(tec_mean)[None, ...]
