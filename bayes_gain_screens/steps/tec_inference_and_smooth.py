@@ -1,11 +1,14 @@
 import os
+import sys
 import numpy as np
 import pylab as plt
 import argparse
 from timeit import default_timer
-from jax import numpy as jnp, vmap, jit, local_device_count, tree_multimap, pmap, tree_map, random
+from jax import numpy as jnp, jit, random, vmap
 import logging
 import astropy.units as au
+
+from bayes_gain_screens.utils import chunked_pmap
 
 logger = logging.getLogger(__name__)
 
@@ -69,46 +72,10 @@ def poly_smooth(x, y, deg=5):
     return sum([p * x ** (deg - i) for i, p in enumerate(coeffs)])
 
 
-def chunked_pmap(f, *args, chunksize=None):
-    """
-    Calls pmap on chunks of moderate work to be distributed over devices.
-    Automatically handle non-dividing chunksizes, by adding filler elements.
-    
-    Args:
-        f: callable
-        *args: arguments to map down first dimension
-        chunksize: optional chunk size else num devices
-
-    Returns: pytree mapped result.
-    """
-    if chunksize is None:
-        chunksize = local_device_count()
-    N = len(args[0])
-    remainder = N % chunksize
-    if (remainder != 0) and (N > chunksize):
-        args = [jnp.concatenate([arg, arg[:remainder]], axis=0) for arg in args]
-        N = len(args[0])
-    logger.info("Running on {}".format(chunksize))
-    results = []
-    for start in range(0, N, chunksize):
-        stop = min(start + chunksize, N)
-        t0 = default_timer()
-        results.append(pmap(f)(*[arg[start:stop] for arg in args]))
-        # if isinstance(results,(tuple,list)):
-        #     results[-1][0].block_until_ready()
-        # else:
-        #     results[-1].block_until_ready()
-        logger.info("Time: {}".format(default_timer() - t0))
-    result = tree_multimap(lambda *args: jnp.concatenate(args, axis=0), *results)
-    if remainder != 0:
-        result = tree_map(lambda x: x[:-remainder], result)
-    return result
-
-
 def get_data(solution_file):
     logger.info("Getting DDS4 data.")
     with DataPack(solution_file, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1))
+        select = dict(pol=slice(0, 1, 1), time=slice(0, 16, 1), ant=slice(55, None))
         h.select(**select)
         phase, axes = h.phase
         phase = phase[0, ...]
@@ -118,7 +85,7 @@ def get_data(solution_file):
         freqs = freqs.to(au.Hz).value
         _, times = h.get_times(axes['time'])
         times = times.mjd / 86400.
-        logger.info("Shape: {}".format( phase.shape))
+        logger.info("Shape: {}".format(phase.shape))
 
         (Nd, Na, Nf, Nt) = phase.shape
 
@@ -134,6 +101,7 @@ def get_data(solution_file):
             log_amp = vmap(lambda log_amp: poly_smooth(freqs, log_amp, deg=3))(log_amp)
             amp = jnp.exp(log_amp)
             return amp
+
         logger.info("Smoothing amplitudes")
         amp = chunked_pmap(smooth, amp.reshape((Nd * Na, Nf, Nt)).transpose((0, 2, 1)))  # Nd*Na,Nt,Nf
         amp = amp.transpose((0, 2, 1)).reshape((Nd, Na, Nf, Nt))
@@ -171,7 +139,7 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
                        sampler_name='slice',
                        uncert_mean=lambda uncert, **kwargs: uncert,
                        tec_mean=lambda tec, **kwargs: tec,
-                       const_mean=lambda const, **kwargs: jnp.concatenate([jnp.cos(const),jnp.sin(const)]),
+                       const_mean=lambda const, **kwargs: jnp.concatenate([jnp.cos(const), jnp.sin(const)]),
                        clock_mean=lambda clock, **kwargs: clock,
                        )
 
@@ -207,8 +175,8 @@ def constrained_solve(freqs, key, Y_obs, amp, const_mu, clock_mu):
                        sampler_name='slice',
                        tec_mean=lambda tec, **kwargs: tec,
                        tec2_mean=lambda tec, **kwargs: tec ** 2,
-                       Y_mean=lambda Y, **kwargs: Y,
-                       Y2_mean=lambda Y, **kwargs: Y ** 2
+                       # Y_mean=lambda Y, **kwargs: Y,
+                       # Y2_mean=lambda Y, **kwargs: Y ** 2
                        )
 
     results = ns(key=key,
@@ -220,21 +188,31 @@ def constrained_solve(freqs, key, Y_obs, amp, const_mu, clock_mu):
 
     tec_mean = results.marginalised['tec_mean']
     tec_std = jnp.sqrt(results.marginalised['tec2_mean'] - results.marginalised['tec_mean'] ** 2)
-    Y_mean = results.marginalised['Y_mean']
-    Y_std = jnp.sqrt(results.marginalised['Y2_mean'] - results.marginalised['Y_mean'] ** 2)
+    phase_mean = tec_mean * (TEC_CONV / freqs) + const_mu + clock_mu * 1e-9 * (2. * jnp.pi * freqs)
+    # Y_mean = results.marginalised['Y_mean']
+    # Y_std = jnp.sqrt(results.marginalised['Y2_mean'] - results.marginalised['Y_mean'] ** 2)
 
-    return (tec_mean, tec_std, Y_mean, Y_std)
+    return (tec_mean, tec_std, phase_mean)
 
 
 def solve_and_smooth(Y_obs, times, freqs):
     Nd, Na, twoNf, Nt = Y_obs.shape
-    Nf = twoNf//2
-    Y_obs = Y_obs.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, 2*Nf))  # Nd*Na*Nt, 2*Nf
+    Nf = twoNf // 2
+    Y_obs = Y_obs.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, 2 * Nf))  # Nd*Na*Nt, 2*Nf
     amp = jnp.sqrt(Y_obs[:, :freqs.size] ** 2 + Y_obs[:, freqs.size:] ** 2)
+    logger.info("Min/max amp: {} {}".format(jnp.min(amp), jnp.max(amp)))
+    logger.info("Number of nan: {}".format(jnp.sum(jnp.isnan(Y_obs))))
+    logger.info("Number of inf: {}".format(jnp.sum(jnp.isinf(Y_obs))))
     T = Y_obs.shape[0]
+    logger.info("Performing solve for tec, const, clock.")
+    # print(freqs, random.split(random.PRNGKey(int(default_timer())), T)[223], Y_obs[223], amp[223])
+    # print(unconstrained_solve(freqs, random.split(random.PRNGKey(int(default_timer())), T)[223], Y_obs[223], amp[223]))
+    # return
+    # from jax import disable_jit
+    # with disable_jit():
     const_mean, clock_mean = chunked_pmap(lambda *args: unconstrained_solve(freqs, *args),
-                                          random.split(random.PRNGKey(int(default_timer())), T),
-                                          Y_obs, amp)
+                                          random.split(random.PRNGKey(int(746583)), T),
+                                          Y_obs, amp, chunksize=1)
 
     def smooth(y):
         y = y.reshape((Nd * Na, Nt))  # Nd*Na,Nt
@@ -242,22 +220,24 @@ def solve_and_smooth(Y_obs, times, freqs):
             (Nd * Na * Nt,))  # Nd*Na*Nt
         return y
 
+    logger.info("Smoothing const and clock (a strong prior).")
     # Nd*Na*Nt
     clock_mean = smooth(clock_mean)
     const_mean = smooth(const_mean)
 
-    (tec_mean, tec_std, Y_mean, Y_std) = \
+    logger.info("Performing tec-only solve, with fixed const and clock.")
+    (tec_mean, tec_std, phase_mean) = \
         chunked_pmap(lambda *args: constrained_solve(freqs, *args),
                      random.split(random.PRNGKey(int(default_timer())), T), Y_obs,
                      amp, const_mean, clock_mean)
-    Y_mean = Y_mean.reshape((Nd, Na, Nt, 2*Nf)).transpose((0, 1, 3, 2))
-    Y_std = Y_std.reshape((Nd, Na, Nt, 2*Nf)).transpose((0, 1, 3, 2))
+    phase_mean = phase_mean.reshape((Nd, Na, Nt, Nf)).transpose((0, 1, 3, 2))
+    amp = amp.reshape((Nd, Na, Nt, Nf)).transpose((0, 1, 3, 2))
     tec_mean = tec_mean.reshape((Nd, Na, Nt))
     tec_std = tec_std.reshape((Nd, Na, Nt))
     const_mean = const_mean.reshape((Nd, Na, Nt))
     clock_mean = clock_mean.reshape((Nd, Na, Nt))
 
-    return Y_mean, Y_std, tec_mean, tec_std, const_mean, clock_mean
+    return phase_mean, amp, tec_mean, tec_std, const_mean, clock_mean
 
 
 def link_overwrite(src, dst):
@@ -278,27 +258,27 @@ def main(data_dir, working_dir, obs_num, ncpu):
     link_overwrite(dds5_h5parm, linked_dds5_h5parm)
     prepare_soltabs(dds4_h5parm, dds5_h5parm)
     Y_obs, times, freqs = get_data(solution_file=dds4_h5parm)
-    Y_mean, Y_std, tec_mean, tec_std, const_mean, clock_mean = solve_and_smooth(Y_obs, times, freqs)
-    phase_mean = jnp.arctan2(Y_mean[:, :, freqs.size:, :], Y_mean[:, :, :freqs.size, :])
-    amp_mean = jnp.sqrt(Y_mean[:, :, freqs.size:, :] ** 2 + Y_mean[:, :, :freqs.size, :] ** 2)
+    phase_mean, amp_mean, tec_mean, tec_std, const_mean, clock_mean = solve_and_smooth(Y_obs, times, freqs)
     logger.info("Storing smoothed phase, amplitudes, tec, const, and clock")
     with DataPack(dds5_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
-        h.select(pol=slice(0, 1, 1))
-        h.phase = phase_mean
-        h.amplitude = amp_mean
-        h.tec = tec_mean
-        h.weights_tec = tec_std
-        h.const = const_mean
-        h.clock = clock_mean
+        h.select(pol=slice(0, 1, 1), time=slice(0, 16, 1), ant=slice(55, None))
+        h.phase = np.asarray(phase_mean)[None, ...]
+        h.amplitude = np.asarray(amp_mean)[None, ...]
+        h.tec = np.asarray(tec_mean)[None, ...]
+        h.weights_tec = np.asarray(tec_std)[None, ...]
+        h.const = np.asarray(const_mean)[None, ...]
+        h.clock = np.asarray(clock_mean)[None, ...]
         axes = h.axes_phase
         patch_names, _ = h.get_directions(axes['dir'])
         antenna_labels, _ = h.get_antennas(axes['ant'])
 
+    Y_mean = jnp.concatenate([amp_mean * jnp.cos(phase_mean), amp_mean * jnp.sin(phase_mean)], axis=-2)
+
     logger.info("Plotting results.")
     data_plot_dir = os.path.join(working_dir, 'data_plots')
     os.makedirs(data_plot_dir, exist_ok=True)
-    Nd, Na, Nf, Nt = Y_obs.shape
+    Nd, Na, Nf, Nt = phase_mean.shape
     for d in range(Nd):
         for a in range(Na):
             fig, axs = plt.subplots(2, 1, sharex=True, sharey=True)
@@ -338,8 +318,41 @@ def main(data_dir, working_dir, obs_num, ncpu):
 
     animate_datapack(dds5_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
                      solset='sol000',
-                     observable='amplitude', vmin=0.6, vmax=1.4, plot_facet_idx=True,
+                     observable='amplitude', plot_facet_idx=True,
                      labels_in_radec=True, plot_crosses=False, phase_wrap=False)
+
+
+def test_main():
+    os.chdir('/home/albert/data/gains_screen/working_dir/')
+    # dds4_h5parm = os.path.join('/home/albert/data/gains_screen/data', 'L{}_DDS4_full_merged.h5'.format(100000))
+    # Y_obs_good, _, _= get_data(solution_file=dds4_h5parm)
+    # dds4_h5parm = os.path.join('/home/albert/data/gains_screen/data', 'L{}_DDS4_full_merged.h5'.format(342938))
+    # Y_obs_bad, _, _ = get_data(solution_file=dds4_h5parm)
+    #
+    # Nd, Na, twoNf, Nt = Y_obs_good.shape
+    # Nf = twoNf // 2
+    # Y_obs_good = Y_obs_good.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, 2 * Nf))  # Nd*Na*Nt, 2*Nf
+    # amp_good = jnp.sqrt(Y_obs_good[:, :Nf] ** 2 + Y_obs_good[:, Nf:] ** 2)
+    #
+    # Y_obs_bad = Y_obs_bad.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, 2 * Nf))  # Nd*Na*Nt, 2*Nf
+    # amp_bad = jnp.sqrt(Y_obs_bad[:, :Nf] ** 2 + Y_obs_bad[:, Nf:] ** 2)
+    #
+    # print(Y_obs_bad[:224] - Y_obs_good[:224])
+    # import pylab as plt
+    #
+    # plt.imshow(Y_obs_good[220:224], aspect='auto',interpolation='nearest')
+    # plt.colorbar()
+    # plt.show()
+    # plt.imshow(Y_obs_bad[220:224], aspect='auto', interpolation='nearest')
+    # plt.colorbar()
+    # plt.show()
+    # plt.imshow(Y_obs_bad[220:224]-Y_obs_good[220:224], aspect='auto', interpolation='nearest')
+    # plt.colorbar()
+    # plt.show()
+    # return
+
+    main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 342938, 8)
+    # main('/home/albert/data/gains_screen/data','/home/albert/data/gains_screen/working_dir/',100000, 8)
 
 
 def add_args(parser):
@@ -355,6 +368,9 @@ def add_args(parser):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        test_main()
+        exit(0)
     parser = argparse.ArgumentParser(
         description='Infer tec, const, clock and smooth the gains.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)

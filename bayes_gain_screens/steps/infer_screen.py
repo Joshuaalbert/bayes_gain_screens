@@ -1,13 +1,12 @@
 import argparse
 import os
 from timeit import default_timer
-import astropy.units as au
 
-from jax import random, jit, pmap, local_device_count, tree_multimap, vmap, tree_map, numpy as jnp
+from jax import random, vmap, numpy as jnp
 from jax.scipy.linalg import solve_triangular
 from jax.scipy.special import erf
 
-from bayes_gain_screens.utils import get_screen_directions_from_image
+from bayes_gain_screens.utils import chunked_pmap, get_screen_directions_from_image
 from bayes_gain_screens.plotting import animate_datapack
 
 from h5parm import DataPack
@@ -21,41 +20,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-def chunked_pmap(f, *args, chunksize=None):
-    """
-    Calls pmap on chunks of moderate work to be distributed over devices.
-    Automatically handle non-dividing chunksizes, by adding filler elements.
-
-    Args:
-        f: callable
-        *args: arguments to map down first dimension
-        chunksize: optional chunk size else num devices
-
-    Returns: pytree mapped result.
-    """
-    if chunksize is None:
-        chunksize = local_device_count()
-    N = len(args[0])
-    remainder = N % chunksize
-    if (remainder != 0) and (N > chunksize):
-        args = [jnp.concatenate([arg, arg[:remainder]], axis=0) for arg in args]
-        N = len(args[0])
-    logger.info("Running on {}".format(chunksize))
-    results = []
-    for start in range(0, N, chunksize):
-        stop = min(start + chunksize, N)
-        t0 = default_timer()
-        results.append(pmap(f)(*[arg[start:stop] for arg in args]))
-        # if isinstance(results,(tuple,list)):
-        #     results[-1][0].block_until_ready()
-        # else:
-        #     results[-1].block_until_ready()
-        logger.info("Time: {}".format(default_timer() - t0))
-    result = tree_multimap(lambda *args: jnp.concatenate(args, axis=0), *results)
-    if remainder != 0:
-        result = tree_map(lambda x: x[:-remainder], result)
-    return result
 
 
 def log_normal_outliers(x, mean, cov, sigma):
