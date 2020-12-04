@@ -223,7 +223,7 @@ def detect_outliers(tec_mean, tec_std, times):
     tec_std = tec_std.reshape((Nd * Na, Nt))
     mu_star, sigma_star, outliers = chunked_pmap(
         lambda tec_mean, tec_std: single_detect_outliers(tec_std, tec_mean, times), tec_mean, tec_std,
-        chunksize=1)
+        chunksize=None)
     return mu_star.reshape((Nd, Na, Nt)), sigma_star.reshape((Nd, Na, Nt)), outliers.reshape((Nd, Na, Nt))
 
 
