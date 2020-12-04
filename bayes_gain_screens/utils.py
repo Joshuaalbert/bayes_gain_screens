@@ -6,8 +6,10 @@ import astropy.units as au
 from astropy import wcs
 from astropy.io import fits
 
-from jax import local_device_count, tree_map, numpy as jnp, pmap
+from jax import local_device_count, tree_map, numpy as jnp, pmap, vmap
 from jax.lax import scan
+from jax.scipy.signal import convolve
+from jax.api import _jit_is_disabled as jit_is_disabled
 
 from bayes_gain_screens.frames import ENU
 
@@ -105,34 +107,23 @@ def voronoi_finite_polygons_2d(vor, radius):
     return new_regions, np.asarray(new_vertices)
 
 
-def rolling_window(a, window, padding='same'):
-    if padding.lower() == 'same':
-        pad_start = np.zeros(len(a.shape), dtype=np.int32)
-        pad_start[-1] = window // 2
-        pad_end = np.zeros(len(a.shape), dtype=np.int32)
-        pad_end[-1] = (window - 1) - pad_start[-1]
-        pad = list(zip(pad_start, pad_end))
-        a = np.pad(a, pad, mode='reflect')
-    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
-    strides = a.strides + (a.strides[-1],)
-    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+def windowed_mean(a, w, mode='reflect'):
+    if w is None:
+        return jnp.broadcast_to(jnp.mean(a, axis=0, keepdims=True), a.shape)
+    dims = len(a.shape)
+    a = a
+    kernel = jnp.reshape(jnp.ones(w) / w, [w] + [1] * (dims - 1))
+    _w1 = (w - 1) // 2
+    _w2 = _w1 if (w % 2 == 1) else _w1 + 1
+    pad_width = [(_w1, _w2)] + [(0, 0)] * (dims - 1)
+    a = jnp.pad(a, pad_width=pad_width, mode=mode)
+    return convolve(a, kernel, mode='valid', precision=None)
 
 
-def apply_rolling_func_strided(func, a, window, piecewise_constant=True):
-    if not piecewise_constant:
-        rolling_a = rolling_window(a, window, padding='same')
-        return func(rolling_a)
-    # handles case when window larger
-    window = min(a.shape[-1], window)
-    # ..., N//window, window
-    rolling_a = rolling_window(a, window, padding='valid')[..., ::window, :]
-    repeat = a.shape[-1] // rolling_a.shape[-2]
-    # ..., N//window
-    b = func(rolling_a)
-    repeats = repeat * np.ones(b.shape[-1], dtype=np.int64)
-    repeats[-1] = a.shape[-1] - (repeat * (b.shape[-1] - 1))
-    # ...,N (hopefully)
-    return np.repeat(b, repeats, axis=-1)
+def test_windowed_mean():
+    a = jnp.arange(10)
+    a = jnp.where(jnp.arange(10) >= 8, jnp.nan, jnp.arange(10))
+    assert jnp.all(jnp.isnan(a) == jnp.isnan(windowed_mean(a, 1)))
 
 
 def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
@@ -229,14 +220,16 @@ def chunked_pmap(f, *args, chunksize=None):
     Automatically handle non-dividing chunksizes, by adding filler elements.
 
     Args:
-        f: callable
-        *args: arguments to map down first dimension
-        chunksize: optional chunk size else num devices
+        f: jittable, callable
+        *args: ndarray arguments to map down first dimension
+        chunksize: optional chunk size, should be <= local_device_count(). None is local_device_count.
 
     Returns: pytree mapped result.
     """
-    # if chunksize is None:
-    chunksize = local_device_count()
+    if chunksize is None:
+        chunksize = local_device_count()
+    if chunksize > local_device_count():
+        raise ValueError("chunksize should be <= {}".format(local_device_count()))
     N = args[0].shape[0]
     remainder = N % chunksize
     if (remainder != 0) and (N > chunksize):
@@ -244,7 +237,7 @@ def chunked_pmap(f, *args, chunksize=None):
         args = tree_map(lambda arg: jnp.concatenate([arg, arg[:extra]], axis=0), args)
         N = args[0].shape[0]
     args = tree_map(lambda arg: jnp.reshape(arg, (chunksize, N // chunksize) + arg.shape[1:]), args)
-    logger.info("Running on {}".format(chunksize))
+    logger.info("Distributing {} over {}".format(N, chunksize))
     t0 = default_timer()
 
     def pmap_body(*args):
@@ -254,13 +247,27 @@ def chunked_pmap(f, *args, chunksize=None):
         _, result = scan(body, (), args, unroll=1)
         return result
 
-    result = pmap(pmap_body)(*args)
+    if jit_is_disabled():
+        result = vmap(pmap_body)(*args)
+    else:
+        result = pmap(pmap_body)(*args)
     result = tree_map(lambda arg: jnp.reshape(arg, (-1,) + arg.shape[2:]), result)
     if remainder != 0:
         result = tree_map(lambda x: x[:-extra], result)
     dt = default_timer() - t0
     logger.info("Time to run: {}, rate: {} / s".format(dt, N / dt))
     return result
+
+
+def test_disable_jit_and_scan():
+    from jax import disable_jit
+    from jax.lax import scan
+    def body(state, X):
+        return state, ()
+
+    with disable_jit():
+        print(scan(body, (jnp.array(0),), (), length=5))
+
 
 def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1., plot=False,
                                      seed_directions=None, fill_in_distance=None,
@@ -356,3 +363,87 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
     logging.info("Found {} sources.".format(len(ra)))
 
     return ac.ICRS(ra=ra * au.rad, dec=dec * au.rad), sizes
+
+
+def inverse_update(C, m, return_drop=False):
+    drop = drop_array(C.shape[0], m)
+    _a = jnp.take(C, drop, axis=0)  # drop m row
+    a = jnp.take(_a, drop, axis=1)
+    c = jnp.take(C, drop, axis=1)[None, m, :]  # drop m col
+    b = _a[:, m, None]
+    d = C[m, m]
+    res = a - (b @ c) / d
+    if return_drop:
+        return res, drop
+    return res
+
+
+def test_inverse_update():
+    A = np.random.normal(size=(4, 4))
+    m = 1
+    B = np.linalg.inv(A[np.arange(4) != m, :][:, np.arange(4) != m])
+    assert np.isclose(inverse_update(np.linalg.inv(A), m), B).all()
+
+
+def drop_array(n, m):
+    # TODO to with mod n, which might be faster
+    a = jnp.arange(n)
+    a = jnp.roll(a, -m, axis=0)
+    a = a[1:]
+    a = jnp.roll(a, m, axis=0)
+    return a
+
+
+def polyfit(x, y, deg):
+    """
+    x : array_like, shape (M,)
+        x-coordinates of the M sample points ``(x[i], y[i])``.
+    y : array_like, shape (M,) or (M, K)
+        y-coordinates of the sample points. Several data sets of sample
+        points sharing the same x-coordinates can be fitted at once by
+        passing in a 2D-array that contains one dataset per column.
+    deg : int
+        Degree of the fitting polynomial
+    Returns
+    -------
+    p : ndarray, shape (deg + 1,) or (deg + 1, K)
+        Polynomial coefficients, highest power first.  If `y` was 2-D, the
+        coefficients for `k`-th data set are in ``p[:,k]``.
+    """
+    order = int(deg) + 1
+    if deg < 0:
+        raise ValueError("expected deg >= 0")
+    if x.ndim != 1:
+        raise TypeError("expected 1D vector for x")
+    if x.size == 0:
+        raise TypeError("expected non-empty vector for x")
+    if y.ndim < 1 or y.ndim > 2:
+        raise TypeError("expected 1D or 2D array for y")
+    if x.shape[0] != y.shape[0]:
+        raise TypeError("expected x and y to have same length")
+    rcond = len(x) * jnp.finfo(x.dtype).eps
+    lhs = jnp.stack([x ** (deg - i) for i in range(order)], axis=1)
+    rhs = y
+    scale = jnp.sqrt(jnp.sum(lhs * lhs, axis=0))
+    lhs /= scale
+    c, resids, rank, s = jnp.linalg.lstsq(lhs, rhs, rcond)
+    c = (c.T / scale).T  # broadcast scale coefficients
+    return c
+
+
+def poly_smooth(x, y, deg=5):
+    """
+    Smooth y(x) with a `deg` degree polynomial in x
+    Args:
+        x: [N]
+        y: [N]
+        deg: int
+
+    Returns: smoothed y [N]
+    """
+    coeffs = polyfit(x, y, deg=deg)
+    return sum([p * x ** (deg - i) for i, p in enumerate(coeffs)])
+
+
+def wrap(phi):
+    return (phi + jnp.pi) % (2 * jnp.pi) - jnp.pi
