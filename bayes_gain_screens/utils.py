@@ -6,7 +6,7 @@ import astropy.units as au
 from astropy import wcs
 from astropy.io import fits
 
-from jax import local_device_count, tree_map, numpy as jnp, pmap, vmap
+from jax import local_device_count, tree_map, numpy as jnp, pmap, vmap, jit, tree_multimap, devices as get_devices, device_get
 from jax.lax import scan
 from jax.scipy.signal import convolve
 from jax.api import _jit_is_disabled as jit_is_disabled
@@ -14,6 +14,8 @@ from jax.api import _jit_is_disabled as jit_is_disabled
 from bayes_gain_screens.frames import ENU
 
 from h5parm import DataPack
+
+from dask.threaded import get
 
 import logging
 
@@ -107,7 +109,20 @@ def voronoi_finite_polygons_2d(vor, radius):
     return new_regions, np.asarray(new_vertices)
 
 
-def windowed_mean(a, w, mode='reflect'):
+def windowed_mean(a, w, mode='reflect', axis=0):
+    """
+    Perform rolling window average (smoothing).
+
+    Args:
+        a: array
+        w: window length
+        mode: see jnp.pad
+        axis: axis to smooth down
+
+    Returns: Array the same size as `a`
+    """
+    if axis != 0:
+        a = jnp.moveaxis(a, axis, 0)
     if w is None:
         return jnp.broadcast_to(jnp.mean(a, axis=0, keepdims=True), a.shape)
     dims = len(a.shape)
@@ -117,7 +132,10 @@ def windowed_mean(a, w, mode='reflect'):
     _w2 = _w1 if (w % 2 == 1) else _w1 + 1
     pad_width = [(_w1, _w2)] + [(0, 0)] * (dims - 1)
     a = jnp.pad(a, pad_width=pad_width, mode=mode)
-    return convolve(a, kernel, mode='valid', precision=None)
+    result = convolve(a, kernel, mode='valid', precision=None)
+    if axis != 0:
+        result = jnp.moveaxis(result, 0, axis)
+    return result
 
 
 def test_windowed_mean():
@@ -243,19 +261,63 @@ def chunked_pmap(f, *args, chunksize=None):
     def pmap_body(*args):
         def body(state, args):
             return state, f(*args)
-
         _, result = scan(body, (), args, unroll=1)
         return result
 
     if jit_is_disabled():
         result = vmap(pmap_body)(*args)
     else:
-        result = pmap(pmap_body)(*args)
+        result = pmap(pmap_body)(*args) # until gh #5065 is solved
+
     result = tree_map(lambda arg: jnp.reshape(arg, (-1,) + arg.shape[2:]), result)
     if remainder != 0:
         result = tree_map(lambda x: x[:-extra], result)
     dt = default_timer() - t0
     logger.info("Time to run: {}, rate: {} / s".format(dt, N / dt))
+    return result
+
+def dask_pmap(f, *args, debug_mode=False):
+    """
+    Performs the same roles a pmap using dask (threaded).
+
+    Args:
+        f:
+        *args:
+        debug_mode:
+
+    Returns: Similar to pmap the mapped pytree.
+    """
+    devices = get_devices()
+    def pmap_body(*args):
+        def body(state, args):
+            return state, f(*args)
+        _, result = scan(body, (), args, unroll=1)
+        return result
+
+    def jit_pmap_body(dev_idx, *args):
+        logger.info("Starting on worker: {}".format(dev_idx))
+        if debug_mode:
+            fun = jit(f, device=devices[dev_idx])
+            tree_map(lambda x: print(x.shape), args)
+            result = []
+            for i in range(N):
+                logger.info("Starting item: {}".format(i))
+                print("dev", dev_idx, "element", i)
+                result.append(fun(*[a[i, ...] for a in args]))
+                tree_map(lambda a: a.block_until_ready(), result[-1])
+                logger.info("Done item: {}".format(i))
+            result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
+        else:
+            result = jit(pmap_body, device=devices[dev_idx])(*args)
+        tree_map(lambda a: a.block_until_ready(), result)
+        logger.info("Done on worker: {}".format(dev_idx))
+        return result
+    num_devices = local_device_count()
+    dsk = {str(device): (jit_pmap_body, device) + tuple([arg[device] for arg in args]) for device in range(num_devices)}
+    result_keys = [str(device) for device in range(num_devices)]
+    result = get(dsk, result_keys, num_workers=num_devices)
+    result = device_get(result)
+    result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
     return result
 
 
