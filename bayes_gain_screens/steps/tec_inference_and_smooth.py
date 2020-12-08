@@ -51,6 +51,8 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
         .push(UniformPrior('clock', -1., 1.)) \
         .push(HalfLaplacePrior('uncert', 0.2))
 
+    # prior_chain.test_prior(key, 10000, log_likelihood=log_likelihood)
+
     ns = NestedSampler(log_likelihood, prior_chain,
                        sampler_name='slice',
                        tec_mean=lambda tec, **kwargs: tec,
@@ -65,12 +67,7 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
                  only_marginalise=True,
                  collect_samples=False,
                  termination_frac=0.01,
-                 sampler_kwargs=dict(depth=1, num_slices=3))
-
-    # tec_samples = resample(key, results.samples, results.log_p, S=1000)['tec']
-    # tec_15,tec_50, tec_85 = jnp.percentile(tec_samples, [15,50,85])
-    # tec_std = 0.5*(tec_85-tec_15)
-    # tec_mean = tec_50
+                 sampler_kwargs=dict(depth=2, num_slices=3))
 
     const_mean = jnp.arctan2(results.marginalised['const_mean'][1], results.marginalised['const_mean'][0])
     clock_mean = results.marginalised['clock_mean']
@@ -161,21 +158,84 @@ def constrained_solve(freqs, key, Y_obs, amp, tec_mean, tec_std, const_mu, clock
 
     return (tec_mean, tec_std)
 
+def get_error_data(Y_obs, amp, freqs):
+    indices = [219,
+               1813690,
+               220,
+               2629756,
+               1178950,
+               1541653,
+               181534,
+               1904360,
+               90848,
+               1360313,
+               2811110,
+               544219,
+               2720422,
+               1088283,
+               997598,
+               272209,
+               2539083,
+               2357735,
+               2176385]
+    from jax import tree_map
+    chunksize=32
+    args = [Y_obs, amp]
+    N = args[0].shape[0]
+    remainder = N % chunksize
+    if (remainder != 0) and (N > chunksize):
+        extra = chunksize - remainder
+        args = tree_map(lambda arg: jnp.concatenate([arg, arg[:extra]], axis=0), args)
+        N = args[0].shape[0]
+    # args = tree_map(lambda arg: jnp.reshape(arg, (chunksize, N // chunksize) + arg.shape[1:]), args)
+    [Y_obs, amp] = args
+
+    Y_obs = Y_obs[indices, :]
+    amp = amp[indices, :]
+    for i, y, a in zip(indices, Y_obs, amp):
+        print(y.shape)
+        fig, axs = plt.subplots(2,1)
+        axs[0].scatter(y[:24], y[24:])
+        axs[1].plot(freqs,a)
+        axs[0].set_title(f"Index {i}")
+        plt.show()
+
 
 def solve_and_smooth(Y_obs, times, freqs):
     Nd, Na, twoNf, Nt = Y_obs.shape
     Nf = twoNf // 2
     Y_obs = Y_obs.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, 2 * Nf))  # Nd*Na*Nt, 2*Nf
     amp = jnp.sqrt(Y_obs[:, :freqs.size] ** 2 + Y_obs[:, freqs.size:] ** 2)
+    # Stop problem with singular evidences
+    Y_obs = Y_obs + 0.01 * random.normal(random.PRNGKey(45326), shape=Y_obs.shape)
 
     logger.info("Min/max amp: {} {}".format(jnp.min(amp), jnp.max(amp)))
     logger.info("Number of nan: {}".format(jnp.sum(jnp.isnan(Y_obs))))
     logger.info("Number of inf: {}".format(jnp.sum(jnp.isinf(Y_obs))))
     T = Y_obs.shape[0]
     logger.info("Performing solve for tec, const, clock.")
+    keys = random.split(random.PRNGKey(int(746583)), T)
+
+    # print(Y_obs.dtype)
+    # plt.scatter(Y_obs[220,:24], Y_obs[220,24:])
+    # plt.show()
+    # plt.plot(freqs, amp[220,:])
+    # plt.show()
+    # get_error_data(Y_obs, amp, freqs)
+
+    # from jax import disable_jit
+    # with disable_jit():
+    #     unconstrained_solve(freqs,
+    #                         keys[1813690],
+    #                         Y_obs[1813690],
+    #                         amp[1813690]
+    #                         )
+
     tec_mean, tec_std, const_mean, clock_mean = chunked_pmap(lambda *args: unconstrained_solve(freqs, *args),
-                                                             random.split(random.PRNGKey(int(746583)), T),
-                                                             Y_obs, amp, debug_mode=True)
+                                                                 keys,
+                                                                 Y_obs,
+                                                                 amp,
+                                                                 debug_mode=False)
     def smooth(y):
         y = y.reshape((Nd * Na, Nt))  # Nd*Na,Nt
         y = chunked_pmap(lambda y: poly_smooth(times, y, deg=3), y).reshape(
@@ -236,9 +296,9 @@ def solve_and_smooth(Y_obs, times, freqs):
 
 def link_overwrite(src, dst):
     if os.path.islink(dst):
-        print("Unlinking pre-existing sym link {}".format(dst))
+        logger.info("Unlinking pre-existing sym link {}".format(dst))
         os.unlink(dst)
-    print("Linking {} -> {}".format(src, dst))
+    logger.info("Linking {} -> {}".format(src, dst))
     os.symlink(src, dst)
 
 
@@ -403,8 +463,8 @@ def main(data_dir, working_dir, obs_num, ncpu):
 
 def debug_main():
     os.chdir('/home/albert/data/gains_screen/working_dir/')
-    # main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 342938, 8)
-    main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 100000, 8)
+    main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 342938, 1)
+    # main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 100000, 1)
 
 
 def add_args(parser):

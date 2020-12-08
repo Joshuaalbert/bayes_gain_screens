@@ -263,10 +263,8 @@ def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
 
     if debug_mode:
         devices = get_devices()
-
         def build_pmap_body(dev_idx):
             fun = jit(f, device=devices[dev_idx])
-
             def pmap_body(*args):
                 result = []
                 for i in range(T):
@@ -277,19 +275,26 @@ def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
                     logger.info("Done item: {}".format(item))
                 result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
                 return result
-
             return pmap_body
     else:
         @jit
         def pmap_body(*args):
             def body(state, args):
                 return state, f(*args)
-
             _, result = scan(body, (), args, unroll=1)
             return result
 
     if jit_is_disabled():
-        result = vmap(pmap_body)(*args)
+        if debug_mode:
+            num_devices = local_device_count()
+            dsk = {str(device): (build_pmap_body(device),) + tuple([arg[device] for arg in args]) for device in
+                   range(num_devices)}
+            result_keys = [str(device) for device in range(num_devices)]
+            result = get(dsk, result_keys, num_workers=num_devices)
+            result = device_get(result)
+            result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
+        else:
+            result = vmap(pmap_body)(*args)
     else:
         if debug_mode:
             num_devices = local_device_count()
