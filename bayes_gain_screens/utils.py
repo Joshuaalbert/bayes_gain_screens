@@ -233,7 +233,7 @@ def make_coord_array(*X, flat=True, coord_map=None):
     return np.reshape(X, (-1, X.shape[-1]))
 
 
-def chunked_pmap(f, *args, chunksize=None, debug_mode=True):
+def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
     """
     Calls pmap on chunks of moderate work to be distributed over devices.
     Automatically handle non-dividing chunksizes, by adding filler elements.

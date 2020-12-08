@@ -175,7 +175,7 @@ def solve_and_smooth(Y_obs, times, freqs):
     logger.info("Performing solve for tec, const, clock.")
     tec_mean, tec_std, const_mean, clock_mean = chunked_pmap(lambda *args: unconstrained_solve(freqs, *args),
                                                              random.split(random.PRNGKey(int(746583)), T),
-                                                             Y_obs, amp)
+                                                             Y_obs, amp, debug_mode=True)
     def smooth(y):
         y = y.reshape((Nd * Na, Nt))  # Nd*Na,Nt
         y = chunked_pmap(lambda y: poly_smooth(times, y, deg=3), y).reshape(
@@ -214,7 +214,8 @@ def solve_and_smooth(Y_obs, times, freqs):
     (tec_mean, tec_std) = \
         chunked_pmap(lambda *args: constrained_solve(freqs, *args),
                      random.split(random.PRNGKey(int(default_timer())), T), Y_obs,
-                     amp, tec_mean, tec_std, const_mean, clock_mean)
+                     amp, tec_mean, tec_std, const_mean, clock_mean,
+                     debug_mode=True)
 
 
     tec_mean = tec_mean.reshape((Nd, Na, Nt))
