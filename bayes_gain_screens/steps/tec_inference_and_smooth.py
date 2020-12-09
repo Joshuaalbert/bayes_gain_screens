@@ -275,7 +275,7 @@ def solve_and_smooth(Y_obs, times, freqs):
         chunked_pmap(lambda *args: constrained_solve(freqs, *args),
                      random.split(random.PRNGKey(int(default_timer())), T), Y_obs,
                      amp, tec_mean, tec_std, const_mean, clock_mean,
-                     debug_mode=True)
+                     debug_mode=False)
 
 
     tec_mean = tec_mean.reshape((Nd, Na, Nt))
