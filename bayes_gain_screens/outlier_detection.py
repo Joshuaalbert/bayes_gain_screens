@@ -114,20 +114,21 @@ def single_detect_outliers(uncert, Y_obs, times):
         _Y_obs = jnp.where(outliers, Y_smooth, Y_obs)
     return _Y_obs, jnp.where(outliers, 20., uncert), outliers
 
-    est_uncert = jnp.sqrt(jnp.sum(jnp.where(outliers, 0., (Y_obs - Y_smooth) ** 2)) / jnp.sum(~outliers))
-    kernel = RBF()
-    l = jnp.mean(jnp.diff(times)) * 10.
-    moving_sigma = windowed_mean(jnp.diff(Y_smooth) ** 2, 250)
-    sigma2 = 0.5 * moving_sigma / (1. - jnp.exp(-0.5))
-    sigma = jnp.sqrt(sigma2)
-    sigma = jnp.concatenate([sigma[:1], sigma])
-    K = kernel(times[:, None], times[:, None], l, 1.)
-    K = (sigma[:, None] * sigma) * K
-
-    mu_star, sigma2_star = predict_f(Y_obs, K, jnp.where(outliers, jnp.inf, est_uncert))
-    sigma2_star = sigma2_star + est_uncert ** 2
-    sigma_star = jnp.sqrt(sigma2_star)
-    return mu_star, sigma_star, outliers
+    # est_uncert = jnp.sqrt(jnp.sum(jnp.where(outliers, 0., (Y_obs - Y_smooth) ** 2)) / jnp.sum(~outliers))
+    # kernel = RBF()
+    # dt = jnp.mean(jnp.diff(times))
+    # l = dt * 10.
+    # moving_sigma = windowed_mean(jnp.diff(Y_smooth) ** 2, 250)
+    # sigma2 = 0.5 * moving_sigma / (1. - jnp.exp(-0.5*dt/l))
+    # sigma = jnp.sqrt(sigma2)
+    # sigma = jnp.concatenate([sigma[:1], sigma])
+    # K = kernel(times[:, None], times[:, None], l, 1.)
+    # K = (sigma[:, None] * sigma) * K
+    #
+    # mu_star, sigma2_star = predict_f(Y_obs, K, jnp.where(outliers, jnp.inf, est_uncert))
+    # sigma2_star = sigma2_star + est_uncert ** 2
+    # sigma_star = jnp.sqrt(sigma2_star)
+    # return mu_star, sigma_star, outliers
 
 
 def detect_outliers(tec_mean, tec_std, times):
