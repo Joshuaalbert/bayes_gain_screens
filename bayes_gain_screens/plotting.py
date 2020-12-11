@@ -522,32 +522,32 @@ class DatapackPlotter(object):
             for j in range(Nt):
                 logger.info("Plotting {}".format(timestamps[j]))
                 if not plot_screen:
-                    datum = obs[:, :, fixfreq, j]
-                    overlay_datum = overlay_obs[:, :, fixfreq, j]
-                    flagum = flags[:, :, fixfreq, j]
+                    _datum = obs[:, :, fixfreq, j]
+                    _overlay_datum = overlay_obs[:, :, fixfreq, j]
+                    _flagum = flags[:, :, fixfreq, j]
                 else:
-                    datum = obs[:, :, :, fixfreq, j]
-                    overlay_datum = overlay_obs[:, :, :, fixfreq, j]
-                    flagum = flags[:, :, :, fixfreq, j]
+                    _datum = obs[:, :, :, fixfreq, j]
+                    _overlay_datum = overlay_obs[:, :, :, fixfreq, j]
+                    _flagum = flags[:, :, :, fixfreq, j]
 
                 if per_timestep_scale:
-                    vmin = np.nanmin(datum)
-                    vmax = np.nanmax(datum)
+                    vmin = np.nanpercentile(_datum, 1)
+                    vmax = np.nanpercentile(_datum,99)
                     norm = plt.Normalize(vmin, vmax)
                     cb.update_normal(plt.cm.ScalarMappable(norm=norm, cmap=cmap))
                 for i in range(Na):
                     if not plot_screen:
-                        datum = datum[:,i]
-                        overlay_datum = overlay_datum[:,i]
-                        flagum = flagum[:,i]
+                        datum = _datum[:,i]
+                        overlay_datum = _overlay_datum[:,i]
+                        flagum = _flagum[:,i]
                     else:
-                        datum = datum[:,:,i]
-                        overlay_datum = overlay_datum[:,:,i]
-                        flagum = flagum[:,:,i]
+                        datum = _datum[:,:,i]
+                        overlay_datum = _overlay_datum[:,:,i]
+                        flagum = _flagum[:,:,i]
 
                     if per_plot_scale:
-                        vmin = np.nanmin(datum)
-                        vmax = np.nanmax(datum)
+                        vmin = np.nanpercentile(datum, 1)
+                        vmax = np.nanpercentile(datum, 99)
                         norm = plt.Normalize(vmin, vmax)
                     colors = cmap(norm(datum))
                     if plot_overlay:

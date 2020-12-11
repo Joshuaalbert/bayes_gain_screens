@@ -14,13 +14,12 @@ from bayes_gain_screens.outlier_detection import detect_outliers
 
 logger = logging.getLogger(__name__)
 
-from bayes_gain_screens.plotting import animate_datapack, add_colorbar_to_axes, DatapackPlotter
+from bayes_gain_screens.plotting import add_colorbar_to_axes, DatapackPlotter, make_animation
 from h5parm import DataPack
 from h5parm.utils import make_soltab
 
 from jaxns.prior_transforms import UniformPrior, PriorChain, HalfLaplacePrior, DeterministicTransformPrior, NormalPrior
 from jaxns.nested_sampling import NestedSampler
-from jaxns.utils import resample
 
 TEC_CONV = -8.4479745e6  # mTECU/Hz
 
@@ -431,22 +430,30 @@ def main(data_dir, working_dir, obs_num, ncpu):
             fig, axs = plt.subplots(4, 1, sharex=True)
             from bayes_gain_screens.utils import windowed_mean
             # smooth_tec = windowed_mean(tec_mean[id, ia, :], 15)
-            axs[0].plot(times, tec_est[id, ia, :], c='green', ls='dotted', label='tec*')
             axs[0].plot(times, tec_mean[id, ia, :], c='black', label='tec')
-            axs[0].vlines(times[outliers[id, ia, :]], *axs[0].get_ylim(), colors='red', label='outliers')
+            ylim=axs[0].get_ylim()
+            axs[0].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
+            axs[0].plot(times, tec_est[id, ia, :], c='green', ls='dotted', label='tec*')
+            axs[0].set_ylim(*ylim)
 
-            axs[1].plot(times, const_est[id, ia, :], c='green', ls='dotted', label='const*')
             axs[1].plot(times, const_mean[id, ia, :], c='black', label='const')
-            axs[1].vlines(times[outliers[id, ia, :]], *axs[1].get_ylim(), colors='red', label='outliers')
+            ylim = axs[1].get_ylim()
+            axs[1].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
+            axs[1].plot(times, const_est[id, ia, :], c='green', ls='dotted', label='const*')
+            axs[1].set_ylim(*ylim)
 
-            axs[2].plot(times, clock_est[id, ia, :], c='green', ls='dotted', label='clock*')
             axs[2].plot(times, clock_mean[id, ia, :], c='black', label='clock')
-            axs[2].vlines(times[outliers[id, ia, :]], *axs[2].get_ylim(), colors='red', label='outliers')
+            ylim = axs[2].get_ylim()
+            axs[2].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
+            axs[2].plot(times, clock_est[id, ia, :], c='green', ls='dotted', label='clock*')
+            axs[2].set_ylim(*ylim)
 
+            axs[3].plot(times, tec_std[id, ia, :], c='black', label='tec_std')
+            ylim = axs[3].get_ylim()
+            axs[3].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
             axs[3].plot(times, jnp.abs(tec_mean[id, ia, :] - tec_est[id, ia, :]), c='green', ls='dotted',
                         label='|tec-tec*|')
-            axs[3].plot(times, tec_std[id, ia, :], c='black', label='tec_std')
-            axs[3].vlines(times[outliers[id, ia, :]], *axs[3].get_ylim(), colors='red', label='outliers')
+            axs[3].set_ylim(*ylim)
 
             axs[0].legend()
             axs[1].legend()
@@ -500,12 +507,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
         vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
         plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
         solset='sol000', cmap=plt.cm.PuOr)
-
-    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
-    #                  solset='sol000',
-    #                  observable='tec', vmin=-60., vmax=60., plot_facet_idx=True,
-    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False,
-    #                  flag_outliers=False)
+    make_animation(d, prefix='fig', fps=4)
 
     d = os.path.join(working_dir, 'const_plots')
     os.makedirs(d, exist_ok=True)
@@ -515,12 +517,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
         vmax=np.pi, observable='const', phase_wrap=False, plot_crosses=False,
         plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
         solset='sol000', cmap=plt.cm.PuOr)
-
-    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'const_plots'), num_processes=ncpu,
-    #                  solset='sol000',
-    #                  observable='const', vmin=-np.pi, vmax=np.pi, plot_facet_idx=True,
-    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=True,
-    #                  flag_outliers=False)
+    make_animation(d, prefix='fig', fps=4)
 
     d = os.path.join(working_dir, 'clock_plots')
     os.makedirs(d, exist_ok=True)
@@ -531,18 +528,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
         observable='clock', phase_wrap=False, plot_crosses=False,
         plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
         solset='sol000', cmap=plt.cm.PuOr)
-
-    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'clock_plots'), num_processes=ncpu,
-    #                  solset='sol000',
-    #                  observable='clock', vmin=-1., vmax=1., plot_facet_idx=True,
-    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False,
-    #                  flag_outliers=False)
-
-    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
-    #                  solset='sol000',
-    #                  observable='weights_tec', vmin=0., vmax=10., plot_facet_idx=True,
-    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False,
-    #                  flag_outliers=False)
+    make_animation(d, prefix='fig', fps=4)
 
     d = os.path.join(working_dir, 'amplitude_plots')
     os.makedirs(d, exist_ok=True)
@@ -551,11 +537,8 @@ def main(data_dir, working_dir, obs_num, ncpu):
         log_scale=True, observable='amplitude', phase_wrap=False, plot_crosses=False,
         plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
         solset='sol000', cmap=plt.cm.PuOr)
+    make_animation(d, prefix='fig', fps=4)
 
-    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
-    #                  solset='sol000',
-    #                  observable='amplitude', plot_facet_idx=True,
-    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False)
 
 
 def debug_main():
