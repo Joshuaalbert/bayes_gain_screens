@@ -284,7 +284,7 @@ class DatapackPlotter(object):
     def plot(self, ant_sel=None, time_sel=None, freq_sel=None, dir_sel=None, pol_sel=None, fignames=None, vmin=None,
              vmax=None, mode='perantenna', observable='phase', phase_wrap=True, log_scale=False, plot_crosses=True,
              plot_facet_idx=False, plot_patchnames=False, labels_in_radec=False, plot_arrays=False,
-             solset=None, plot_screen=False, tec_eval_freq=None, per_plot_scale=False, mean_residual=False, cmap=None,
+             solset=None, plot_screen=False, tec_eval_freq=None, per_plot_scale=False, per_timestep_scale=False, mean_residual=False, cmap=None,
              overlay_solset=None, **kwargs):
         """
 
@@ -346,7 +346,7 @@ class DatapackPlotter(object):
 
             self.datapack.select(ant=ant_sel, time=time_sel, freq=freq_sel, dir=dir_sel, pol=pol_sel)
             obs, axes = self.datapack.__getattr__(observable)
-            flags = np.zeros_like(obs, dtype=np.bool)
+            # flags = np.zeros_like(obs, dtype=np.bool)
             if observable.startswith('weights_'):
                 # obs = np.sqrt(np.abs(1. / obs))  # uncert from weights = 1/var
                 # obs = np.sqrt(obs)  # uncert from weights = 1/var
@@ -465,7 +465,7 @@ class DatapackPlotter(object):
             if Nt > len(fignames):
                 fignames = fignames[:Nt]
             if Nt < len(fignames):
-                logger.info(Nt, fignames)
+                logger.info("Nt<len(fignames)")
                 raise ValueError("Gave too few fignames.")
 
         if mode == 'perantenna':
@@ -515,20 +515,35 @@ class DatapackPlotter(object):
             if not per_plot_scale:
                 fig.subplots_adjust(right=0.85)
                 cbar_ax = fig.add_axes([0.875, 0.15, 0.025, 0.7])
-                cb = ColorbarBase(cbar_ax, cmap=cmap,
-                                  norm=norm, orientation='vertical')
+                cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm,cmap=cmap), cax=cbar_ax, orientation='vertical')
+                # cb = ColorbarBase(cbar_ax, cmap=cmap,
+                #                   norm=norm, orientation='vertical')
 
             for j in range(Nt):
                 logger.info("Plotting {}".format(timestamps[j]))
+                if not plot_screen:
+                    datum = obs[:, :, fixfreq, j]
+                    overlay_datum = overlay_obs[:, :, fixfreq, j]
+                    flagum = flags[:, :, fixfreq, j]
+                else:
+                    datum = obs[:, :, :, fixfreq, j]
+                    overlay_datum = overlay_obs[:, :, :, fixfreq, j]
+                    flagum = flags[:, :, :, fixfreq, j]
+
+                if per_timestep_scale:
+                    vmin = np.nanmin(datum)
+                    vmax = np.nanmax(datum)
+                    norm = plt.Normalize(vmin, vmax)
+                    cb.update_normal(plt.cm.ScalarMappable(norm=norm, cmap=cmap))
                 for i in range(Na):
                     if not plot_screen:
-                        datum = obs[:, i, fixfreq, j]
-                        overlay_datum = overlay_obs[:, i, fixfreq, j]
-                        flagum = flags[:, i, fixfreq, j]
+                        datum = datum[:,i]
+                        overlay_datum = overlay_datum[:,i]
+                        flagum = flagum[:,i]
                     else:
-                        datum = obs[:, :, i, fixfreq, j]
-                        overlay_datum = overlay_obs[:, :, i, fixfreq, j]
-                        flagum = flags[:, :, i, fixfreq, j]
+                        datum = datum[:,:,i]
+                        overlay_datum = overlay_datum[:,:,i]
+                        flagum = flagum[:,:,i]
 
                     if per_plot_scale:
                         vmin = np.nanmin(datum)
