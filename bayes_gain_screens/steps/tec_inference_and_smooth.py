@@ -294,7 +294,9 @@ def solve_and_smooth(Y_obs, times, freqs):
     logger.info("Smoothing and outlier rejection of tec, const, and clock (a weak prior).")
     # Nd*Na*Nt
     clock_mean = smooth(clock_est)
-    const_mean = smooth(const_est)
+    const_real_mean = smooth(jnp.cos(const_est))
+    const_imag_mean = smooth(jnp.sin(const_est))
+    const_mean = jnp.arctan2(const_imag_mean, const_real_mean)
     # outlier flagging on tec, to set better priors for constrained solve
     tec_mean = tec_est.reshape((Nd, Na, Nt))
     tec_std = tec_std.reshape((Nd, Na, Nt))
