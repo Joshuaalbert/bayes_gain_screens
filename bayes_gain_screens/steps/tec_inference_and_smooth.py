@@ -14,7 +14,7 @@ from bayes_gain_screens.outlier_detection import detect_outliers
 
 logger = logging.getLogger(__name__)
 
-from bayes_gain_screens.plotting import animate_datapack, add_colorbar_to_axes
+from bayes_gain_screens.plotting import animate_datapack, add_colorbar_to_axes, DatapackPlotter
 from h5parm import DataPack
 from h5parm.utils import make_soltab
 
@@ -28,7 +28,8 @@ TEC_CONV = -8.4479745e6  # mTECU/Hz
 def prepare_soltabs(dds4_h5parm, dds5_h5parm):
     logger.info("Creating sol000/phase000+amplitude000+tec000+const000+clock000")
     make_soltab(dds4_h5parm, from_solset='sol000', to_solset='sol000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000', 'tec000', 'const000', 'clock000'], remake_solset=True,
+                to_soltab=['phase000', 'amplitude000', 'tec000', 'const000', 'clock000', 'tec_outliers000'],
+                remake_solset=True,
                 to_datapack=dds5_h5parm)
 
 
@@ -74,6 +75,45 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
     tec_mean = results.marginalised['tec_mean']
     tec_std = jnp.sqrt(results.marginalised['tec2_mean'] - tec_mean ** 2)
     return (tec_mean, tec_std, const_mean, clock_mean)
+
+
+def single_unconstrained_solve(freqs, key, Y_obs):
+    TEC_CONV = -8.4479745e6  # mTECU/Hz
+    amp = jnp.sqrt(Y_obs[:24] ** 2 + Y_obs[24:] ** 2)
+
+    def log_likelihood(tec, const, clock, uncert, **kwargs):
+        phase = tec * (TEC_CONV / freqs) + const + clock * (1e-9 * 2. * jnp.pi) * freqs
+        return jnp.sum(log_laplace(amp * jnp.cos(phase), Y_obs[:freqs.size], uncert)
+                       + log_laplace(amp * jnp.sin(phase), Y_obs[freqs.size:], uncert))
+
+    prior_chain = PriorChain() \
+        .push(UniformPrior('tec', -300., 300.)) \
+        .push(UniformPrior('const', -1.5 * jnp.pi, 1.5 * jnp.pi)) \
+        .push(UniformPrior('clock', -30., 30.)) \
+        .push(HalfLaplacePrior('uncert', 0.2))
+
+    # prior_chain.test_prior(key, 10000, log_likelihood=log_likelihood)
+
+    ns = NestedSampler(log_likelihood, prior_chain,
+                       sampler_name='slice',
+                       tec_mean=lambda tec, **kwargs: tec,
+                       tec2_mean=lambda tec, **kwargs: tec ** 2,
+                       const_mean=lambda const, **kwargs: jnp.concatenate([jnp.cos(const), jnp.sin(const)]),
+                       clock_mean=lambda clock, **kwargs: clock,
+                       )
+
+    results = ns(key=key,
+                 num_live_points=1000,
+                 max_samples=1e5,
+                 only_marginalise=False,
+                 collect_samples=True,
+                 termination_frac=0.001,
+                 sampler_kwargs=dict(depth=4, num_slices=6))
+
+    from jaxns.plotting import plot_diagnostics, plot_cornerplot
+
+    plot_diagnostics(results)
+    plot_cornerplot(results)
 
 
 def debug_constrained_solve(freqs, key, Y_obs, amp, tec_mean, tec_std, const_mu, clock_mu):
@@ -158,6 +198,7 @@ def constrained_solve(freqs, key, Y_obs, amp, tec_mean, tec_std, const_mu, clock
 
     return (tec_mean, tec_std)
 
+
 def get_error_data(Y_obs, amp, freqs):
     indices = [219,
                1813690,
@@ -179,7 +220,7 @@ def get_error_data(Y_obs, amp, freqs):
                2357735,
                2176385]
     from jax import tree_map
-    chunksize=32
+    chunksize = 32
     args = [Y_obs, amp]
     N = args[0].shape[0]
     remainder = N % chunksize
@@ -194,14 +235,21 @@ def get_error_data(Y_obs, amp, freqs):
     amp = amp[indices, :]
     for i, y, a in zip(indices, Y_obs, amp):
         print(y.shape)
-        fig, axs = plt.subplots(2,1)
+        fig, axs = plt.subplots(2, 1)
         axs[0].scatter(y[:24], y[24:])
-        axs[1].plot(freqs,a)
+        axs[1].plot(freqs, a)
         axs[0].set_title(f"Index {i}")
         plt.show()
 
 
 def solve_and_smooth(Y_obs, times, freqs):
+    # single_unconstrained_solve(freqs,
+    #                     random.PRNGKey(1245524),
+    #                     Y_obs[0,57,:,250]
+    #                     )
+    # return
+    #
+
     Nd, Na, twoNf, Nt = Y_obs.shape
     Nf = twoNf // 2
     Y_obs = Y_obs.transpose((0, 1, 3, 2)).reshape((Nd * Na * Nt, 2 * Nf))  # Nd*Na*Nt, 2*Nf
@@ -231,11 +279,12 @@ def solve_and_smooth(Y_obs, times, freqs):
     #                         amp[1813690]
     #                         )
 
-    tec_mean, tec_std, const_mean, clock_mean = chunked_pmap(lambda *args: unconstrained_solve(freqs, *args),
-                                                                 keys,
-                                                                 Y_obs,
-                                                                 amp,
-                                                                 debug_mode=False)
+    tec_est, tec_std, const_est, clock_est = chunked_pmap(lambda *args: unconstrained_solve(freqs, *args),
+                                                          keys,
+                                                          Y_obs,
+                                                          amp,
+                                                          debug_mode=False)
+
     def smooth(y):
         y = y.reshape((Nd * Na, Nt))  # Nd*Na,Nt
         y = chunked_pmap(lambda y: poly_smooth(times, y, deg=3), y).reshape(
@@ -244,10 +293,10 @@ def solve_and_smooth(Y_obs, times, freqs):
 
     logger.info("Smoothing and outlier rejection of tec, const, and clock (a weak prior).")
     # Nd*Na*Nt
-    clock_mean = smooth(clock_mean)
-    const_mean = smooth(const_mean)
+    clock_mean = smooth(clock_est)
+    const_mean = smooth(const_est)
     # outlier flagging on tec, to set better priors for constrained solve
-    tec_mean = tec_mean.reshape((Nd, Na, Nt))
+    tec_mean = tec_est.reshape((Nd, Na, Nt))
     tec_std = tec_std.reshape((Nd, Na, Nt))
 
     tec_mean, tec_std, outliers = detect_outliers(tec_mean, tec_std, times)
@@ -277,12 +326,14 @@ def solve_and_smooth(Y_obs, times, freqs):
                      amp, tec_mean, tec_std, const_mean, clock_mean,
                      debug_mode=False)
 
-
     tec_mean = tec_mean.reshape((Nd, Na, Nt))
     tec_std = tec_std.reshape((Nd, Na, Nt))
     const_mean = const_mean.reshape((Nd, Na, Nt))
     clock_mean = clock_mean.reshape((Nd, Na, Nt))
-    #compute phase before outlier suppression as the smoothed solutions are important.
+    tec_est = tec_est.reshape((Nd, Na, Nt))
+    const_est = const_est.reshape((Nd, Na, Nt))
+    clock_est = clock_est.reshape((Nd, Na, Nt))
+    # compute phase before outlier suppression as the smoothed solutions are important.
     amp = amp.reshape((Nd, Na, Nt, Nf)).transpose((0, 1, 3, 2))
     phase_mean = tec_mean[..., None, :] * (TEC_CONV / freqs[:, None]) \
                  + const_mean[..., None, :] \
@@ -291,7 +342,7 @@ def solve_and_smooth(Y_obs, times, freqs):
     logger.info("Performing outlier detection.")
     tec_mean, tec_std, outliers = detect_outliers(tec_mean, tec_std, times)
 
-    return phase_mean, amp, tec_mean, tec_std, const_mean, clock_mean
+    return phase_mean, amp, tec_mean, tec_std, const_mean, clock_mean, tec_est, const_est, clock_est, outliers
 
 
 def link_overwrite(src, dst):
@@ -349,7 +400,8 @@ def main(data_dir, working_dir, obs_num, ncpu):
     link_overwrite(dds5_h5parm, linked_dds5_h5parm)
     prepare_soltabs(dds4_h5parm, dds5_h5parm)
     Y_obs, times, freqs = get_data(solution_file=dds4_h5parm)
-    phase_mean, amp_mean, tec_mean, tec_std, const_mean, clock_mean = solve_and_smooth(Y_obs, times, freqs)
+    phase_mean, amp_mean, tec_mean, tec_std, const_mean, clock_mean, tec_est, const_est, clock_est, outliers = \
+        solve_and_smooth(Y_obs, times, freqs)
     logger.info("Storing smoothed phase, amplitudes, tec, const, and clock")
     with DataPack(dds5_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
@@ -357,6 +409,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
         h.phase = np.asarray(phase_mean)[None, ...]
         h.amplitude = np.asarray(amp_mean)[None, ...]
         h.tec = np.asarray(tec_mean)[None, ...]
+        h.tec_outliers = np.asarray(outliers)[None, ...]
         h.weights_tec = np.asarray(tec_std)[None, ...]
         h.const = np.asarray(const_mean)[None, ...]
         h.clock = np.asarray(clock_mean)[None, ...]
@@ -375,17 +428,23 @@ def main(data_dir, working_dir, obs_num, ncpu):
         for id in range(Nd):
             fig, axs = plt.subplots(4, 1, sharex=True)
             from bayes_gain_screens.utils import windowed_mean
-            smooth_tec = windowed_mean(tec_mean[id, ia, :], 15)
+            # smooth_tec = windowed_mean(tec_mean[id, ia, :], 15)
+            axs[0].plot(times, tec_est[id, ia, :], c='green', ls='dotted', label='tec*')
             axs[0].plot(times, tec_mean[id, ia, :], c='black', label='tec')
-            axs[0].plot(times, smooth_tec, c='green', ls='dotted', label='tec*')
-            # axs[0].plot(times, tec_mean[id, ia, :] + tec_std[id, ia, :], ls='dotted', c='black')
-            # axs[0].plot(times, tec_mean[id, ia, :] - tec_std[id, ia, :], ls='dotted', c='black')
+            axs[0].vlines(times[outliers[id, ia, :]], *axs[0].get_ylim(), colors='red', label='outliers')
 
+            axs[1].plot(times, const_est[id, ia, :], c='green', ls='dotted', label='const*')
             axs[1].plot(times, const_mean[id, ia, :], c='black', label='const')
-            axs[2].plot(times, clock_mean[id, ia, :], c='black', label='clock')
-            axs[3].plot(times, tec_std[id, ia, :], c='black', label='tec_std')
-            axs[3].plot(times, jnp.abs(tec_mean[id, ia, :] - smooth_tec), c='green',ls='dotted', label='|tec-tec*|')
+            axs[1].vlines(times[outliers[id, ia, :]], *axs[1].get_ylim(), colors='red', label='outliers')
 
+            axs[2].plot(times, clock_est[id, ia, :], c='green', ls='dotted', label='clock*')
+            axs[2].plot(times, clock_mean[id, ia, :], c='black', label='clock')
+            axs[2].vlines(times[outliers[id, ia, :]], *axs[2].get_ylim(), colors='red', label='outliers')
+
+            axs[3].plot(times, jnp.abs(tec_mean[id, ia, :] - tec_est[id, ia, :]), c='green', ls='dotted',
+                        label='|tec-tec*|')
+            axs[3].plot(times, tec_std[id, ia, :], c='black', label='tec_std')
+            axs[3].vlines(times[outliers[id, ia, :]], *axs[3].get_ylim(), colors='red', label='outliers')
 
             axs[0].legend()
             axs[1].legend()
@@ -431,39 +490,75 @@ def main(data_dir, working_dir, obs_num, ncpu):
             fig.savefig(os.path.join(data_plot_dir, 'gains_ant{:02d}_dir{:02d}.png'.format(ia, id)))
             plt.close("all")
 
-    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
-                     solset='sol000',
-                     observable='tec', vmin=-60., vmax=60., plot_facet_idx=True,
-                     labels_in_radec=True, plot_crosses=False, phase_wrap=False,
-                     flag_outliers=False)
+    d = os.path.join(working_dir, 'tec_plots')
+    os.makedirs(d, exist_ok=True)
+    DatapackPlotter(dds5_h5parm).plot(
+        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        vmin=-60,
+        vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
+        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+        solset='sol000', cmap=plt.cm.PuOr)
 
-    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'const_plots'), num_processes=ncpu,
-                     solset='sol000',
-                     observable='const', vmin=-np.pi, vmax=np.pi, plot_facet_idx=True,
-                     labels_in_radec=True, plot_crosses=False, phase_wrap=True,
-                     flag_outliers=False)
+    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_plots'), num_processes=ncpu,
+    #                  solset='sol000',
+    #                  observable='tec', vmin=-60., vmax=60., plot_facet_idx=True,
+    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False,
+    #                  flag_outliers=False)
 
-    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'clock_plots'), num_processes=ncpu,
-                     solset='sol000',
-                     observable='clock', vmin=-1., vmax=1., plot_facet_idx=True,
-                     labels_in_radec=True, plot_crosses=False, phase_wrap=False,
-                     flag_outliers=False)
+    d = os.path.join(working_dir, 'const_plots')
+    os.makedirs(d, exist_ok=True)
+    DatapackPlotter(dds5_h5parm).plot(
+        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        vmin=-np.pi,
+        vmax=np.pi, observable='const', phase_wrap=False, plot_crosses=False,
+        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+        solset='sol000', cmap=plt.cm.PuOr)
 
-    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
-                     solset='sol000',
-                     observable='weights_tec', vmin=0., vmax=10., plot_facet_idx=True,
-                     labels_in_radec=True, plot_crosses=False, phase_wrap=False,
-                     flag_outliers=False)
+    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'const_plots'), num_processes=ncpu,
+    #                  solset='sol000',
+    #                  observable='const', vmin=-np.pi, vmax=np.pi, plot_facet_idx=True,
+    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=True,
+    #                  flag_outliers=False)
 
-    animate_datapack(dds5_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
-                     solset='sol000',
-                     observable='amplitude', plot_facet_idx=True,
-                     labels_in_radec=True, plot_crosses=False, phase_wrap=False)
+    d = os.path.join(working_dir, 'clock_plots')
+    os.makedirs(d, exist_ok=True)
+    DatapackPlotter(dds5_h5parm).plot(
+        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        vmin=None,
+        vmax=None,
+        observable='clock', phase_wrap=False, plot_crosses=False,
+        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+        solset='sol000', cmap=plt.cm.PuOr)
+
+    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'clock_plots'), num_processes=ncpu,
+    #                  solset='sol000',
+    #                  observable='clock', vmin=-1., vmax=1., plot_facet_idx=True,
+    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False,
+    #                  flag_outliers=False)
+
+    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'tec_uncert_plots'), num_processes=ncpu,
+    #                  solset='sol000',
+    #                  observable='weights_tec', vmin=0., vmax=10., plot_facet_idx=True,
+    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False,
+    #                  flag_outliers=False)
+
+    d = os.path.join(working_dir, 'amplitude_plots')
+    os.makedirs(d, exist_ok=True)
+    DatapackPlotter(dds5_h5parm).plot(
+        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        log_scale=True, observable='amplitude', phase_wrap=False, plot_crosses=False,
+        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+        solset='sol000', cmap=plt.cm.PuOr)
+
+    # animate_datapack(dds5_h5parm, os.path.join(working_dir, 'smoothed_amp_plots'), num_processes=ncpu,
+    #                  solset='sol000',
+    #                  observable='amplitude', plot_facet_idx=True,
+    #                  labels_in_radec=True, plot_crosses=False, phase_wrap=False)
 
 
 def debug_main():
     os.chdir('/home/albert/data/gains_screen/working_dir/')
-    main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 342938, 1)
+    main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 342938, 8)
     # main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 100000, 1)
 
 
