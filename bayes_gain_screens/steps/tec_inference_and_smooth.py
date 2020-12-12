@@ -47,7 +47,7 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
 
     prior_chain = PriorChain() \
         .push(UniformPrior('tec', -300., 300.)) \
-        .push(UniformPrior('const', -1.1*jnp.pi, 1.1*jnp.pi)) \
+        .push(UniformPrior('const', -jnp.pi, jnp.pi)) \
         .push(UniformPrior('clock', -1., 1.)) \
         .push(HalfLaplacePrior('uncert', 0.2))
 
