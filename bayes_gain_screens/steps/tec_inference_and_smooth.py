@@ -47,8 +47,8 @@ def unconstrained_solve(freqs, key, Y_obs, amp):
 
     prior_chain = PriorChain() \
         .push(UniformPrior('tec', -300., 300.)) \
-        .push(UniformPrior('const', -jnp.pi, jnp.pi)) \
-        .push(UniformPrior('clock', -1., 1.)) \
+        .push(UniformPrior('const', -1.1*jnp.pi, 1.1*jnp.pi)) \
+        .push(UniformPrior('clock', -10., 10.)) \
         .push(HalfLaplacePrior('uncert', 0.2))
 
     # prior_chain.test_prior(key, 10000, log_likelihood=log_likelihood)
@@ -186,7 +186,7 @@ def constrained_solve(freqs, key, Y_obs, amp, tec_mean, tec_std, const_mu, clock
                  only_marginalise=True,
                  collect_samples=False,
                  termination_frac=0.01,
-                 sampler_kwargs=dict(depth=1, num_slices=3))
+                 sampler_kwargs=dict(depth=2, num_slices=3))
 
     tec_mean = results.marginalised['tec_mean']
     tec_std = jnp.sqrt(results.marginalised['tec2_mean'] - tec_mean ** 2)
