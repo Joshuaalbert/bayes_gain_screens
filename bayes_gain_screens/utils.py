@@ -1,3 +1,4 @@
+import os
 from timeit import default_timer
 
 import numpy as np
@@ -13,6 +14,7 @@ from jax.scipy.signal import convolve
 from jax.api import _jit_is_disabled as jit_is_disabled
 
 from bayes_gain_screens.frames import ENU
+from bayes_gain_screens.steps.tec_inference_and_smooth import logger
 
 from h5parm import DataPack
 
@@ -328,14 +330,27 @@ def test_disable_jit_and_scan():
 def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1., plot=False,
                                      seed_directions=None, fill_in_distance=None,
                                      fill_in_flux_limit=0.):
-    """Given a srl file containing the sources extracted from the apparent flux image of the field,
-    decide the screen directions
-    :param srl_fits: str
-        The path to the srl file, typically created by pybdsf
-    :return: float, array [N, 2]
-        The `N` sources' coordinates as an ``astropy.coordinates.ICRS`` object
     """
-    logging.info("Getting screen directions from image.")
+    Find directions in an apparent flux image satifying a set of selection criteria.
+    
+    Args:
+        image_fits: FITS image of apparent flux
+        flux_limit: float, Selection limit above which to select primary sources.
+        max_N: int, Maximum number of sources to find, None is find all above limit.
+        min_spacing_arcmin: 
+        plot: 
+        seed_directions: 
+        fill_in_distance: if not None, then search for dimmer sources below `flux_limit` but above `fill_in_flux_limit`
+            until we find `max_N` sources within this many arcmin. `fill_in_distance` should be larger than the
+            `min_spacing_arcmin`.
+        fill_in_flux_limit: the flux limit for the secondary selection criteria.
+
+    Returns:
+        ICRS coordinates of directions satisfying the primary and secondary selection criteria.
+        Array of radiu in arcsec around the sources beyond which you may subtract sources for peeling.
+    """
+    logger.info(f"Getting {max_N} screen directions from image {image_fits} with flux above {flux_limit} "
+                f"separated by at least {min_spacing_arcmin}.")
 
     with fits.open(image_fits) as hdul:
         # ra,dec, _, freq
@@ -349,7 +364,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
         dec = []
         f = []
         if seed_directions is not None:
-            logging.info("Using seed directions.")
+            logger.info("Using seed directions.")
             ra = list(seed_directions[:, 0])
             dec = list(seed_directions[:, 1])
             f = list(flux_limit * np.ones(len(ra)))
@@ -359,7 +374,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 if len(ra) >= max_N:
                     break
             pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
-            #             logging.info("{} -> {}".format(i, pix))
+            #             logger.info("{} -> {}".format(i, pix))
             #             pix = np.reshape(np.array(np.unravel_index(i, [Nra, Ndec, 1, 1])), (1, 4))
             coords = w.wcs_pix2world([pix], 1)  # degrees
             ra_ = coords[0, 0] * np.pi / 180.
@@ -369,7 +384,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 ra.append(ra_)
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                logging.info(
+                logger.info(
                     "Auto-append first: Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
 
                 idx.append(i)
@@ -379,12 +394,14 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 ra.append(ra_)
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                logging.info("Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
+                logger.info("Found source of flux {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                 idx.append(i)
 
         first_found = len(idx)
 
         if fill_in_distance is not None:
+            logger.info(f"Applying secondary selection criteria. Flux limit {fill_in_flux_limit} and minimum "
+                        f"separation {fill_in_distance}.")
             where_limit = np.where(np.logical_and(data < np.min(f), data >= fill_in_flux_limit))
             arg_sort = np.argsort(data[where_limit])[::-1]
             # use remaining brightest sources to get fillers
@@ -393,7 +410,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                     if len(ra) >= max_N:
                         break
                 pix = [where_limit[3][i], where_limit[2][i], where_limit[1][i], where_limit[0][i]]
-                #                 logging.info("{} -> {}".format(i, pix))
+                #                 logger.info("{} -> {}".format(i, pix))
                 coords = w.wcs_pix2world([pix], 1)  # degrees
 
                 ra_ = coords[0, 0] * np.pi / 180.
@@ -404,7 +421,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                     ra.append(ra_)
                     dec.append(dec_)
                     f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                    logging.info(
+                    logger.info(
                         "Found filler {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                     idx.append(i)
 
@@ -416,7 +433,8 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
         sizes[:first_found] = 120.
         sizes[first_found:] = 240.
 
-    logging.info("Found {} sources.".format(len(ra)))
+    logger.info("Found {} sources in total. {} form primary selection, {} from secondary selection.".format(
+        len(ra), first_found, len(ra) - first_found))
 
     return ac.ICRS(ra=ra * au.rad, dec=dec * au.rad), sizes
 
@@ -503,3 +521,11 @@ def poly_smooth(x, y, deg=5):
 
 def wrap(phi):
     return (phi + jnp.pi) % (2 * jnp.pi) - jnp.pi
+
+
+def link_overwrite(src, dst):
+    if os.path.islink(dst):
+        logger.info("Unlinking pre-existing sym link {}".format(dst))
+        os.unlink(dst)
+    logger.info("Linking {} -> {}".format(src, dst))
+    os.symlink(src, dst)
