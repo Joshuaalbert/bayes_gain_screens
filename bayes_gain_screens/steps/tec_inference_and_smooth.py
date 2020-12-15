@@ -1,3 +1,7 @@
+import matplotlib
+
+matplotlib.use('Agg')
+
 import os
 import sys
 import numpy as np
@@ -9,7 +13,7 @@ from jax.lax import scan
 import logging
 import astropy.units as au
 
-from bayes_gain_screens.utils import chunked_pmap, poly_smooth, wrap, windowed_mean
+from bayes_gain_screens.utils import chunked_pmap, poly_smooth, wrap, link_overwrite
 from bayes_gain_screens.outlier_detection import detect_outliers
 
 logger = logging.getLogger(__name__)
@@ -346,18 +350,10 @@ def solve_and_smooth(Y_obs, times, freqs):
     return phase_mean, amp, tec_mean, tec_std, const_mean, clock_mean, tec_est, const_est, clock_est, outliers
 
 
-def link_overwrite(src, dst):
-    if os.path.islink(dst):
-        logger.info("Unlinking pre-existing sym link {}".format(dst))
-        os.unlink(dst)
-    logger.info("Linking {} -> {}".format(src, dst))
-    os.symlink(src, dst)
-
-
 def get_data(solution_file):
     logger.info("Getting DDS4 data.")
     with DataPack(solution_file, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1))#, ant=slice(54, None), dir=44, time=slice(0, 600))
+        select = dict(pol=slice(0, 1, 1))  # , ant=slice(54, None), dir=44, time=slice(0, 600))
         h.select(**select)
         phase, axes = h.phase
         phase = phase[0, ...]
@@ -391,7 +387,7 @@ def get_data(solution_file):
     return Y_obs, times, freqs
 
 
-def main(data_dir, working_dir, obs_num, ncpu):
+def main(data_dir, working_dir, obs_num, ncpu, plot_results):
     os.environ['XLA_FLAGS'] = f"--xla_force_host_platform_device_count={ncpu}"
     logger.info("Performing data smoothing via tec+const+clock inference.")
     dds4_h5parm = os.path.join(data_dir, 'L{}_DDS4_full_merged.h5'.format(obs_num))
@@ -406,7 +402,7 @@ def main(data_dir, working_dir, obs_num, ncpu):
     logger.info("Storing smoothed phase, amplitudes, tec, const, and clock")
     with DataPack(dds5_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
-        h.select(pol=slice(0, 1, 1))#, ant=slice(54, None), dir=44, time=slice(0, 600))
+        h.select(pol=slice(0, 1, 1))  # , ant=slice(54, None), dir=44, time=slice(0, 600))
         h.phase = np.asarray(phase_mean)[None, ...]
         h.amplitude = np.asarray(amp_mean)[None, ...]
         h.tec = np.asarray(tec_mean)[None, ...]
@@ -420,131 +416,130 @@ def main(data_dir, working_dir, obs_num, ncpu):
 
     Y_mean = jnp.concatenate([amp_mean * jnp.cos(phase_mean), amp_mean * jnp.sin(phase_mean)], axis=-2)
 
-    logger.info("Plotting results.")
-    data_plot_dir = os.path.join(working_dir, 'data_plots')
-    os.makedirs(data_plot_dir, exist_ok=True)
-    Nd, Na, Nf, Nt = phase_mean.shape
+    if plot_results:
+        logger.info("Plotting results.")
+        data_plot_dir = os.path.join(working_dir, 'data_plots')
+        os.makedirs(data_plot_dir, exist_ok=True)
+        Nd, Na, Nf, Nt = phase_mean.shape
 
-    for ia in range(Na):
-        for id in range(Nd):
-            fig, axs = plt.subplots(4, 1, sharex=True)
-            from bayes_gain_screens.utils import windowed_mean
-            # smooth_tec = windowed_mean(tec_mean[id, ia, :], 15)
-            axs[0].plot(times, tec_mean[id, ia, :], c='black', label='tec')
-            ylim=axs[0].get_ylim()
-            axs[0].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
-            axs[0].plot(times, tec_est[id, ia, :], c='green', ls='dotted', label='tec*')
-            axs[0].set_ylim(*ylim)
+        for ia in range(Na):
+            for id in range(Nd):
+                fig, axs = plt.subplots(4, 1, sharex=True)
+                # smooth_tec = windowed_mean(tec_mean[id, ia, :], 15)
+                axs[0].plot(times, tec_mean[id, ia, :], c='black', label='tec')
+                ylim = axs[0].get_ylim()
+                axs[0].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
+                axs[0].plot(times, tec_est[id, ia, :], c='green', ls='dotted', label='tec*')
+                axs[0].set_ylim(*ylim)
 
-            axs[1].plot(times, const_mean[id, ia, :], c='black', label='const')
-            ylim = axs[1].get_ylim()
-            axs[1].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
-            axs[1].plot(times, const_est[id, ia, :], c='green', ls='dotted', label='const*')
-            axs[1].set_ylim(*ylim)
+                axs[1].plot(times, const_mean[id, ia, :], c='black', label='const')
+                ylim = axs[1].get_ylim()
+                axs[1].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
+                axs[1].plot(times, const_est[id, ia, :], c='green', ls='dotted', label='const*')
+                axs[1].set_ylim(*ylim)
 
-            axs[2].plot(times, clock_mean[id, ia, :], c='black', label='clock')
-            ylim = axs[2].get_ylim()
-            axs[2].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
-            axs[2].plot(times, clock_est[id, ia, :], c='green', ls='dotted', label='clock*')
-            axs[2].set_ylim(*ylim)
+                axs[2].plot(times, clock_mean[id, ia, :], c='black', label='clock')
+                ylim = axs[2].get_ylim()
+                axs[2].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
+                axs[2].plot(times, clock_est[id, ia, :], c='green', ls='dotted', label='clock*')
+                axs[2].set_ylim(*ylim)
 
-            axs[3].plot(times, tec_std[id, ia, :], c='black', label='tec_std')
-            ylim = axs[3].get_ylim()
-            axs[3].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
-            axs[3].plot(times, jnp.abs(tec_mean[id, ia, :] - tec_est[id, ia, :]), c='green', ls='dotted',
-                        label='|tec-tec*|')
-            axs[3].set_ylim(*ylim)
+                axs[3].plot(times, tec_std[id, ia, :], c='black', label='tec_std')
+                ylim = axs[3].get_ylim()
+                axs[3].vlines(times[outliers[id, ia, :]], *ylim, colors='red', label='outliers', alpha=0.5)
+                axs[3].plot(times, jnp.abs(tec_mean[id, ia, :] - tec_est[id, ia, :]), c='green', ls='dotted',
+                            label='|tec-tec*|')
+                axs[3].set_ylim(*ylim)
 
-            axs[0].legend()
-            axs[1].legend()
-            axs[2].legend()
-            axs[3].legend()
+                axs[0].legend()
+                axs[1].legend()
+                axs[2].legend()
+                axs[3].legend()
 
-            axs[0].set_ylabel("DTEC [mTECU]")
-            axs[1].set_ylabel("phase [rad]")
-            axs[2].set_ylabel("delay [ns]")
-            axs[3].set_ylabel("DTEC uncert [mTECU]")
-            axs[3].set_xlabel("time [s]")
+                axs[0].set_ylabel("DTEC [mTECU]")
+                axs[1].set_ylabel("phase [rad]")
+                axs[2].set_ylabel("delay [ns]")
+                axs[3].set_ylabel("DTEC uncert [mTECU]")
+                axs[3].set_xlabel("time [s]")
 
-            fig.savefig(os.path.join(data_plot_dir, 'sol_ant{:02d}_dir{:02d}.png'.format(ia, id)))
-            plt.close("all")
+                fig.savefig(os.path.join(data_plot_dir, 'sol_ant{:02d}_dir{:02d}.png'.format(ia, id)))
+                plt.close("all")
 
-            fig, axs = plt.subplots(3, 1)
+                fig, axs = plt.subplots(3, 1)
 
-            vmin = jnp.percentile(Y_mean[id, ia, :, :], 2)
-            vmax = jnp.percentile(Y_mean[id, ia, :, :], 98)
+                vmin = jnp.percentile(Y_mean[id, ia, :, :], 2)
+                vmax = jnp.percentile(Y_mean[id, ia, :, :], 98)
 
-            axs[0].imshow(Y_obs[id, ia, :, :], vmin=vmin, vmax=vmax, cmap='PuOr', aspect='auto',
-                          interpolation='nearest')
-            axs[0].set_title("Y_obs")
-            add_colorbar_to_axes(axs[0], "PuOr", vmin=vmin, vmax=vmax)
+                axs[0].imshow(Y_obs[id, ia, :, :], vmin=vmin, vmax=vmax, cmap='PuOr', aspect='auto',
+                              interpolation='nearest')
+                axs[0].set_title("Y_obs")
+                add_colorbar_to_axes(axs[0], "PuOr", vmin=vmin, vmax=vmax)
 
-            axs[1].imshow(Y_mean[id, ia, :, :], vmin=vmin, vmax=vmax, cmap='PuOr', aspect='auto',
-                          interpolation='nearest')
-            axs[1].set_title("Y mean")
-            add_colorbar_to_axes(axs[1], "PuOr", vmin=vmin, vmax=vmax)
+                axs[1].imshow(Y_mean[id, ia, :, :], vmin=vmin, vmax=vmax, cmap='PuOr', aspect='auto',
+                              interpolation='nearest')
+                axs[1].set_title("Y mean")
+                add_colorbar_to_axes(axs[1], "PuOr", vmin=vmin, vmax=vmax)
 
-            phase_obs = jnp.arctan2(Y_obs[id, ia, Nf:, :], Y_obs[id, ia, :Nf, :])
-            phase = jnp.arctan2(Y_mean[id, ia, Nf:, :], Y_mean[id, ia, :Nf, :])
-            dphase = wrap(phase - phase_obs)
+                phase_obs = jnp.arctan2(Y_obs[id, ia, Nf:, :], Y_obs[id, ia, :Nf, :])
+                phase = jnp.arctan2(Y_mean[id, ia, Nf:, :], Y_mean[id, ia, :Nf, :])
+                dphase = wrap(phase - phase_obs)
 
-            vmin = -0.3
-            vmax = 0.3
+                vmin = -0.3
+                vmax = 0.3
 
-            axs[2].imshow(dphase, vmin=vmin, vmax=vmax, cmap='coolwarm', aspect='auto',
-                          interpolation='nearest')
-            axs[2].set_title("diff phase")
-            add_colorbar_to_axes(axs[2], "coolwarm", vmin=vmin, vmax=vmax)
+                axs[2].imshow(dphase, vmin=vmin, vmax=vmax, cmap='coolwarm', aspect='auto',
+                              interpolation='nearest')
+                axs[2].set_title("diff phase")
+                add_colorbar_to_axes(axs[2], "coolwarm", vmin=vmin, vmax=vmax)
 
-            fig.savefig(os.path.join(data_plot_dir, 'gains_ant{:02d}_dir{:02d}.png'.format(ia, id)))
-            plt.close("all")
+                fig.savefig(os.path.join(data_plot_dir, 'gains_ant{:02d}_dir{:02d}.png'.format(ia, id)))
+                plt.close("all")
 
-    d = os.path.join(working_dir, 'tec_plots')
-    os.makedirs(d, exist_ok=True)
-    DatapackPlotter(dds5_h5parm).plot(
-        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-        vmin=-60,
-        vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
-        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
-        solset='sol000', cmap=plt.cm.PuOr)
-    make_animation(d, prefix='fig', fps=4)
+        d = os.path.join(working_dir, 'tec_plots')
+        os.makedirs(d, exist_ok=True)
+        DatapackPlotter(dds5_h5parm).plot(
+            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+            vmin=-60,
+            vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
+            plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+            solset='sol000', cmap=plt.cm.PuOr)
+        make_animation(d, prefix='fig', fps=4)
 
-    d = os.path.join(working_dir, 'const_plots')
-    os.makedirs(d, exist_ok=True)
-    DatapackPlotter(dds5_h5parm).plot(
-        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-        vmin=-np.pi,
-        vmax=np.pi, observable='const', phase_wrap=False, plot_crosses=False,
-        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
-        solset='sol000', cmap=plt.cm.PuOr)
-    make_animation(d, prefix='fig', fps=4)
+        d = os.path.join(working_dir, 'const_plots')
+        os.makedirs(d, exist_ok=True)
+        DatapackPlotter(dds5_h5parm).plot(
+            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+            vmin=-np.pi,
+            vmax=np.pi, observable='const', phase_wrap=False, plot_crosses=False,
+            plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+            solset='sol000', cmap=plt.cm.PuOr)
+        make_animation(d, prefix='fig', fps=4)
 
-    d = os.path.join(working_dir, 'clock_plots')
-    os.makedirs(d, exist_ok=True)
-    DatapackPlotter(dds5_h5parm).plot(
-        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-        vmin=None,
-        vmax=None,
-        observable='clock', phase_wrap=False, plot_crosses=False,
-        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
-        solset='sol000', cmap=plt.cm.PuOr)
-    make_animation(d, prefix='fig', fps=4)
+        d = os.path.join(working_dir, 'clock_plots')
+        os.makedirs(d, exist_ok=True)
+        DatapackPlotter(dds5_h5parm).plot(
+            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+            vmin=None,
+            vmax=None,
+            observable='clock', phase_wrap=False, plot_crosses=False,
+            plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+            solset='sol000', cmap=plt.cm.PuOr)
+        make_animation(d, prefix='fig', fps=4)
 
-    d = os.path.join(working_dir, 'amplitude_plots')
-    os.makedirs(d, exist_ok=True)
-    DatapackPlotter(dds5_h5parm).plot(
-        fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-        log_scale=True, observable='amplitude', phase_wrap=False, plot_crosses=False,
-        plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
-        solset='sol000', cmap=plt.cm.PuOr)
-    make_animation(d, prefix='fig', fps=4)
-
+        d = os.path.join(working_dir, 'amplitude_plots')
+        os.makedirs(d, exist_ok=True)
+        DatapackPlotter(dds5_h5parm).plot(
+            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+            log_scale=True, observable='amplitude', phase_wrap=False, plot_crosses=False,
+            plot_facet_idx=True, labels_in_radec=True, per_timestep_scale=True,
+            solset='sol000', cmap=plt.cm.PuOr)
+        make_animation(d, prefix='fig', fps=4)
 
 
 def debug_main():
     os.chdir('/home/albert/data/gains_screen/working_dir/')
-    main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 342938, 8)
-    # main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 100000, 1)
+    main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 342938, 8, True)
+    # main('/home/albert/data/gains_screen/data', '/home/albert/data/gains_screen/working_dir/', 100000, 1, True)
 
 
 def add_args(parser):
@@ -557,6 +552,8 @@ def add_args(parser):
                         default=None, type=str, required=True)
     parser.add_argument('--ncpu', help='How many processors available.',
                         default=None, type=int, required=True)
+    parser.add_argument('--plot_results', help='Whether to plot results.',
+                        default=False, type="bool", required=False)
 
 
 if __name__ == '__main__':

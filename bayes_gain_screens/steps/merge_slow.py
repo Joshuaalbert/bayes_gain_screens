@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from bayes_gain_screens.utils import great_circle_sep
+from bayes_gain_screens.utils import great_circle_sep, link_overwrite
 from h5parm import DataPack
 from h5parm.utils import make_soltab
 import argparse
@@ -9,16 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def link_overwrite(src, dst):
-    if os.path.islink(dst):
-        logger.info("Unlinking pre-existing sym link {}".format(dst))
-        os.unlink(dst)
-    logger.info("Linking {} -> {}".format(src, dst))
-    os.symlink(src, dst)
-
-
 def main(data_dir, working_dir, obs_num):
-    os.chdir(working_dir)
     logger.info("Merging slow solutions into screen and smoothed.")
 
     smoothed_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
@@ -82,14 +73,12 @@ def main(data_dir, working_dir, obs_num):
     ###
     # Create and set screen_slow000
 
-    logger.info("Creating screen_slow000/phase000+amplitude000")
+    logger.info("Creating screen_slow/phase000+amplitude000")
     make_soltab(screen_h5parm, from_solset='sol000', to_solset='screen_slow', from_soltab='phase000',
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack=merged_h5parm)
-    logger.info("Creating smoothed_slow000/phase000+amplitude000")
+    logger.info("Creating smoothed_slow/phase000+amplitude000")
     make_soltab(smoothed_h5parm, from_solset='sol000', to_solset='smoothed_slow', from_soltab='phase000',
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack=merged_h5parm)
-
-
 
     logger.info("Creating time mapping")
     time_map = np.array([np.argmin(np.abs(time_slow - t)) for t in time_screen])
@@ -101,11 +90,9 @@ def main(data_dir, working_dir, obs_num):
     amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
 
     phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...]
-    phase_screen_slow[:, :Ncal, ...] = phase_smooth_slow
     amplitude_screen_slow = amplitude_screen * amplitude_slow[:, dir_map, ...]
-    amplitude_screen_slow[:, :Ncal, ...] = amplitude_smooth_slow
-
-    datapack = DataPack(merged_h5parm)
+    logger.info("Saving results to {}".format(merged_h5parm))
+    datapack = DataPack(merged_h5parm, readonly=False)
     datapack.current_solset = 'screen_slow'
     datapack.select(**select)
     datapack.phase = phase_screen_slow

@@ -162,19 +162,19 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
         kwargs['sols'] = 'DDS4_full'
         template_name = 'image_kms_sols_template'
     elif solset == 'smoothed':
-        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS5_full_merged'))
+        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS5_full'))
+        kwargs['sols'] = '{}:sol000/phase000+amplitude000'.format(merged_h5parm)
+        template_name = 'image_h5parm_template'
+    elif solset == 'screen':
+        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS6_full'))
         kwargs['sols'] = '{}:sol000/phase000+amplitude000'.format(merged_h5parm)
         template_name = 'image_h5parm_template'
     elif solset == 'smoothed_slow':
-        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS8_full_merged'))
+        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS8_full'))
         kwargs['sols'] = '{}:smoothed_slow/phase000+amplitude000'.format(merged_h5parm)
         template_name = 'image_h5parm_template'
-    elif solset == 'screen':
-        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS6_full_merged'))
-        kwargs['sols'] = '{}:sol000/phase000+amplitude000'.format(merged_h5parm)
-        template_name = 'image_h5parm_template'
     elif solset == 'screen_slow':
-        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS8_full_merged'))
+        merged_h5parm = os.path.join(data_dir, 'L{}_{}_merged.h5'.format(obs_num, 'DDS8_full'))
         kwargs['sols'] = '{}:screen_slow/phase000+amplitude000'.format(merged_h5parm)
         template_name = 'image_h5parm_template'
     else:

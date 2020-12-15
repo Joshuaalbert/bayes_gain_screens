@@ -14,7 +14,6 @@ from jax.scipy.signal import convolve
 from jax.api import _jit_is_disabled as jit_is_disabled
 
 from bayes_gain_screens.frames import ENU
-from bayes_gain_screens.steps.tec_inference_and_smooth import logger
 
 from h5parm import DataPack
 
@@ -313,7 +312,7 @@ def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
     if remainder != 0:
         result = tree_map(lambda x: x[:-extra], result)
     dt = default_timer() - t0
-    logger.info("Time to run: {}, rate: {} / s".format(dt, N / dt))
+    logger.info("Time to run: {}, rate: {} / s, normalised rate: {} / s / device".format(dt, N / dt, N / dt / chunksize))
     return result
 
 
@@ -364,10 +363,10 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
         dec = []
         f = []
         if seed_directions is not None:
-            logger.info("Using seed directions.")
             ra = list(seed_directions[:, 0])
             dec = list(seed_directions[:, 1])
             f = list(flux_limit * np.ones(len(ra)))
+            logger.info("Using {} seed directions.".format(len(f)))
         idx = []
         for i in arg_sort:
             if max_N is not None:
@@ -386,7 +385,6 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
                 logger.info(
                     "Auto-append first: Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
-
                 idx.append(i)
                 continue
             dist = great_circle_sep(np.array(ra), np.array(dec), ra_, dec_) * 180. / np.pi
@@ -397,7 +395,7 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 logger.info("Found source of flux {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                 idx.append(i)
 
-        first_found = len(idx)
+        first_found = len(ra)
 
         if fill_in_distance is not None:
             logger.info(f"Applying secondary selection criteria. Flux limit {fill_in_flux_limit} and minimum "
@@ -425,21 +423,42 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                         "Found filler {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                     idx.append(i)
 
+        second_found = len(ra) - first_found
+        total_found = first_found + second_found
+
         if max_N is not None:
-            f = np.array(f)[:max_N]
-            ra = np.array(ra)[:max_N]
-            dec = np.array(dec)[:max_N]
+            f = np.array(f)[:total_found]
+            ra = np.array(ra)[:total_found]
+            dec = np.array(dec)[:total_found]
         sizes = np.ones(len(idx))
         sizes[:first_found] = 120.
         sizes[first_found:] = 240.
 
-    logger.info("Found {} sources in total. {} form primary selection, {} from secondary selection.".format(
-        len(ra), first_found, len(ra) - first_found))
+    logger.info("Found {} sources in total. {} from primary selection, {} from secondary selection.".format(
+        total_found, first_found, second_found))
 
     return ac.ICRS(ra=ra * au.rad, dec=dec * au.rad), sizes
 
 
 def inverse_update(C, m, return_drop=False):
+    """
+    Compute the inverse of a matrix with the m-th row and column dropped given knowledge of the inverse of the original
+    matrix.
+
+        C = inv(A)
+        B = drop_col(drop_row(A, m),m)
+        computes inv(B) given only C
+
+    Args:
+        C: inverse of full matirix
+        m: row and col to drop
+        return_drop: whether to also return the array used to drop the m-th row/col.
+
+    Returns:
+        B
+        if return_drop:
+            the array to drop row/col using jnp.take(v, drop_array)
+    """
     drop = drop_array(C.shape[0], m)
     _a = jnp.take(C, drop, axis=0)  # drop m row
     a = jnp.take(_a, drop, axis=1)
@@ -460,7 +479,16 @@ def test_inverse_update():
 
 
 def drop_array(n, m):
-    # TODO to with mod n, which might be faster
+    """
+    Produce an array of arange(0,n) with the m-th index missing
+    Args:
+        n: int, maximum index
+        m: int, missing index
+
+    Returns:
+        an index array suitable to use with jnp.take to take all but the m-th element along an axis.
+    """
+    # TODO to with mod n
     a = jnp.arange(n)
     a = jnp.roll(a, -m, axis=0)
     a = a[1:]

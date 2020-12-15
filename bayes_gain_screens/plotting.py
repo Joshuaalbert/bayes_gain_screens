@@ -1,7 +1,3 @@
-import matplotlib
-from matplotlib.colorbar import ColorbarBase
-
-matplotlib.use('Agg')
 import numpy as np
 import os
 from concurrent import futures
@@ -48,13 +44,32 @@ def add_colorbar_to_axes(ax, cmap, norm=None, vmin=None, vmax=None):
 
 
 def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.PuOr,
-                    relim=False):
+                    relim=True, colorbar=True):
+    """
+    Plot a Vornoi tesselation of data.
+
+    Args:
+        points: [N,2] coordinates of points
+        colors: [N] values at points
+        ax: None, or an Axes
+        alpha: alpha of colors for blending
+        radius: technical
+        norm:
+        vmin:
+        vmax:
+        cmap:
+        relim:
+        colorbar:
+
+    Returns:
+
+    """
     if cmap == 'phase':
         cmap = phase_cmap
 
     if norm is None:
-        norm = plt.Normalize(np.nanmin(colors) if vmin is not None else vmin,
-                             np.nanmax(colors) if vmax is not None else vmax)
+        norm = plt.Normalize(np.nanmin(colors) if vmin is None else vmin,
+                             np.nanmax(colors) if vmax is None else vmax)
 
     if radius is None:
         radius = np.max(np.linalg.norm(points - np.mean(points, axis=0), axis=1))
@@ -165,6 +180,9 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
     if relim:
         ax.set_xlim(vor.min_bound[0] - 0.1 * radius, vor.max_bound[0] + 0.1 * radius)
         ax.set_ylim(vor.min_bound[1] - 0.1 * radius, vor.max_bound[1] + 0.1 * radius)
+
+    if colorbar:
+        add_colorbar_to_axes(ax, cmap, norm=norm)
     return ax
 
 
@@ -328,8 +346,6 @@ class DatapackPlotter(object):
             plot_overlay = True
         else:
             plot_overlay = False
-
-        matplotlib.use('Agg')
 
         ###
         # Set up plotting
@@ -531,8 +547,8 @@ class DatapackPlotter(object):
                     _flagum = flags[:, :, :, fixfreq, j]
 
                 if per_timestep_scale:
-                    vmin = np.nanpercentile(_datum, 1)
-                    vmax = np.nanpercentile(_datum,99)
+                    vmin = np.nanmin(_datum)#np.nanpercentile(_datum, 5./_datum.size*100.)
+                    vmax = np.nanmax(_datum)#np.nanpercentile(_datum,100. - 5./_datum.size*100.)
                     norm = plt.Normalize(vmin, vmax)
                     cb.update_normal(plt.cm.ScalarMappable(norm=norm, cmap=cmap))
                 for i in range(Na):
@@ -546,8 +562,8 @@ class DatapackPlotter(object):
                         flagum = _flagum[:,:,i]
 
                     if per_plot_scale:
-                        vmin = np.nanpercentile(datum, 1)
-                        vmax = np.nanpercentile(datum, 99)
+                        vmin = np.nanmin(datum)#np.nanpercentile(datum, 2./_datum.size*100.)
+                        vmax = np.nanmax(datum)#np.nanpercentile(datum, 100. - 2./_datum.size*100.)
                         norm = plt.Normalize(vmin, vmax)
                     colors = cmap(norm(datum))
                     if plot_overlay:
@@ -631,7 +647,7 @@ def make_animation(datafolder, prefix='fig', fps=4):
     video at framerate `fps`.
     Output is datafolder/animation.mp4'''
     if os.system(
-            'ffmpeg -framerate {} -i {}/{}-%04d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -r 30 {}/animation.mp4'.format(
+            'ffmpeg -y -framerate {} -i {}/{}-%04d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -r 30 {}/animation.mp4'.format(
                 fps, datafolder, prefix, datafolder)):
         logger.info("{}/animation.mp4 exists already".format(datafolder))
 

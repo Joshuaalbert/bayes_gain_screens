@@ -403,13 +403,13 @@ def add_args(parser):
                                default=0, type=int, required=False)
 
 
-def test_main():
+def debug_main():
     main(archive_dir='/home/albert/store/lockman/archive',
          root_working_dir='/home/albert/store/root',
          script_dir=None,
          obs_num=342938,
          region_file=None,
-         ncpu=32,
+         ncpu=64,
          ref_image_fits=None,
          no_download=False,
          bind_dirs='/beegfs/lofar',
@@ -417,26 +417,26 @@ def test_main():
          lofar_gain_screens_simg='/home/albert/store/lofar_sksp_ddf_gainscreens_premerge.simg',
          bayes_gain_screens_simg=None,
          bayes_gain_screens_conda_env='bayes_gain_screens_py',
-         auto_resume=1,
-         do_choose_calibrators=1,
-         do_download_archive=1,
-         do_subtract=1,
-         do_subtract_outside_pb=1,
+         auto_resume=0,
+         do_choose_calibrators=0,
+         do_download_archive=0,
+         do_subtract=0,
+         do_subtract_outside_pb=0,
          do_image_subtract_dirty=0,
-         do_solve_dds4=1,
-         do_tec_inference_and_smooth=1,
+         do_solve_dds4=0,
+         do_tec_inference_and_smooth=0,
          do_slow_solve_dds4=1,
-         do_merge_slow=0,
+         do_merge_slow=1,
          do_flag_visibilities=0,
-         do_infer_screen=0,
+         do_infer_screen=1,
          do_image_dds4=0,
          do_image_subtract_dds4=0,
-         do_image_smooth=1,
+         do_image_smooth=0,
          do_image_smooth_slow=0,
          do_image_screen=0,
          do_image_screen_slow=0,
-         do_image_smooth_slow_restricted=0,
-         do_image_screen_slow_restricted=0,
+         do_image_smooth_slow_restricted=1,
+         do_image_screen_slow_restricted=1,
          retry_task_on_fail=0)
 
 
@@ -463,7 +463,7 @@ STEPS = [
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
-        test_main()
+        debug_main()
         exit(0)
     parser = argparse.ArgumentParser(
         description='Runs full pipeline on a single obs_num from archive.',

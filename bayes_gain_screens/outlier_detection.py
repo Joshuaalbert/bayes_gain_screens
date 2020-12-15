@@ -3,7 +3,6 @@ from jax._src.lax.control_flow import while_loop
 from jax._src.scipy.special import erf
 
 from bayes_gain_screens.utils import inverse_update, windowed_mean, chunked_pmap
-from jaxns.gaussian_process import RBF
 
 
 def leave_one_out_predictive(K, Cinv, Y_obs):
