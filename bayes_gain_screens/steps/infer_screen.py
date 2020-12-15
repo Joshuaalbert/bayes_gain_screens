@@ -380,8 +380,8 @@ def generate_data(dds5_h5parm):
 
 def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_results):
     os.environ['XLA_FLAGS'] = f"--xla_force_host_platform_device_count={ncpu}"
-    os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
-                               "intra_op_parallelism_threads=1")
+    # os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
+    #                            "intra_op_parallelism_threads=1")
 
     dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
     dds6_h5parm = os.path.join(working_dir, 'L{}_DDS6_full_merged.h5'.format(obs_num))
