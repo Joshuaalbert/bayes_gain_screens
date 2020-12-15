@@ -480,8 +480,6 @@ def add_args(parser):
                         default=None, type=str, required=True)
     parser.add_argument('--working_dir', help='Where to perform the imaging.',
                         default=None, type=str, required=True)
-    parser.add_argument('--ref_dir', help='The index of reference dir.',
-                        default=0, type=int, required=False)
     parser.add_argument('--ncpu', help='Number of CPUs.',
                         default=32, type=int, required=True)
     parser.add_argument('--max_N', help='The maximum number of screen directions.',
