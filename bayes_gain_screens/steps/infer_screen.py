@@ -354,7 +354,7 @@ def prepare_soltabs(dds5_h5parm, dds6_h5parm, screen_directions):
 
 def generate_data(dds5_h5parm):
     with DataPack(dds5_h5parm, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1))#, ant=51, time=0)
+        select = dict(pol=slice(0, 1, 1), ant=51, time=slice(0,128,1))
         h.current_solset = 'sol000'
         h.select(**select)
         amp, axes = h.amplitude
@@ -409,7 +409,7 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
 
     with DataPack(dds6_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
-        h.select(pol=slice(0, 1, 1))#, ant=51, time=0)
+        h.select(pol=slice(0, 1, 1), ant=51, time=slice(0,128,1))
         h.tec = np.asarray(post_tec)[None, ...]
         h.const = np.asarray(post_const)[None, ...]
         h.clock = np.asarray(post_clock)[None, ...]
@@ -467,7 +467,7 @@ def debug_main():
          working_dir='/home/albert/data/gains_screen/working_dir/',
          obs_num=342938,
          ref_image_fits='/home/albert/data/gains_screen/data/lotss_archive_deep_image.app.restored.fits',
-         ncpu=1,
+         ncpu=2,
          max_N=250,
          plot_results=True)
 
