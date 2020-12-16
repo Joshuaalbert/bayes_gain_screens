@@ -247,19 +247,18 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
                      max_samples=5e4,
                      collect_samples=True,
                      only_marginalise=False,
-                     termination_frac=0.001,
-                     sampler_kwargs=dict(depth=2, num_slices=4))
+                     termination_frac=0.01,
+                     sampler_kwargs=dict(depth=2, num_slices=3))
 
 
         key, key_post_f, key_post_fvar = random.split(key, 3)
-        post_f = marginalise_static(key_post_f, results.samples, results.log_p, 250, predict_f)
+        post_f = marginalise_static(key_post_f, results.samples, results.log_p, 200, predict_f)
         # post_fvar = marginalise_static(key_post_fvar, results.samples, results.log_p, 500, predict_fvar)
         return post_f, results.logZ, results
 
 
     key, key_tec = random.split(key, 2)
     kernels = [RationalQuadratic()]
-    @jit
     def gp_smooth(key, v, obs_uncert):
         keys = random.split(key, len(kernels))
         post_f, logZ, results = [],[], []
@@ -354,7 +353,7 @@ def prepare_soltabs(dds5_h5parm, dds6_h5parm, screen_directions):
 
 def generate_data(dds5_h5parm):
     with DataPack(dds5_h5parm, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1), ant=51, time=slice(0,128,1))
+        select = dict(pol=slice(0, 1, 1), ant=slice(1,None,1))#, ant=51, time=slice(0,12,1))
         h.current_solset = 'sol000'
         h.select(**select)
         amp, axes = h.amplitude
@@ -377,11 +376,21 @@ def generate_data(dds5_h5parm):
         directions = jnp.stack([directions.ra.rad, directions.dec.rad], axis=-1)
     return phase, amp, tec_mean, tec_std, const, clock, directions, freqs
 
-
 def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_results):
-    os.environ['XLA_FLAGS'] = f"--xla_force_host_platform_device_count={ncpu}"
-    # os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
-    #                            "intra_op_parallelism_threads=1")
+    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(ncpu//2)
+    #                            f"--xla_cpu_multi_thread_eigen=false "
+    #                            f"intra_op_parallelism_threads=1")
+    # os.environ.update(
+    #     XLA_FLAGS=(
+    #         '--xla_cpu_multi_thread_eigen=false '
+    #         'intra_op_parallelism_threads=1 '
+    #         'inter_op_parallelism_threads=1 '
+    #     ),
+    #     XLA_PYTHON_CLIENT_PREALLOCATE='false',
+    # )
+    # os.environ['TF_XLA_FLAGS'] = "--intra_op_parallelism_threads=1"
+    # p = psutil.Process()
+    # p.cpu_affinity([0,1,2,3])
 
     dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
     dds6_h5parm = os.path.join(working_dir, 'L{}_DDS6_full_merged.h5'.format(obs_num))
@@ -409,13 +418,15 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
 
     with DataPack(dds6_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
-        h.select(pol=slice(0, 1, 1), ant=51, time=slice(0,128,1))
+        h.select(pol=slice(0, 1, 1), ant=0)
+        h.amplitude = jnp.ones((1, screen_directions.shape[0], 1, Nf, Nt))
+        h.select(pol=slice(0, 1, 1), ant=slice(1,None,1))#, ant=51, time=slice(0,128,1))
         h.tec = np.asarray(post_tec)[None, ...]
         h.const = np.asarray(post_const)[None, ...]
         h.clock = np.asarray(post_clock)[None, ...]
         h.amplitude = np.asarray(post_amp)[None, ...]
         h.phase = np.asarray(post_phase)[None, ...]
-        h.select(pol=slice(0, 1, 1), dir=slice(0, Nd, 1))
+        h.select(pol=slice(0, 1, 1), dir=slice(0, Nd, 1), ant=slice(1,None,1))
         h.phase = np.asarray(phase)[None, ...]
         h.amplitude = np.asarray(amp)[None, ...]
 
@@ -467,7 +478,7 @@ def debug_main():
          working_dir='/home/albert/data/gains_screen/working_dir/',
          obs_num=342938,
          ref_image_fits='/home/albert/data/gains_screen/data/lotss_archive_deep_image.app.restored.fits',
-         ncpu=2,
+         ncpu=1,
          max_N=250,
          plot_results=True)
 
