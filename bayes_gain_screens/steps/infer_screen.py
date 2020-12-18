@@ -331,7 +331,7 @@ def screen_model(amp, tec_mean, tec_std, const, clock, directions, screen_direct
     post_phase, post_amp, post_tec, post_const, post_clock = \
         chunked_pmap(lambda key, amp, tec_mean, tec_std, const, clock:
                      single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_directions, freqs),
-                     keys, amp, tec_mean, tec_std, const, clock, debug_mode=False, chunksize=None)
+                     keys, amp, tec_mean, tec_std, const, clock, debug_mode=True, chunksize=None)
 
     post_phase = post_phase.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
     post_amp = post_amp.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
