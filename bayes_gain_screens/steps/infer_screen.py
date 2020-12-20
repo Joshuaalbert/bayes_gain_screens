@@ -115,12 +115,14 @@ def nn_interp(x,y,xstar):
     return vmap(single_interp)(xstar)
 
 @jit
-def nn_smooth(x,y,xstar):
+def nn_smooth(x,y,xstar,outliers=None):
     def single_interp(xstar):
         dx = jnp.linalg.norm(xstar - x, axis=1)
         nn_dist = jnp.min(jnp.where(dx == 0., jnp.inf, dx))
         dx = dx/nn_dist
         weight = jnp.exp(-0.5*dx**2)
+        if outliers is not None:
+            weight = jnp.where(outliers, 0., weight)
         weight /= jnp.sum(weight)
         return jnp.sum(y*weight)
     return vmap(single_interp)(xstar)
@@ -155,7 +157,7 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
     post_amp = vmap(lambda amp: nn_smooth(directions,amp,screen_directions))(amp.T).T
     post_const = nn_smooth(directions, const, screen_directions)
     post_clock = nn_smooth(directions, clock ,screen_directions)
-    # post_tec = nn_smooth(directions, tec_mean, screen_directions)
+    post_tec = nn_smooth(directions, tec_mean, screen_directions, jnp.isinf(tec_std))
 
     def _min_dist(_direction):
         dist = jnp.linalg.norm(_direction - directions, axis=1)
@@ -274,7 +276,8 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
         return post_f, weights, results
 
     # logger.info("Performing tec inference")
-    post_tec, weights, results = gp_smooth(key_tec, tec_mean, tec_std)
+    # post_tec, weights, results = gp_smooth(key_tec, tec_mean, tec_std)
+
     # logger.info("Weights: {}".format(weights))
     # post_tec.block_until_ready()
     # # t0 = default_timer()
@@ -331,7 +334,7 @@ def screen_model(amp, tec_mean, tec_std, const, clock, directions, screen_direct
     post_phase, post_amp, post_tec, post_const, post_clock = \
         chunked_pmap(lambda key, amp, tec_mean, tec_std, const, clock:
                      single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_directions, freqs),
-                     keys, amp, tec_mean, tec_std, const, clock, debug_mode=True, chunksize=None)
+                     keys, amp, tec_mean, tec_std, const, clock, debug_mode=False, chunksize=None)
 
     post_phase = post_phase.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
     post_amp = post_amp.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
@@ -353,7 +356,7 @@ def prepare_soltabs(dds5_h5parm, dds6_h5parm, screen_directions):
 
 def generate_data(dds5_h5parm):
     with DataPack(dds5_h5parm, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1), ant=slice(1,None,1))#, ant=51, time=slice(0,12,1))
+        select = dict(pol=slice(0, 1, 1), ant=slice(1,None,1))
         h.current_solset = 'sol000'
         h.select(**select)
         amp, axes = h.amplitude
@@ -377,7 +380,7 @@ def generate_data(dds5_h5parm):
     return phase, amp, tec_mean, tec_std, const, clock, directions, freqs
 
 def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_results):
-    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(ncpu//2)
+    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(ncpu)
     #                            f"--xla_cpu_multi_thread_eigen=false "
     #                            f"intra_op_parallelism_threads=1")
     # os.environ.update(
@@ -419,8 +422,8 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
     with DataPack(dds6_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
         h.select(pol=slice(0, 1, 1), ant=0)
-        h.amplitude = jnp.ones((1, screen_directions.shape[0], 1, Nf, Nt))
-        h.select(pol=slice(0, 1, 1), ant=slice(1,None,1))#, ant=51, time=slice(0,128,1))
+        h.amplitude = np.ones((1, screen_directions.shape[0], 1, Nf, Nt))
+        h.select(pol=slice(0, 1, 1), ant=slice(1,None,1))
         h.tec = np.asarray(post_tec)[None, ...]
         h.const = np.asarray(post_const)[None, ...]
         h.clock = np.asarray(post_clock)[None, ...]
@@ -478,7 +481,7 @@ def debug_main():
          working_dir='/home/albert/data/gains_screen/working_dir/',
          obs_num=342938,
          ref_image_fits='/home/albert/data/gains_screen/data/lotss_archive_deep_image.app.restored.fits',
-         ncpu=1,
+         ncpu=2,
          max_N=250,
          plot_results=True)
 
