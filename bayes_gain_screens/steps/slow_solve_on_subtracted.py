@@ -33,8 +33,8 @@ def prepare_kms_sols(working_dir, data_dir, obs_num):
 
     with tables.open_file(smoothed_h5parm) as t:
         # Nt, Nf, Na, Nd, Npol
-        phase = t.root.smoothed000.phase000.val[...].T
-        amp = t.root.smoothed000.amplitude000.val[...].T
+        phase = t.root.sol000.phase000.val[...].T
+        amp = t.root.sol000.amplitude000.val[...].T
     kms = np.load(original_sols)
     if phase[:, :, :, :, 0].shape != kms['Sols']['G'][:, :, :, :, 0, 0].shape:
         raise ValueError("Shapes are not correct in kms solutions {} {}".format(kms['Sols']['G'].shape, phase.shape))
