@@ -85,7 +85,7 @@ def solve(masked_dico_model, obs_num, clustercat, working_dir, data_dir, ncpu):
                '--SolverType=KAFCA',
                '--PolMode=Scalar',
                '--BaseImageName=image_full_ampphase_di_m.NS',
-               '--dt=43.630000',
+               '--dt=40.000000',
                '--NIterKF=6',
                '--CovQ=0.1',
                '--LambdaKF=0.5',
