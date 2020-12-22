@@ -154,10 +154,13 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
     Nd = directions.shape[0]
     Nd_screen = screen_directions.shape[0]
 
+    # fix case of over flagging
+    tec_std = jnp.where(jnp.sum(jnp.isinf(tec_std)) > 0.5 * tec_std.size, 0., tec_std)
+
     post_amp = vmap(lambda amp: nn_smooth(directions,amp,screen_directions))(amp.T).T
     post_const = nn_smooth(directions, const, screen_directions)
     post_clock = nn_smooth(directions, clock ,screen_directions)
-    post_tec = nn_smooth(directions, tec_mean, screen_directions, jnp.isinf(tec_std))
+    # post_tec = nn_smooth(directions, tec_mean, screen_directions, jnp.isinf(tec_std))
 
     def _min_dist(_direction):
         dist = jnp.linalg.norm(_direction - directions, axis=1)
@@ -276,7 +279,6 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
         return post_f, weights, results
 
     # logger.info("Performing tec inference")
-    tec_std = jnp.where(jnp.sum(jnp.isinf(tec_std)) > 0.5*tec_std.size, 0., tec_std)
     post_tec, weights, results = gp_smooth(key_tec, tec_mean, tec_std)
 
     # logger.info("Weights: {}".format(weights))
