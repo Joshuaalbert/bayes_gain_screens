@@ -259,21 +259,27 @@ def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
         N = args[0].shape[0]
     args = tree_map(lambda arg: jnp.reshape(arg, (chunksize, N // chunksize) + arg.shape[1:]), args)
     T = N // chunksize
+
     logger.info("Distributing {} over {}".format(N, chunksize))
     t0 = default_timer()
 
     if debug_mode:
+        from datetime import datetime
         devices = get_devices()
         def build_pmap_body(dev_idx):
             fun = jit(f, device=devices[dev_idx])
+            log = os.path.join(os.getcwd(),"chunk{:02d}.log".format(dev_idx))
             def pmap_body(*args):
                 result = []
-                for i in range(T):
-                    item = jnp.ravel_multi_index((dev_idx, i), (chunksize, T))
-                    logger.info("Starting item: {}".format(item))
-                    result.append(fun(*[a[i, ...] for a in args]))
-                    tree_map(lambda a: a.block_until_ready(), result[-1])
-                    logger.info("Done item: {}".format(item))
+                with open(log, 'a') as f:
+                    for i in range(T):
+                        item = jnp.ravel_multi_index((dev_idx, i), (chunksize, T))
+                        logger.info("Starting item: {}".format(item))
+                        f.write('{} {}'.format(datetime.now().isoformat(), "Starting item: {}".format(item)))
+                        result.append(fun(*[a[i, ...] for a in args]))
+                        tree_map(lambda a: a.block_until_ready(), result[-1])
+                        logger.info("Done item: {}".format(item))
+                        f.write('{} {}'.format(datetime.now().isoformat(), "Done item: {}".format(item)))
                 result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
                 return result
             return pmap_body
