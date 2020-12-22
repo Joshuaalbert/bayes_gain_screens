@@ -276,7 +276,8 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
         return post_f, weights, results
 
     # logger.info("Performing tec inference")
-    # post_tec, weights, results = gp_smooth(key_tec, tec_mean, tec_std)
+    tec_std = jnp.where(jnp.sum(jnp.isinf(tec_std)) > 0.5*tec_std.size, 0., tec_std)
+    post_tec, weights, results = gp_smooth(key_tec, tec_mean, tec_std)
 
     # logger.info("Weights: {}".format(weights))
     # post_tec.block_until_ready()
@@ -292,17 +293,17 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
     # plt.show()
     # plot_vornoi_map(screen_directions, colors=post_tec, cmap=plt.cm.PuOr, relim=True)
     # plt.show()
-    #
+    # #
     # plot_vornoi_map(directions, colors=const, cmap=plt.cm.hsv, vmin=-np.pi, vmax=np.pi, relim=True)
     # plt.show()
     # plot_vornoi_map(screen_directions, colors=post_const,cmap=plt.cm.hsv,vmin=-np.pi, vmax=np.pi, relim=True)
     # plt.show()
-    #
+    # #
     # plot_vornoi_map(directions, colors=clock, cmap=plt.cm.PuOr, relim=True)
     # plt.show()
     # plot_vornoi_map(screen_directions, colors=post_clock, cmap=plt.cm.PuOr, relim=True)
     # plt.show()
-    #
+    # #
     # plot_vornoi_map(directions, colors=amp[:,12], vmin=0.5, vmax=1.5, relim=True)
     # plt.show()
     # plot_vornoi_map(screen_directions, colors=post_amp[:, 12], vmin=0.5, vmax=1.5, relim=True)
@@ -327,14 +328,14 @@ def screen_model(amp, tec_mean, tec_std, const, clock, directions, screen_direct
     T = Na * Nt
     keys = random.split(random.PRNGKey(int(default_timer())), T)
 
-    # m = 0
+    # m = 51872
     # single_screen(keys[m], amp[m], tec_mean[m], tec_std[m], const[m], clock[m], directions, screen_directions, freqs)
     # return
 
     post_phase, post_amp, post_tec, post_const, post_clock = \
         chunked_pmap(lambda key, amp, tec_mean, tec_std, const, clock:
                      single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_directions, freqs),
-                     keys, amp, tec_mean, tec_std, const, clock, debug_mode=False, chunksize=None)
+                     keys, amp, tec_mean, tec_std, const, clock, debug_mode=True, chunksize=None)
 
     post_phase = post_phase.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
     post_amp = post_amp.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
@@ -481,7 +482,7 @@ def debug_main():
          working_dir='/home/albert/data/gains_screen/working_dir/',
          obs_num=342938,
          ref_image_fits='/home/albert/data/gains_screen/data/lotss_archive_deep_image.app.restored.fits',
-         ncpu=2,
+         ncpu=1,
          max_N=250,
          plot_results=True)
 
