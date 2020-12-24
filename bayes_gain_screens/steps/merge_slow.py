@@ -90,7 +90,7 @@ def main(data_dir, working_dir, obs_num):
     amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
 
     phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...]
-    amplitude_screen_slow = amplitude_screen * amplitude_slow[:, dir_map, ...]
+    amplitude_screen_slow = amplitude_screen * amplitude_slow[..., time_map][:, dir_map, ...]
     logger.info("Saving results to {}".format(merged_h5parm))
     datapack = DataPack(merged_h5parm, readonly=False)
     datapack.current_solset = 'screen_slow'
