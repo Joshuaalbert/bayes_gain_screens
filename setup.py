@@ -25,7 +25,7 @@ setup(name='bayes_gain_screens',
       ],
       package_dir={'': './'},
       packages=find_packages('./'),
-      package_data={'bayes_gain_screens': ['arrays/*', 'flagging_models/*', 'steps/*']},
+      package_data={'bayes_gain_screens': ['arrays/*', 'flagging_models/*', 'steps/*', 'steps/templates/*']},
       classifiers=[
           "Programming Language :: Python :: 3",
           "License :: OSI Approved :: Apache Software License",
