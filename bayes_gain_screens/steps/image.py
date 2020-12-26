@@ -187,6 +187,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     elif data_source == 'restricted':
         kwargs['data_column'] = 'DATA_RESTRICTED'
         kwargs['npix'] = 10000
+        kwargs['mask'] = os.path.join(data_dir, 'image_full_ampphase_di_m.NS.mask01.restricted.fits')
     elif data_source == 'restricted_full':
         kwargs['data_column'] = 'DATA_RESTRICTED'
     else:
