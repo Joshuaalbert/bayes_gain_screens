@@ -91,6 +91,10 @@ def main(data_dir, working_dir, obs_num):
 
     phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...]
     amplitude_screen_slow = amplitude_screen * amplitude_slow[..., time_map][:, dir_map, ...]
+
+    phase_screen_slow = np.where(np.isnan(phase_screen_slow), 0., phase_screen_slow)
+    amplitude_screen_slow = np.where(np.isnan(amplitude_screen_slow), 1., amplitude_screen_slow)
+
     logger.info("Saving results to {}".format(merged_h5parm))
     datapack = DataPack(merged_h5parm, readonly=False)
     datapack.current_solset = 'screen_slow'
