@@ -383,7 +383,7 @@ def generate_data(dds5_h5parm):
     return phase, amp, tec_mean, tec_std, const, clock, directions, freqs
 
 def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_results):
-    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(ncpu)
+    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(max(1,ncpu//4))
     #                            f"--xla_cpu_multi_thread_eigen=false "
     #                            f"intra_op_parallelism_threads=1")
     # os.environ.update(
