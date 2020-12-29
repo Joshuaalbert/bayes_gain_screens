@@ -253,7 +253,7 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
                      collect_samples=True,
                      only_marginalise=False,
                      termination_frac=0.01,
-                     sampler_kwargs=dict(depth=2, num_slices=3))
+                     sampler_kwargs=dict(depth=4, num_slices=4))
 
 
         key, key_post_f, key_post_fvar = random.split(key, 3)
@@ -372,7 +372,7 @@ def generate_data(dds5_h5parm):
         tec_mean = tec_mean[0, ...]
         tec_std, axes = h.weights_tec
         tec_outliers, _ = h.tec_outliers
-        tec_std = jnp.where(tec_outliers == 1., jnp.inf, tec_std)
+        # tec_std = jnp.where(tec_outliers == 1., jnp.inf, tec_std)
         tec_std = tec_std[0, ...]
         const, _ = h.const
         const = const[0, ...]
@@ -383,7 +383,7 @@ def generate_data(dds5_h5parm):
     return phase, amp, tec_mean, tec_std, const, clock, directions, freqs
 
 def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_results):
-    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(max(1,ncpu//4))
+    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(max(1,ncpu//2))
     #                            f"--xla_cpu_multi_thread_eigen=false "
     #                            f"intra_op_parallelism_threads=1")
     # os.environ.update(
