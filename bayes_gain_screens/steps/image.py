@@ -132,7 +132,6 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     kwargs['solsdir'] = os.path.join(data_dir, 'SOLSDIR')
     kwargs['peak_factor'] = 0.001
     kwargs['nfacets'] = 11
-    kwargs['weight_col'] = "IMAGING_WEIGHT"
     kwargs['robust'] = -0.5
     kwargs['npix'] = 20000
     kwargs['ncpu'] = ncpu
@@ -155,6 +154,16 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
     image_type = image_type.split(":")
     solset = image_type[0]
     data_source = image_type[1]
+    if len(image_type) == 2:
+        kwargs['weight_col'] = "IMAGING_WEIGHT"
+    else:
+        weight_col = image_type[2]
+        if weight_col == 'imaging_weight':
+            kwargs['weight_col'] = "IMAGING_WEIGHT"
+        elif weight_col == 'outliers_flagged':
+            kwargs['weight_col'] = "OUTLIERS_FLAGGED"
+        else:
+            raise ValueError("Invalid weight_col {}".format(weight_col))
     if solset == 'dirty':
         kwargs['major_iters'] = 0
         template_name = 'image_dirty_template'
