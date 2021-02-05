@@ -85,14 +85,18 @@ def main(data_dir, working_dir, obs_num):
     logger.info("Creating direction mapping")
     dir_map = np.array([np.argmin(great_circle_sep(directions_slow[:, 0], directions_slow[:, 1], ra, dec))
                         for (ra, dec) in zip(directions_screen[:, 0], directions_screen[:, 1])])
-
+    #TODO: see if only applying slow on calibrators and screen elsewhere gets rid of artefacts.
+    #TODO: see if only applying tec screen gets rid of artefacts (include slow if the above experiment doesn't work)
+    #TODO: visibility flagging based on tec outliers (update imaging command)
     phase_smooth_slow = phase_slow[..., time_map] + phase_smoothed
     amplitude_smooth_slow = amplitude_slow[..., time_map] * amplitude_smoothed
 
     phase_screen_slow = phase_screen + phase_slow[..., time_map][:, dir_map, ...]
     amplitude_screen_slow = amplitude_screen * amplitude_slow[..., time_map][:, dir_map, ...]
 
+    logger.info("Phase screen+slow contains {} nans.".format(np.isnan(phase_screen_slow).sum()))
     phase_screen_slow = np.where(np.isnan(phase_screen_slow), 0., phase_screen_slow)
+    logger.info("Amplitude screen+slow contains {} nans.".format(np.isnan(amplitude_screen_slow).sum()))
     amplitude_screen_slow = np.where(np.isnan(amplitude_screen_slow), 1., amplitude_screen_slow)
 
     logger.info("Saving results to {}".format(merged_h5parm))

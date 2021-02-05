@@ -14,8 +14,8 @@ from jax.scipy.linalg import solve_triangular
 from jax.scipy.special import logsumexp
 from jax.lax import while_loop
 
-from bayes_gain_screens.utils import chunked_pmap, get_screen_directions_from_image, link_overwrite, polyfit
-from bayes_gain_screens.plotting import make_animation, DatapackPlotter, plot_vornoi_map
+from bayes_gain_screens.utils import chunked_pmap, get_screen_directions_from_image, link_overwrite
+from bayes_gain_screens.plotting import make_animation, DatapackPlotter, animate_datapack
 
 from h5parm import DataPack
 from h5parm.utils import make_soltab
@@ -25,7 +25,6 @@ from jaxns.prior_transforms import UniformPrior, PriorChain, HalfLaplacePrior, G
     DeterministicTransformPrior
 from jaxns.nested_sampling import NestedSampler
 from jaxns.utils import resample, left_broadcast_mul
-from jaxns.plotting import plot_cornerplot, plot_diagnostics
 
 import sys
 import logging
@@ -54,6 +53,29 @@ def log_normal_outliers(x, mean, cov, sigma):
     dx = solve_triangular(L, dx / sigma, lower=True)
     maha = dx @ dx
     log_likelihood = -0.5 * jnp.sum(~jnp.isinf(sigma)) * jnp.log(2. * jnp.pi) \
+                     - log_det \
+                     - 0.5 * maha
+    return log_likelihood
+
+def log_normal(x, mean, cov, sigma):
+    """
+    Computes log-Normal density.
+
+    Args:
+        x: RV value
+        mean: mean of Gaussian
+        cov: covariance of underlying, minus the obs. covariance
+        sigma: stddev's of obs. error, inf encodes an outlier.
+
+    Returns: a normal density for all points not of inf stddev obs. error.
+    """
+    C = cov + jnp.diag(sigma**2)
+    L = jnp.linalg.cholesky(C)
+    log_det = jnp.sum(jnp.log(jnp.diag(L)))
+    dx = (x - mean)
+    dx = solve_triangular(L, dx / sigma, lower=True)
+    maha = dx @ dx
+    log_likelihood = -0.5 * dx.size * jnp.log(2. * jnp.pi) \
                      - log_det \
                      - 0.5 * maha
     return log_likelihood
@@ -127,7 +149,7 @@ def nn_smooth(x,y,xstar,outliers=None):
         return jnp.sum(y*weight)
     return vmap(single_interp)(xstar)
 
-def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_directions, freqs):
+def single_screen(key, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, screen_directions, freqs):
     """
     Computes a screen over `screen_directions` conditioned on data in `directions`.
     Uses a 3-rd order polynomial in frequency approximation for amplitude.
@@ -318,11 +340,12 @@ def single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_
     return post_phase, post_amp, post_tec, post_const, post_clock
 
 
-def screen_model(amp, tec_mean, tec_std, const, clock, directions, screen_directions, freqs):
+def screen_model(amp, tec_mean, tec_std, tec_outliers, const, clock, directions, screen_directions, freqs):
     Nd_screen = screen_directions.shape[0]
     Nd, Na, Nf, Nt = amp.shape
     tec_mean = tec_mean.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
     tec_std = tec_std.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
+    tec_outliers = tec_outliers.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
     const = const.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
     clock = clock.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
     amp = amp.transpose((1, 3, 0, 2)).reshape((Na * Nt, Nd, Nf))
@@ -335,9 +358,9 @@ def screen_model(amp, tec_mean, tec_std, const, clock, directions, screen_direct
     # return
 
     post_phase, post_amp, post_tec, post_const, post_clock = \
-        chunked_pmap(lambda key, amp, tec_mean, tec_std, const, clock:
-                     single_screen(key, amp, tec_mean, tec_std, const, clock, directions, screen_directions, freqs),
-                     keys, amp, tec_mean, tec_std, const, clock, debug_mode=False, chunksize=None)
+        chunked_pmap(lambda key, amp, tec_mean, tec_std, tec_outliers, const, clock:
+                     single_screen(key, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, screen_directions, freqs),
+                     keys, amp, tec_mean, tec_std, tec_outliers, const, clock, debug_mode=False, chunksize=None)
 
     post_phase = post_phase.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
     post_amp = post_amp.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
@@ -372,6 +395,7 @@ def generate_data(dds5_h5parm):
         tec_mean = tec_mean[0, ...]
         tec_std, axes = h.weights_tec
         tec_outliers, _ = h.tec_outliers
+        tec_outliers = tec_outliers[0,...]
         # tec_std = jnp.where(tec_outliers == 1., jnp.inf, tec_std)
         tec_std = tec_std[0, ...]
         const, _ = h.const
@@ -380,7 +404,7 @@ def generate_data(dds5_h5parm):
         clock = clock[0, ...]
         patch_names, directions = h.get_directions(axes['dir'])
         directions = jnp.stack([directions.ra.rad, directions.dec.rad], axis=-1)
-    return phase, amp, tec_mean, tec_std, const, clock, directions, freqs
+    return phase, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, freqs
 
 def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_results):
     os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(max(1,ncpu//2))
@@ -404,7 +428,7 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
     logger.info("Looking for {}".format(dds5_h5parm))
     link_overwrite(dds6_h5parm, linked_dds6_h5parm)
 
-    phase, amp, tec_mean, tec_std, const, clock, directions, freqs = generate_data(dds5_h5parm)
+    phase, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, freqs = generate_data(dds5_h5parm)
     Nd, Na, Nf, Nt = amp.shape
 
     screen_directions, _ = get_screen_directions_from_image(ref_image_fits,
@@ -419,8 +443,10 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
 
     screen_directions = jnp.stack([screen_directions.ra.rad, screen_directions.dec.rad], axis=-1)
 
-    post_phase, post_amp, post_tec, post_const, post_clock = screen_model(amp, tec_mean, tec_std, const, clock,
+    post_phase, post_amp, post_tec, post_const, post_clock = screen_model(amp, tec_mean, tec_std, tec_outliers, const, clock,
                                                                           directions, screen_directions, freqs)
+    #Replace outliers with screen solutions, else the calibrators.
+    phase_outliers_replaced_with_screen = jnp.where(tec_outliers[...,None,:], post_phase[:Nd], phase)
 
     with DataPack(dds6_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
@@ -433,50 +459,56 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
         h.amplitude = np.asarray(post_amp)[None, ...]
         h.phase = np.asarray(post_phase)[None, ...]
         h.select(pol=slice(0, 1, 1), dir=slice(0, Nd, 1), ant=slice(1,None,1))
-        h.phase = np.asarray(phase)[None, ...]
+        h.phase = np.asarray(phase_outliers_replaced_with_screen)[None, ...]
         h.amplitude = np.asarray(amp)[None, ...]
 
     if plot_results:
         logger.info("Plotting results.")
         d = os.path.join(working_dir, 'tec_screen_plots')
-        os.makedirs(d, exist_ok=True)
-        DatapackPlotter(dds6_h5parm).plot(
-            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-            vmin=-60,
-            vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
-            plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
-            solset='sol000', cmap=plt.cm.PuOr)
-        make_animation(d, prefix='fig', fps=4)
+        animate_datapack(dds6_h5parm, d, ncpu,
+                         vmin=-60,
+                         vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
+                         plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
+                         solset='sol000', cmap=plt.cm.PuOr
+                         )
+        # os.makedirs(d, exist_ok=True)
+        # DatapackPlotter(dds6_h5parm).plot(
+        #     fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        #     vmin=-60,
+        #     vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
+        #     plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
+        #     solset='sol000', cmap=plt.cm.PuOr)
+        # make_animation(d, prefix='fig', fps=4)
 
-        d = os.path.join(working_dir, 'const_screen_plots')
-        os.makedirs(d, exist_ok=True)
-        DatapackPlotter(dds6_h5parm).plot(
-            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-            vmin=-np.pi,
-            vmax=np.pi, observable='const', phase_wrap=False, plot_crosses=False,
-            plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
-            solset='sol000', cmap=plt.cm.PuOr)
-        make_animation(d, prefix='fig', fps=4)
-
-        d = os.path.join(working_dir, 'clock_screen_plots')
-        os.makedirs(d, exist_ok=True)
-        DatapackPlotter(dds6_h5parm).plot(
-            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-            vmin=None,
-            vmax=None,
-            observable='clock', phase_wrap=False, plot_crosses=False,
-            plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
-            solset='sol000', cmap=plt.cm.PuOr)
-        make_animation(d, prefix='fig', fps=4)
-
-        d = os.path.join(working_dir, 'amplitude_screen_plots')
-        os.makedirs(d, exist_ok=True)
-        DatapackPlotter(dds6_h5parm).plot(
-            fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
-            log_scale=True, observable='amplitude', phase_wrap=False, plot_crosses=False,
-            plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
-            solset='sol000', cmap=plt.cm.PuOr)
-        make_animation(d, prefix='fig', fps=4)
+        # d = os.path.join(working_dir, 'const_screen_plots')
+        # os.makedirs(d, exist_ok=True)
+        # DatapackPlotter(dds6_h5parm).plot(
+        #     fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        #     vmin=-np.pi,
+        #     vmax=np.pi, observable='const', phase_wrap=False, plot_crosses=False,
+        #     plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
+        #     solset='sol000', cmap=plt.cm.PuOr)
+        # make_animation(d, prefix='fig', fps=4)
+        #
+        # d = os.path.join(working_dir, 'clock_screen_plots')
+        # os.makedirs(d, exist_ok=True)
+        # DatapackPlotter(dds6_h5parm).plot(
+        #     fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        #     vmin=None,
+        #     vmax=None,
+        #     observable='clock', phase_wrap=False, plot_crosses=False,
+        #     plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
+        #     solset='sol000', cmap=plt.cm.PuOr)
+        # make_animation(d, prefix='fig', fps=4)
+        #
+        # d = os.path.join(working_dir, 'amplitude_screen_plots')
+        # os.makedirs(d, exist_ok=True)
+        # DatapackPlotter(dds6_h5parm).plot(
+        #     fignames=[os.path.join(d, "fig-{:04d}.png".format(j)) for j in range(Nt)],
+        #     log_scale=True, observable='amplitude', phase_wrap=False, plot_crosses=False,
+        #     plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
+        #     solset='sol000', cmap=plt.cm.PuOr)
+        # make_animation(d, prefix='fig', fps=4)
 
 
 def debug_main():

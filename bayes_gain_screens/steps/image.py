@@ -161,7 +161,7 @@ def main(image_type, obs_num, data_dir, working_dir, script_dir, ncpu, use_init_
         if weight_col == 'imaging_weight':
             kwargs['weight_col'] = "IMAGING_WEIGHT"
         elif weight_col == 'outliers_flagged':
-            kwargs['weight_col'] = "OUTLIERS_FLAGGED"
+            kwargs['weight_col'] = "OUTLIER_FLAGS"
         else:
             raise ValueError("Invalid weight_col {}".format(weight_col))
     if solset == 'dirty':
