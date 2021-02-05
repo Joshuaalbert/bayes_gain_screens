@@ -618,10 +618,7 @@ def animate_datapack(datapack, output_folder, num_processes, **kwargs):
     num_processes: int number of parallel plotting processes to run
     **kwargs: keywords to pass to DatapackPlotter.plot function.
     """
-    try:
-        os.makedirs(output_folder)
-    except:
-        pass
+    os.makedirs(output_folder, exist_ok=True)
 
     if num_processes is None:
         num_processes = 1  # psutil.cpu_count()

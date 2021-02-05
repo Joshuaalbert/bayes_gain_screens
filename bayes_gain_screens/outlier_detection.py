@@ -1,8 +1,10 @@
-from jax import numpy as jnp, vmap
+from jax import numpy as jnp, vmap, jit, tree_map
 from jax._src.lax.control_flow import while_loop
 from jax._src.scipy.special import erf
 
-from bayes_gain_screens.utils import inverse_update, windowed_mean, chunked_pmap
+import numpy as np
+
+from bayes_gain_screens.utils import inverse_update, windowed_mean, chunked_pmap, windowed_nanmean, polyfit
 
 
 def leave_one_out_predictive(K, Cinv, Y_obs):
@@ -91,75 +93,110 @@ def predict_f(Y_obs, K, uncert):
     return mu_star, sigma2_star
 
 
-def single_detect_outliers(uncert, Y_obs, times):
+def single_detect_outliers(sequence, window, init_outliers=None):
     """
-    Detect outlier in `Y_obs` using leave-one-out Gaussian processes.
+    Detect outlier in by looking for differences between a smoothed signal and the sequence.
+    The difference threshold is determined by 3*sigma
 
     Args:
-        uncert: [M] obs. uncertainty of Y_obs
-        Y_obs: [M] observables
-        K: [M,M] GP kernel
+        sequence: [M] sequence to look for outliers in
+        window: int, window size
 
     Returns:
-        mu_star [M] predictive mean excluding outliers
-        sigma_star [M] predictive std excluding outliers
-        outliers [M] bool, outliers
+        sequence of outliers [M]
     """
-    M = Y_obs.shape[0]
-    _Y_obs = Y_obs
+    if init_outliers is None:
+        _sequence = sequence
+    else:
+        _sequence = jnp.where(init_outliers, jnp.nan, sequence)
     for _ in range(3):
-        Y_smooth = windowed_mean(_Y_obs, 15)
-        outliers = (jnp.abs(Y_obs - Y_smooth) > 20.)
-        _Y_obs = jnp.where(outliers, Y_smooth, Y_obs)
-    return _Y_obs, jnp.where(outliers, 20., uncert), outliers
-
-    # est_uncert = jnp.sqrt(jnp.sum(jnp.where(outliers, 0., (Y_obs - Y_smooth) ** 2)) / jnp.sum(~outliers))
-    # kernel = RBF()
-    # dt = jnp.mean(jnp.diff(times))
-    # l = dt * 10.
-    # moving_sigma = windowed_mean(jnp.diff(Y_smooth) ** 2, 250)
-    # sigma2 = 0.5 * moving_sigma / (1. - jnp.exp(-0.5*dt/l))
-    # sigma = jnp.sqrt(sigma2)
-    # sigma = jnp.concatenate([sigma[:1], sigma])
-    # K = kernel(times[:, None], times[:, None], l, 1.)
-    # K = (sigma[:, None] * sigma) * K
-    #
-    # mu_star, sigma2_star = predict_f(Y_obs, K, jnp.where(outliers, jnp.inf, est_uncert))
-    # sigma2_star = sigma2_star + est_uncert ** 2
-    # sigma_star = jnp.sqrt(sigma2_star)
-    # return mu_star, sigma_star, outliers
+        sequence_smooth = windowed_nanmean(_sequence, window)
+        dseq = jnp.abs(sequence - sequence_smooth)
+        outliers = (dseq > 3. * jnp.std(dseq))
+        _sequence = jnp.where(outliers, jnp.nan, sequence)
+    if init_outliers is not None:
+        outliers = outliers | init_outliers
+    return outliers
 
 
-def detect_outliers(tec_mean, tec_std, times):
+def detect_dphase_outliers(dphase):
     """
-    Detect outliers in tec (in batch)
+    Detect outliers in dphase (in batch)
     Args:
-        tec_mean: [N, Nt] tec means
-        tec_std: [N, Nt] tec uncert
+        dphase: [Nd, Na, Nf, Nt] tec uncert
         times: [Nt]
     Returns:
-        mu_star mean tec after outlier selection
-        sigma_star uncert in tec after outlier selection
-        outliers outliers
+        outliers [Nd, Na, Nf, Nt]
     """
-    # kernel = RBF()
-    # l = jnp.mean(jnp.diff(times)) * 5.
-    # moving_sigma = windowed_mean(jnp.diff(tec_mean) ** 2, 40)
-    # sigma2 = 0.5 * moving_sigma / (1. - jnp.exp(-0.5))
-    # sigma = jnp.sqrt(sigma2)
-    # sigma = jnp.concatenate([sigma[:1], sigma])
-    # print(l, sigma)
-    # K = kernel(times[:, None], times[:, None], l, 1.)
-    # K = (sigma[:,None]*sigma) * K
 
+    Nd, Na, Nf, Nt = dphase.shape
+    dphase = dphase.reshape((Nd * Na * Nf, Nt))
+    outliers = jnp.abs(dphase) > 1.
+    outliers = outliers | (jnp.abs(dphase) > 5. * jnp.sqrt(jnp.mean(dphase ** 2)))
+    print(outliers.sum())
+    outliers = chunked_pmap(
+        lambda dphase, outliers: single_detect_outliers(dphase, window=15, init_outliers=outliers), dphase, outliers,
+        chunksize=None)
+    outliers = outliers.reshape((Nd, Na, Nf, Nt))
+    print(outliers.sum())
+    return outliers
+
+
+def detect_tec_outliers(times, tec_mean, tec_std):
+    """
+    Detect outliers in dphase (in batch)
+    Args:
+        tec: [Nd, Na, Nt] tec uncert
+        times: [Nt]
+    Returns:
+        outliers [Nd, Na,  Nt]
+    """
+
+    times, tec_mean, tec_std = jnp.asarray(times), jnp.asarray(tec_mean), jnp.asarray(tec_std)
     Nd, Na, Nt = tec_mean.shape
     tec_mean = tec_mean.reshape((Nd * Na, Nt))
     tec_std = tec_std.reshape((Nd * Na, Nt))
-    mu_star, sigma_star, outliers = chunked_pmap(
-        lambda tec_mean, tec_std: single_detect_outliers(tec_std, tec_mean, times), tec_mean, tec_std,
+    res = chunked_pmap(
+        lambda tec_mean, tec_std: single_detect_tec_outliers(times, tec_mean, tec_std), tec_mean, tec_std,
         chunksize=None)
-    # print(jnp.isnan(sigma_star).any())
-    tec_mean = jnp.where(outliers, mu_star, tec_mean).reshape((Nd, Na, Nt))
-    tec_std = jnp.where(outliers, sigma_star, tec_std).reshape((Nd, Na, Nt))
-    outliers = outliers.reshape((Nd, Na, Nt))
-    return tec_mean, tec_std, outliers
+    res = tree_map(lambda x:x.reshape((Nd, Na, Nt)), res)
+    return res
+
+
+def predict(t, f, t2):
+    deg = t.size - 1
+    coeffs = polyfit(t, f, deg)
+    # print(t, t2, f, coeffs, deg)
+    return sum([p * t2 ** (deg - i) for i, p in enumerate(coeffs)])
+
+def filter(times, tec_mean, window=1):
+    def _slice(y, i):
+        res = []
+        for j in range(0, window):
+            # [i-window, ..., i-window +window-1]
+            # [i-window,..., i-1]
+            offset = j - window
+            res.append(y[i + offset])
+        return jnp.stack(res, axis=0)
+
+    def filter_body(state):
+        (i, mod_tec_mean) = state
+        _times = _slice(times, i)
+        _tec_mean = _slice(mod_tec_mean, i)
+        y = predict(_times-_times[0], _tec_mean, times[i]-_times[0])
+        y = jnp.where(jnp.abs(y - tec_mean[i]) > 50., y, tec_mean[i])
+        y = jnp.where(jnp.abs(y) < jnp.abs(tec_mean[i]), y, tec_mean[i])
+        mod_tec_mean = mod_tec_mean.at[i].set(y)# - tec_mean[i]
+        return (i + 1, mod_tec_mean)
+
+    _, tec_mean = while_loop(lambda s: s[0] < times.size,
+                             filter_body,
+                             (jnp.asarray(window), tec_mean))
+    return tec_mean
+
+
+def single_detect_tec_outliers(times, tec_mean, tec_std, window=1):
+    y = filter(times, tec_mean, window=window)
+    y = filter(times[::-1], y[::-1], window=window)[::-1]
+    outliers = (jnp.abs(tec_mean - y) > 1e-5) | (tec_std > 30.)
+    return y, outliers

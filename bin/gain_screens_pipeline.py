@@ -245,8 +245,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
     steps['flag_visibilities'] \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('data_dir', data_dir) \
-        .add_cmd_arg('new_weights_col', 'OUTLIER_FLAGS') \
-        .add_cmd_arg('outlier_frac_thresh', 30. / 45.)
+        .add_cmd_arg('new_weights_col', 'OUTLIER_FLAGS')
 
     steps['image_subtract_dirty'] \
         .add_cmd_arg('image_type', 'dirty:subtracted') \
@@ -281,7 +280,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('use_init_dico', True)
 
     steps['image_smooth_slow'] \
-        .add_cmd_arg('image_type', 'smoothed_slow:data') \
+        .add_cmd_arg('image_type', 'smoothed_slow:data:outliers_flagged') \
         .add_cmd_arg('ncpu', ncpu) \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('data_dir', data_dir) \
@@ -289,7 +288,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('use_init_dico', True)
 
     steps['image_screen'] \
-        .add_cmd_arg('image_type', 'screen:data') \
+        .add_cmd_arg('image_type', 'screen:restricted') \
         .add_cmd_arg('ncpu', ncpu) \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('data_dir', data_dir) \
@@ -297,7 +296,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('use_init_dico', True)
 
     steps['image_screen_slow'] \
-        .add_cmd_arg('image_type', 'screen_slow:data') \
+        .add_cmd_arg('image_type', 'screen_slow:data:outliers_flagged') \
         .add_cmd_arg('ncpu', ncpu) \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('data_dir', data_dir) \

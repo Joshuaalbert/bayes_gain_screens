@@ -1,4 +1,5 @@
 import os
+import time
 from timeit import default_timer
 
 import numpy as np
@@ -8,8 +9,8 @@ from astropy import wcs
 from astropy.io import fits
 
 from jax import local_device_count, tree_map, numpy as jnp, pmap, vmap, jit, tree_multimap, devices as get_devices, \
-    device_get
-from jax.lax import scan
+    device_get, grad
+from jax.lax import scan, reduce_window
 from jax.scipy.signal import convolve
 from jax.api import _jit_is_disabled as jit_is_disabled
 
@@ -111,7 +112,18 @@ def voronoi_finite_polygons_2d(vor, radius):
     return new_regions, np.asarray(new_vertices)
 
 
-def windowed_mean(a, w, mode='reflect', axis=0):
+def windowed_nanmean(a, w, mode='reflect', axis=0):
+    if w is None:
+        return jnp.broadcast_to(jnp.nanmean(a, axis=axis, keepdims=True), a.shape)
+    count = windowed_sum(jnp.where(jnp.isnan(a), 0., 1.), w, mode, axis)
+    return jnp.where(count == 0., 0., windowed_sum(jnp.where(jnp.isnan(a), 0., a), w, mode, axis) / count)
+
+
+def test_windowed_nanmean():
+    a = jnp.array([0., 1., 2., jnp.nan])
+    assert jnp.allclose(windowed_nanmean(a, 3), jnp.array([0.6666667, 1., 1.5, 2.]))
+
+def windowed_sum(a, w, mode='reflect', axis=0):
     """
     Perform rolling window average (smoothing).
 
@@ -125,11 +137,9 @@ def windowed_mean(a, w, mode='reflect', axis=0):
     """
     if axis != 0:
         a = jnp.moveaxis(a, axis, 0)
-    if w is None:
-        return jnp.broadcast_to(jnp.mean(a, axis=0, keepdims=True), a.shape)
     dims = len(a.shape)
     a = a
-    kernel = jnp.reshape(jnp.ones(w) / w, [w] + [1] * (dims - 1))
+    kernel = jnp.reshape(jnp.ones(w), [w] + [1] * (dims - 1))
     _w1 = (w - 1) // 2
     _w2 = _w1 if (w % 2 == 1) else _w1 + 1
     pad_width = [(_w1, _w2)] + [(0, 0)] * (dims - 1)
@@ -139,12 +149,25 @@ def windowed_mean(a, w, mode='reflect', axis=0):
         result = jnp.moveaxis(result, 0, axis)
     return result
 
+def windowed_mean(a, w, mode='reflect', axis=0):
+    """
+    Perform rolling window average (smoothing).
+
+    Args:
+        a: array
+        w: window length
+        mode: see jnp.pad
+        axis: axis to smooth down
+
+    Returns: Array the same size as `a`
+    """
+    if w is None:
+        return jnp.broadcast_to(jnp.mean(a, axis=axis, keepdims=True), a.shape)
+    return windowed_sum(a, w, mode, axis) / w
 
 def test_windowed_mean():
-    a = jnp.arange(10)
-    a = jnp.where(jnp.arange(10) >= 8, jnp.nan, jnp.arange(10))
-    assert jnp.all(jnp.isnan(a) == jnp.isnan(windowed_mean(a, 1)))
-
+    a = jnp.array([0., 1., 2., 2.])
+    assert jnp.allclose(windowed_nanmean(a, 3), jnp.array([2/3., 1., 5/3., 2.]))
 
 def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
     tmp_selection = datapack._selection
@@ -184,7 +207,6 @@ def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
     ref_dir = np.concatenate(ref_dir_out, axis=0)
     return X, ref_ant, ref_dir
 
-
 def great_circle_sep(ra1, dec1, ra2, dec2):
     dra = np.abs(ra1 - ra2)
     # ddec = np.abs(dec1-dec2)
@@ -192,7 +214,6 @@ def great_circle_sep(ra1, dec1, ra2, dec2):
             np.cos(dec1) * np.sin(dec2) - np.sin(dec1) * np.cos(dec2) * np.cos(dra)) ** 2
     den = np.sin(dec1) * np.sin(dec2) + np.cos(dec1) * np.cos(dec2) * np.cos(dra)
     return np.arctan2(np.sqrt(num2), den)
-
 
 def make_coord_array(*X, flat=True, coord_map=None):
     """
@@ -233,7 +254,6 @@ def make_coord_array(*X, flat=True, coord_map=None):
         return X
     return np.reshape(X, (-1, X.shape[-1]))
 
-
 def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
     """
     Calls pmap on chunks of moderate work to be distributed over devices.
@@ -266,9 +286,11 @@ def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
     if debug_mode:
         from datetime import datetime
         devices = get_devices()
+
         def build_pmap_body(dev_idx):
             fun = jit(f, device=devices[dev_idx])
-            log = os.path.join(os.getcwd(),"chunk{:02d}.log".format(dev_idx))
+            log = os.path.join(os.getcwd(), "chunk{:02d}.log".format(dev_idx))
+
             def pmap_body(*args):
                 result = []
                 with open(log, 'a') as f:
@@ -282,12 +304,14 @@ def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
                         f.write('{} {}'.format(datetime.now().isoformat(), "Done item: {}".format(item)))
                 result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
                 return result
+
             return pmap_body
     else:
         @jit
         def pmap_body(*args):
             def body(state, args):
                 return state, f(*args)
+
             _, result = scan(body, (), args, unroll=1)
             return result
 
@@ -318,9 +342,9 @@ def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
     if remainder != 0:
         result = tree_map(lambda x: x[:-extra], result)
     dt = default_timer() - t0
-    logger.info("Time to run: {}, rate: {} / s, normalised rate: {} / s / device".format(dt, N / dt, N / dt / chunksize))
+    logger.info(
+        "Time to run: {}, rate: {} / s, normalised rate: {} / s / device".format(dt, N / dt, N / dt / chunksize))
     return result
-
 
 def test_disable_jit_and_scan():
     from jax import disable_jit
@@ -331,20 +355,19 @@ def test_disable_jit_and_scan():
     with disable_jit():
         print(scan(body, (jnp.array(0),), (), length=5))
 
-
 def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min_spacing_arcmin=1., plot=False,
                                      seed_directions=None, fill_in_distance=None,
                                      fill_in_flux_limit=0.):
     """
     Find directions in an apparent flux image satifying a set of selection criteria.
-    
+
     Args:
         image_fits: FITS image of apparent flux
         flux_limit: float, Selection limit above which to select primary sources.
         max_N: int, Maximum number of sources to find, None is find all above limit.
-        min_spacing_arcmin: 
-        plot: 
-        seed_directions: 
+        min_spacing_arcmin:
+        plot:
+        seed_directions:
         fill_in_distance: if not None, then search for dimmer sources below `flux_limit` but above `fill_in_flux_limit`
             until we find `max_N` sources within this many arcmin. `fill_in_distance` should be larger than the
             `min_spacing_arcmin`.
@@ -390,7 +413,8 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
                 logger.info(
-                    "Auto-append first: Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
+                    "Auto-append first: Found {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi,
+                                                                  dec[-1] * 180. / np.pi))
                 idx.append(i)
                 continue
             dist = great_circle_sep(np.array(ra), np.array(dec), ra_, dec_) * 180. / np.pi
@@ -398,7 +422,8 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
                 ra.append(ra_)
                 dec.append(dec_)
                 f.append(data[pix[3], pix[2], pix[1], pix[0]])
-                logger.info("Found source of flux {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
+                logger.info(
+                    "Found source of flux {} at {} {}".format(f[-1], ra[-1] * 180. / np.pi, dec[-1] * 180. / np.pi))
                 idx.append(i)
 
         first_found = len(ra)
@@ -445,7 +470,6 @@ def get_screen_directions_from_image(image_fits, flux_limit=0.1, max_N=None, min
 
     return ac.ICRS(ra=ra * au.rad, dec=dec * au.rad), sizes
 
-
 def inverse_update(C, m, return_drop=False):
     """
     Compute the inverse of a matrix with the m-th row and column dropped given knowledge of the inverse of the original
@@ -476,13 +500,11 @@ def inverse_update(C, m, return_drop=False):
         return res, drop
     return res
 
-
 def test_inverse_update():
     A = np.random.normal(size=(4, 4))
     m = 1
     B = np.linalg.inv(A[np.arange(4) != m, :][:, np.arange(4) != m])
     assert np.isclose(inverse_update(np.linalg.inv(A), m), B).all()
-
 
 def drop_array(n, m):
     """
@@ -500,7 +522,6 @@ def drop_array(n, m):
     a = a[1:]
     a = jnp.roll(a, m, axis=0)
     return a
-
 
 def polyfit(x, y, deg):
     """
@@ -538,7 +559,6 @@ def polyfit(x, y, deg):
     c = (c.T / scale).T  # broadcast scale coefficients
     return c
 
-
 def poly_smooth(x, y, deg=5):
     """
     Smooth y(x) with a `deg` degree polynomial in x
@@ -552,14 +572,46 @@ def poly_smooth(x, y, deg=5):
     coeffs = polyfit(x, y, deg=deg)
     return sum([p * x ** (deg - i) for i, p in enumerate(coeffs)])
 
-
 def wrap(phi):
     return (phi + jnp.pi) % (2 * jnp.pi) - jnp.pi
-
 
 def link_overwrite(src, dst):
     if os.path.islink(dst):
         logger.info("Unlinking pre-existing sym link {}".format(dst))
         os.unlink(dst)
+        time.sleep(0.1)  # to make sure it get's removed
     logger.info("Linking {} -> {}".format(src, dst))
     os.symlink(src, dst)
+
+
+def curv(Y, times, i):
+    """
+    Computes the curvature at index i, using a deg=2 polynomial fit to the point and neighbours.
+    Args:
+        Y: array
+        times: array
+        i: int
+
+    Returns:
+        curvature at times[i]
+    """
+    _times = jnp.pad(times, ((1, 1),), mode='reflect')
+    get_time = lambda i: _times[i + 1]
+    _Y = jnp.pad(Y, ((1, 1),), mode='reflect')
+    get_Y = lambda i: _Y[i + 1]
+
+    def K_per_offset(offset):
+        x = jnp.asarray([get_time(i - 1 + offset), get_time(i + offset), get_time(i + 1 + offset)])
+        y = jnp.asarray([get_Y(i - 1 + offset), get_Y(i + offset), get_Y(i + 1 + offset)])
+
+        def f(v):
+            coeffs = polyfit(x, y, deg=2)
+            return sum([p * v ** (2 - i) for i, p in enumerate(coeffs)])
+
+        fp = grad(f)
+        fpp = grad(fp)
+        v = x[1 - offset]
+        K = jnp.abs(fpp(v)) / (1. + fp(v) ** 2) ** 1.5
+        return K
+
+    return jnp.min(vmap(K_per_offset)(jnp.arange(-1, 2)))
