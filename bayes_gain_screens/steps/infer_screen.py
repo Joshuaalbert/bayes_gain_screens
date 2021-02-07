@@ -537,7 +537,7 @@ def add_args(parser):
                         help='The Gaussian source list of the field used to choose locations of screen points.',
                         type=str, required=True)
     parser.add_argument('--plot_results', help='Whether to plot results.',
-                        default=False, type="bool", required=False)
+                        default=True, type="bool", required=False)
 
 
 if __name__ == '__main__':

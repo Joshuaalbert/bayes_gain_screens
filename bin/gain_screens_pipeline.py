@@ -224,7 +224,8 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
     steps['tec_inference_and_smooth'] \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('ncpu', ncpu) \
-        .add_cmd_arg('data_dir', data_dir)
+        .add_cmd_arg('data_dir', data_dir) \
+        .add_cmd_arg('plot_results', True)
 
     steps['slow_solve_dds4'] \
         .add_cmd_arg('ncpu', ncpu) \
@@ -236,7 +237,8 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('data_dir', data_dir) \
         .add_cmd_arg('ref_image_fits', ref_image_fits) \
         .add_cmd_arg('max_N', 250) \
-        .add_cmd_arg('ncpu', ncpu)
+        .add_cmd_arg('ncpu', ncpu) \
+        .add_cmd_arg('plot_results', True)
 
     steps['merge_slow'] \
         .add_cmd_arg('obs_num', obs_num) \
@@ -406,7 +408,7 @@ def debug_main():
     main(archive_dir='/home/albert/store/lockman/archive',
          root_working_dir='/home/albert/store/root',
          script_dir=None,
-         obs_num=342938,
+         obs_num=664480, #342938,
          region_file=None,
          ncpu=32,
          ref_image_fits=None,
@@ -423,19 +425,19 @@ def debug_main():
          do_subtract_outside_pb=0,
          do_image_subtract_dirty=0,
          do_solve_dds4=0,
-         do_tec_inference_and_smooth=2,
-         do_slow_solve_dds4=2,
-         do_merge_slow=2,
-         do_flag_visibilities=0,
-         do_infer_screen=2,
+         do_tec_inference_and_smooth=1,
+         do_slow_solve_dds4=1,
+         do_merge_slow=1,
+         do_flag_visibilities=1,
+         do_infer_screen=1,
          do_image_dds4=0,
          do_image_subtract_dds4=0,
          do_image_smooth=0,
          do_image_smooth_slow=0,
          do_image_screen=0,
          do_image_screen_slow=0,
-         do_image_smooth_slow_restricted=2,
-         do_image_screen_slow_restricted=2,
+         do_image_smooth_slow_restricted=1,
+         do_image_screen_slow_restricted=1,
          retry_task_on_fail=0)
 
 
