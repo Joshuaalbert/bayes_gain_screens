@@ -125,7 +125,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
              script_name='sub-sources-outside-pb.py', exec_env=lofar_sksp_env),
         Step('solve_dds4', ['subtract'], script_dir=script_dir, script_name='solve_on_subtracted.py',
              exec_env=lofar_sksp_env),
-        Step('slow_solve_dds4', ['solve_dds4', 'tec_inference_and_smooth'], script_dir=script_dir,
+        Step('slow_solve_dds4', ['solve_dds4', 'tec_inference_and_smooth', 'infer_screen'], script_dir=script_dir,
              script_name='slow_solve_on_subtracted.py', exec_env=lofar_sksp_env),
         Step('tec_inference_and_smooth', ['solve_dds4'], script_dir=script_dir,
              script_name='tec_inference_and_smooth.py', exec_env=bayes_gain_screens_env),
@@ -159,12 +159,12 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
         Step('image_screen_slow_restricted',
-             ['merge_slow', 'subtract_outside_pb'],
+             ['merge_slow', 'subtract_outside_pb', 'flag_visibilities'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env),
         Step('image_smooth_slow_restricted',
-             ['merge_slow', 'subtract_outside_pb'],
+             ['merge_slow', 'subtract_outside_pb', 'flag_visibilities'],
              script_dir=script_dir,
              script_name='image.py',
              exec_env=lofar_gain_screens_env)
@@ -306,7 +306,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('use_init_dico', True)
 
     steps['image_smooth_slow_restricted'] \
-        .add_cmd_arg('image_type', 'smoothed_slow:restricted') \
+        .add_cmd_arg('image_type', 'smoothed_slow:restricted:outliers_flagged') \
         .add_cmd_arg('ncpu', ncpu) \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('data_dir', data_dir) \
@@ -316,7 +316,7 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
                                                'image_full_ampphase_di_m.NS.DATA_RESTRICTED.DicoModel'))
 
     steps['image_screen_slow_restricted'] \
-        .add_cmd_arg('image_type', 'screen_slow:restricted') \
+        .add_cmd_arg('image_type', 'screen_slow:restricted:outliers_flagged') \
         .add_cmd_arg('ncpu', ncpu) \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('data_dir', data_dir) \
