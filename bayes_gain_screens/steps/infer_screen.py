@@ -462,6 +462,12 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
         h.phase = np.asarray(phase_outliers_replaced_with_screen)[None, ...]
         h.amplitude = np.asarray(amp)[None, ...]
 
+    # replace the outlier phase calibrators in dds5
+    with DataPack(dds5_h5parm, readonly=False) as h:
+        h.current_solset = 'sol000'
+        h.select(pol=slice(0, 1, 1), ant=slice(1,None,1))
+        h.phase = np.asarray(phase_outliers_replaced_with_screen)[None, ...]
+
     if plot_results:
         logger.info("Plotting results.")
         d = os.path.join(working_dir, 'tec_screen_plots')
