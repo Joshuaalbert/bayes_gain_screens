@@ -32,7 +32,7 @@ def main(data_dir, working_dir, obs_num, new_weights_col):
         times = tec_outliers_soltab.time[:]
         antennas = np.array(tec_outliers_soltab.ant[:])
         # Npol, Nd, Na, Nt
-        outliers = tec_outliers_soltab.value[...]
+        outliers = tec_outliers_soltab.values[...]
         Npol, Nd, Na, Nt = outliers.shape
     # Na, Nt
     flags = np.mean(outliers[0, ...], axis=0)# > Nd * outlier_frac_thresh
