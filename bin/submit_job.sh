@@ -16,6 +16,7 @@ progname=$(basename $0)
 simg_dir=${HOME}/store
 obs_num=
 archive_dir=
+remote_archive=
 root_working_dir=
 script_dir=
 region_file=None
@@ -59,6 +60,7 @@ do_image_screen=0
 # all args
 L=(obs_num \
     archive_dir \
+    remote_archive \
     root_working_dir \
     script_dir \
     region_file \
@@ -128,10 +130,37 @@ then
     exit;
 fi
 
+if [ -z "$archive_dir" ]
+then
+    usage;
+    exit;
+fi
+
+
+
 if [ -z "$force_conda" ]; then
 bayes_gain_screens_simg="$simg_dir"/bayes_gain_screens.simg
 else
 bayes_gain_screens_simg=None
+. "$HOME/miniconda3/etc/profile.d/conda.sh"
+conda activate $conda_env
+
+fi
+
+if [ -z "$remote_archive" ]; then
+    echo "Archive assumed to be local"
+else
+    mkdir -p $archive_dir
+    rsync -avP \
+        $remote_archive/L*.archive \
+        $remote_archive/SOLSDIR \
+        $remote_archive/*.app.restored.fits \
+        $remote_archive/image_full_ampphase_di_m.NS.mask01.fits \
+        $remote_archive/image_full_ampphase_di_m.NS.DicoModel \
+        $remote_archive/DDS3_full_*smoothed.npz \
+        $remote_archive/DDS3_full_slow_*.npz \
+        $remote_archive/image_dirin_SSD_m.npy.ClusterCat.npy \
+        $archive_dir
 fi
 
 #source ~/.bashrc
