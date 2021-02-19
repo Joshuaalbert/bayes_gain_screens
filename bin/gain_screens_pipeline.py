@@ -373,7 +373,7 @@ def add_args(parser):
                           default=workers, type=int, required=False)
     optional.add_argument('--script_dir',
                           help='Where the scripts are located, by default uses those installed with package.',
-                          default=None, type=str, required=False)
+                          default=None, type='str_or_none', required=False)
 
     required.add_argument('--obs_num', help='Obs number L*',
                           default=None, type=int, required=True)
