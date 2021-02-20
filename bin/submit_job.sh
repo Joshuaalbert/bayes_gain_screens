@@ -155,15 +155,16 @@ else
   fi
   mkdir -p $archive_dir
   rsync -avuP \
-      $remote_archive/L*.archive \
-      $remote_archive/SOLSDIR \
-      $remote_archive/*.app.restored.fits \
-      $remote_archive/image_full_ampphase_di_m.NS.mask01.fits \
-      $remote_archive/image_full_ampphase_di_m.NS.DicoModel \
-      $remote_archive/DDS3_full_*smoothed.npz \
-      $remote_archive/DDS3_full_slow_*.npz \
-      $remote_archive/image_dirin_SSD_m.npy.ClusterCat.npy \
-      $archive_dir/
+      "$remote_archive"/L*.archive \
+      "$remote_archive"/SOLSDIR \
+      "$remote_archive"/*.app.restored.fits \
+      "$remote_archive"/image_full_ampphase_di_m.NS.mask01.fits \
+      "$remote_archive"/image_full_ampphase_di_m.NS.DicoModel \
+      "$remote_archive"/DDS3_full_*smoothed.npz \
+      "$remote_archive"/DDS3_full_slow_*.npz \
+      "$remote_archive"/image_dirin_SSD_m.npy.ClusterCat.npy \
+      "$archive_dir"/
+  chmod -R 755 "$archive_dir"
 fi
 
 #source ~/.bashrc
