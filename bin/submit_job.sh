@@ -171,14 +171,12 @@ fi
 
 singularity exec -B /tmp,/dev/shm "$simg_dir"/lofar_sksp_ddf.simg CleanSHM.py
 
-cmd="python $script_dir/pipeline.py \
+cmd="python $HOME/git/bayes_gain_screens/bin/gain_screens_pipeline.py \
         --archive_dir=$archive_dir \
         --root_working_dir=$root_working_dir \
         --script_dir=$script_dir \
         --region_file=$region_file \
         --auto_resume=$auto_resume \
-        --ref_dir=0 \
-        --const_smooth_window=$const_smooth_window \
         --ncpu=$ncpu \
         --deployment_type=directional \
         --retry_task_on_fail=$retry_task_on_fail \
