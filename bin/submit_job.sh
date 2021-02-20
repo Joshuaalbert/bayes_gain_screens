@@ -164,7 +164,8 @@ else
       "$remote_archive"/DDS3_full_slow_*.npz \
       "$remote_archive"/image_dirin_SSD_m.npy.ClusterCat.npy \
       "$archive_dir"/
-  chmod -R 755 "$archive_dir"
+  chmod -R u=rwxt "$archive_dir"
+  chmod -R go=rx "$archive_dir"
 fi
 
 #source ~/.bashrc
