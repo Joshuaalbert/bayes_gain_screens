@@ -12,7 +12,6 @@ from jax import local_device_count, tree_map, numpy as jnp, pmap, vmap, jit, tre
     device_get, grad
 from jax.lax import scan, reduce_window
 from jax.scipy.signal import convolve
-from jax.api import _jit_is_disabled as jit_is_disabled
 
 from bayes_gain_screens.frames import ENU
 
@@ -254,98 +253,6 @@ def make_coord_array(*X, flat=True, coord_map=None):
         return X
     return np.reshape(X, (-1, X.shape[-1]))
 
-def chunked_pmap(f, *args, chunksize=None, debug_mode=False):
-    """
-    Calls pmap on chunks of moderate work to be distributed over devices.
-    Automatically handle non-dividing chunksizes, by adding filler elements.
-
-    Args:
-        f: jittable, callable
-        *args: ndarray arguments to map down first dimension
-        chunksize: optional chunk size, should be <= local_device_count(). None is local_device_count.
-        debug_mode: bool, whether to allow printing but also jit by using dask
-
-    Returns: pytree mapped result.
-    """
-    if chunksize is None:
-        chunksize = local_device_count()
-    if chunksize > local_device_count():
-        raise ValueError("chunksize should be <= {}".format(local_device_count()))
-    N = args[0].shape[0]
-    remainder = N % chunksize
-    if (remainder != 0) and (N > chunksize):
-        extra = chunksize - remainder
-        args = tree_map(lambda arg: jnp.concatenate([arg, arg[:extra]], axis=0), args)
-        N = args[0].shape[0]
-    args = tree_map(lambda arg: jnp.reshape(arg, (chunksize, N // chunksize) + arg.shape[1:]), args)
-    T = N // chunksize
-
-    logger.info("Distributing {} over {}".format(N, chunksize))
-    t0 = default_timer()
-
-    if debug_mode:
-        from datetime import datetime
-        devices = get_devices()
-
-        def build_pmap_body(dev_idx):
-            fun = jit(f, device=devices[dev_idx])
-            log = os.path.join(os.getcwd(), "chunk{:02d}.log".format(dev_idx))
-
-            def pmap_body(*args):
-                result = []
-                with open(log, 'a') as f:
-                    for i in range(T):
-                        item = jnp.ravel_multi_index((dev_idx, i), (chunksize, T))
-                        logger.info("Starting item: {}".format(item))
-                        f.write('{} {}'.format(datetime.now().isoformat(), "Starting item: {}".format(item)))
-                        result.append(fun(*[a[i, ...] for a in args]))
-                        tree_map(lambda a: a.block_until_ready(), result[-1])
-                        logger.info("Done item: {}".format(item))
-                        f.write('{} {}'.format(datetime.now().isoformat(), "Done item: {}".format(item)))
-                result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
-                return result
-
-            return pmap_body
-    else:
-        @jit
-        def pmap_body(*args):
-            def body(state, args):
-                return state, f(*args)
-
-            _, result = scan(body, (), args, unroll=1)
-            return result
-
-    if jit_is_disabled():
-        if debug_mode:
-            num_devices = local_device_count()
-            dsk = {str(device): (build_pmap_body(device),) + tuple([arg[device] for arg in args]) for device in
-                   range(num_devices)}
-            result_keys = [str(device) for device in range(num_devices)]
-            result = get(dsk, result_keys, num_workers=num_devices)
-            result = device_get(result)
-            result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
-        else:
-            result = vmap(pmap_body)(*args)
-    else:
-        if debug_mode:
-            num_devices = local_device_count()
-            dsk = {str(device): (build_pmap_body(device),) + tuple([arg[device] for arg in args]) for device in
-                   range(num_devices)}
-            result_keys = [str(device) for device in range(num_devices)]
-            result = get(dsk, result_keys, num_workers=num_devices)
-            result = device_get(result)
-            result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
-        else:
-            result = pmap(pmap_body)(*args)  # until gh #5065 is solved
-
-    result = tree_map(lambda arg: jnp.reshape(arg, (-1,) + arg.shape[2:]), result)
-    if remainder != 0:
-        result = tree_map(lambda x: x[:-extra], result)
-    dt = default_timer() - t0
-    logger.info(
-        "Time to run: {}, rate: {} / s, normalised rate: {} / s / device".format(dt, N / dt, N / dt / chunksize))
-    return result
-
 def test_disable_jit_and_scan():
     from jax import disable_jit
     from jax.lax import scan
@@ -559,7 +466,7 @@ def polyfit(x, y, deg):
     c = (c.T / scale).T  # broadcast scale coefficients
     return c
 
-def poly_smooth(x, y, deg=5):
+def poly_smooth(x, y, deg=5, weights=None):
     """
     Smooth y(x) with a `deg` degree polynomial in x
     Args:
@@ -569,8 +476,37 @@ def poly_smooth(x, y, deg=5):
 
     Returns: smoothed y [N]
     """
-    coeffs = polyfit(x, y, deg=deg)
+    if weights is None:
+        coeffs = polyfit(x, y, deg=deg)
+    else:
+        coeffs = weighted_polyfit(x, y, deg=deg, weights=weights)
     return sum([p * x ** (deg - i) for i, p in enumerate(coeffs)])
+
+def weighted_polyfit(x, y, deg, weights):
+    order = int(deg) + 1
+    if deg < 0:
+        raise ValueError("expected deg >= 0")
+    if x.ndim != 1:
+        raise TypeError("expected 1D vector for x")
+    if x.size == 0:
+        raise TypeError("expected non-empty vector for x")
+    if y.ndim < 1 or y.ndim > 2:
+        raise TypeError("expected 1D or 2D array for y")
+    if x.shape[0] != y.shape[0]:
+        raise TypeError("expected x and y to have same length")
+    rcond = len(x) * jnp.finfo(x.dtype).eps
+    X = jnp.stack([x ** (deg - i) for i in range(order)], axis=1)
+    scale = jnp.sqrt(jnp.sum(X * X, axis=0))
+    X /= scale
+    c, resids, rank, s = jnp.linalg.lstsq((X.T * weights) @ X, (X.T * weights) @ y, rcond)
+    c = (c.T / scale).T  # broadcast scale coefficients
+    return c
+
+def test_weighted_polyfit():
+    def f(x):
+        return 1. + x + x**2 + x**3
+    x = jnp.linspace(0., 1., 3)
+    assert jnp.allclose(polyfit(x,f(x),4), weighted_polyfit(x,f(x),4, jnp.ones_like(x)),atol=1e-3)
 
 def wrap(phi):
     return (phi + jnp.pi) % (2 * jnp.pi) - jnp.pi
@@ -580,8 +516,9 @@ def link_overwrite(src, dst):
         logger.info("Unlinking pre-existing sym link {}".format(dst))
         os.unlink(dst)
         time.sleep(0.1)  # to make sure it get's removed
-    logger.info("Linking {} -> {}".format(src, dst))
-    os.symlink(src, dst)
+    if os.path.abspath(src) != os.path.abspath(dst):
+        logger.info("Linking {} -> {}".format(src, dst))
+        os.symlink(src, dst)
 
 
 def curv(Y, times, i):
