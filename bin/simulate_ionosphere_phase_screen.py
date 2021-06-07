@@ -5,21 +5,19 @@ logger = logging.getLogger(__name__)
 
 
 from bayes_gain_screens.tomographic_kernel import TomographicKernel
-from bayes_gain_screens.tomographic_kernel.debug import debug_inference
 from bayes_gain_screens.utils import make_coord_array
 from bayes_gain_screens.plotting import plot_vornoi_map
 from bayes_gain_screens.frames import ENU
 from h5parm import DataPack
-from jaxns.gaussian_process.kernels import M12, RBF
+from jaxns.gaussian_process.kernels import RBF
 import jax.numpy as jnp
 from jax.scipy.linalg import solve_triangular
-from jax import jit, random, vmap, nn
-from h5parm.utils import make_example_datapack, create_empty_datapack
+from jax import jit, random, vmap
+from h5parm.utils import create_empty_datapack
 import astropy.units as au
 import astropy.coordinates as ac
 import pylab as plt
 import numpy as np
-import haiku as hk
 
 ARRAYS = {'lofar': DataPack.lofar_array_hba}
 
