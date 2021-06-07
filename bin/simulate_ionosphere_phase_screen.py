@@ -24,33 +24,37 @@ ARRAYS = {'lofar': DataPack.lofar_array_hba}
 def get_num_directions(avg_spacing, field_of_view_diameter):
     V = 2.*np.pi*(field_of_view_diameter/2.)**2
     pp = 0.5
-    n = -V * np.log(1. - pp) / avg_spacing**2 / np.pi / 2.
+    n = -V * np.log(1. - pp) / (avg_spacing/60.)**2 / np.pi / 2.
     n = max(int(n), 50)
     return n
 
-def compute_conditional_moments(kernel:TomographicKernel, X_new, X_old):
-    f_K = jit(lambda X1, X2: kernel(X1, X2, bottom=300., width=50., l=4., sigma=1.))
+def compute_conditional_moments(kernel:TomographicKernel, X_new):
+    f_K = lambda X1, X2: kernel(X1, X2, bottom=300., width=50., l=4., sigma=1.)
     K_new_new = f_K(X_new, X_new)
     L_new = jnp.linalg.cholesky(K_new_new + 1e-6*jnp.eye(K_new_new.shape[0]))
-    K_old_old = f_K(X_old, X_old)
-    K_old_new = f_K(X_old, X_new)
-    L = jnp.linalg.cholesky(K_old_old + 1e-6 * jnp.eye(K_old_old.shape[0]))
-    JT = solve_triangular(L, K_old_new, lower=True)
-    C = K_new_new - JT.T @ JT
-    LC = jnp.linalg.cholesky(C + 1e-6*jnp.eye(C.shape[0]))
-    # K_new_old @ (K_old_old)^-1 m(old)
-    # K = L @ L^T
-    # K^-1 = L^-T @ L^-1
-    # (L^-T @ J.T)^T
-    M = solve_triangular(L.T, JT, lower=False)
-    return L_new, LC, M
+    return L_new
+    # K_old_old = f_K(X_old, X_old)
+    # K_old_new = f_K(X_old, X_new)
+    # L = jnp.linalg.cholesky(K_old_old + 1e-6 * jnp.eye(K_old_old.shape[0]))
+    # JT = solve_triangular(L, K_old_new, lower=True)
+    # C = K_new_new - JT.T @ JT
+    # LC = jnp.linalg.cholesky(C + 1e-6*jnp.eye(C.shape[0]))
+    # # K_new_old @ (K_old_old)^-1 m(old)
+    # # K = L @ L^T
+    # # K^-1 = L^-T @ L^-1
+    # # (L^-T @ J.T)^T
+    # M = solve_triangular(L.T, JT, lower=False)
+    # return L_new, LC, M
 
 def main(output_h5parm, ncpu, ra, dec,
          array_name, start_time, time_resolution, duration,
          field_of_view_diameter, avg_direction_spacing, east_wind, north_wind, time_block_size):
     Nd = get_num_directions(avg_direction_spacing, field_of_view_diameter)
+    logger.info(f"Number of directions to simulate: {Nd}")
     Nf = 1
     Nt = int(duration / time_resolution) + 1
+    time_block_size = min(time_block_size, Nt)
+    logger.info(f"Number of times to simulate: {Nt}")
     dp = create_empty_datapack(Nd, Nf, Nt, pols=None,
                           field_of_view_diameter=field_of_view_diameter,
                           start_time=start_time,
@@ -60,11 +64,12 @@ def main(output_h5parm, ncpu, ra, dec,
                           array_file=ARRAYS[array_name],
                           phase_tracking=(ra, dec),
                           save_name=output_h5parm,
-                          clobber=True)
+                          clobber=True,
+                               seed=46)
 
     with dp:
         dp.current_solset = 'sol000'
-        dp.select(pol=slice(0, 1, 1))
+        dp.select(pol=slice(0, 1, 1), ant=[0,10,50], time=slice(0,time_block_size))
         axes = dp.axes_tec
         patch_names, directions = dp.get_directions(axes['dir'])
         antenna_labels, antennas = dp.get_antennas(axes['ant'])
@@ -79,10 +84,15 @@ def main(output_h5parm, ncpu, ra, dec,
     directions = directions.transform_to(frame)
     t = times.mjd*86400.
     t -= t[0]
-    dt = jnp.mean(jnp.diff(t))
-    x = antennas.cartesian.xyz.to(au.km).value.T
+    dt = time_resolution
+    x = antennas.cartesian.xyz.to(au.km).value.T[1:,:]
     k = directions.cartesian.xyz.value.T
+    logger.info(f"Directions: {directions}")
+    logger.info(f"Antennas: {x} {antenna_labels}")
+    logger.info(f"Reference Ant: {x0}")
+    logger.info(f"Times: {t}")
     Na = x.shape[0]
+    logger.info(f"Number of antenna to simulate: {Na}")
     Nd = k.shape[0]
     Nt = t.shape[0]
 
@@ -96,32 +106,34 @@ def main(output_h5parm, ncpu, ra, dec,
         t = coords[6]
         return jnp.concatenate([x - wind_vector*t, k])
 
-    X_new = make_coord_array(x, k, dt*jnp.arange(time_block_size)[:,None], flat=True)#N,7
-    X_new = vmap(wind_shift)(X_new)#N,6
-    X_old = make_coord_array(x, k, -dt * jnp.arange(1,3)[:, None], flat=True)  # N,7
-    X_old = vmap(wind_shift)(X_old)  # N,6
+    X = make_coord_array(x, k, t[:,None], flat=True)#N,7
+    X = vmap(wind_shift)(X)#N,6
 
-    kernel = TomographicKernel(x0, x0, RBF(), S_marg=25)
-    L_first, LC, M = jit(compute_conditional_moments, static_argnums=[0])(kernel, X_new, X_old)
+    logger.info(f"Sampling {X.shape[0]} new points.")
+    kernel = TomographicKernel(x0, x0, RBF(), S_marg=25, compute_tec=False)
+    L = jit(compute_conditional_moments, static_argnums=[0])(kernel, X)
 
-    dtec = L_first @ random.normal(random.PRNGKey(24532), shape=(L_first.shape[0],1))
-    dtec = dtec.reshape((Na, Nd, time_block_size))
-    del L_first
 
-    dtec_results = [dtec]
-    for _ in range(Nt//time_block_size):
-        last_result = dtec_results[-1]
-        last_result = last_result[:, :, -2:].reshape((Na*Nd*2,1))
-        mean = M @ last_result#M, 1
-        next_result = mean + LC @ random.normal(random.PRNGKey(24532), shape=(LC.shape[0],1))
-        next_result = next_result.reshape((Na, Nd, time_block_size))
-        dtec_results.append(next_result)
-        ax = plot_vornoi_map(k[:, 0:2], next_result[-1,:,-1])
-        ax.set_xlabel(r"$k_{\rm east}$")
-        ax.set_ylabel(r"$k_{\rm north}$")
-        ax.set_xlim(-0.1, 0.1)
-        ax.set_ylim(-0.1, 0.1)
-        plt.show()
+
+    dtec = L @ random.normal(random.PRNGKey(24532), shape=(L.shape[0],1))
+    dtec = dtec.reshape((Na, Nd, time_block_size)).transpose((1,0,2))
+
+    with dp:
+        dp.select(pol=slice(0, 1, 1), ant=[10, 50], time=slice(0,time_block_size))
+        dp.tec = np.asarray(dtec[None, ...])
+
+    for a in range(Na):
+        for i in range(time_block_size):
+            ax = plot_vornoi_map(k[:, 0:2], dtec[:, a, i])
+            ax.set_xlabel(r"$k_{\rm east}$")
+            ax.set_ylabel(r"$k_{\rm north}$")
+            ax.set_title(f"{antenna_labels[a]} {times[i]}")
+            plt.show()
+
+        for d in range(Nd):
+            plt.plot(dtec[d, a,:],alpha=0.3)
+        plt.title(f"{antenna_labels[a]}")
+    plt.show()
 
 def debug_main():
     main(output_h5parm='test_datapack.h5',
@@ -131,12 +143,12 @@ def debug_main():
          array_name='lofar',
          start_time=None,
          time_resolution=30.,
-         duration=60.,
+         duration=600.,
          field_of_view_diameter=4.,
-         avg_direction_spacing=6.,
+         avg_direction_spacing=8.,
          east_wind=120.,
          north_wind=0.,
-         time_block_size=2)
+         time_block_size=10)
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")

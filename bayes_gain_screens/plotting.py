@@ -178,8 +178,11 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
 
     # plt.plot(points[:,0], points[:,1], 'ko')
     if relim:
-        ax.set_xlim(vor.min_bound[0] - 0.1 * radius, vor.max_bound[0] + 0.1 * radius)
-        ax.set_ylim(vor.min_bound[1] - 0.1 * radius, vor.max_bound[1] + 0.1 * radius)
+        min_bound = np.min(points, axis=0)
+        max_bound = np.max(points, axis=0)
+        box_size = max_bound - min_bound
+        ax.set_xlim(min_bound[0] - 0.1*box_size[0], max_bound[0] + 0.1*box_size[0])
+        ax.set_ylim(min_bound[1] - 0.1*box_size[1], max_bound[1] + 0.1 * box_size[1])
 
     if colorbar:
         add_colorbar_to_axes(ax, cmap, norm=norm)
