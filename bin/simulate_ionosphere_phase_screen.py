@@ -29,7 +29,7 @@ def get_num_directions(avg_spacing, field_of_view_diameter):
     return n
 
 def compute_conditional_moments(kernel:TomographicKernel, X_new, wind_velocity):
-    f_K = lambda X1, X2: kernel(X1, X2, bottom=300., width=50., l=4., sigma=1., wind_velocity=None)
+    f_K = lambda X1, X2: kernel(X1, X2, bottom=300., width=50., l=4., sigma=1., wind_velocity=wind_velocity)
     K_new_new = f_K(X_new, X_new)
     L_new = jnp.linalg.cholesky(K_new_new + 1e-6*jnp.eye(K_new_new.shape[0]))
     return L_new
@@ -138,7 +138,7 @@ def debug_main():
          duration=600.,
          field_of_view_diameter=4.,
          avg_direction_spacing=8.,
-         east_wind=120.,
+         east_wind=320.,
          north_wind=0.,
          time_block_size=10)
 

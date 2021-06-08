@@ -68,7 +68,7 @@ class TomographicKernel(Kernel):
                 x1 = x1 - t1 * wind_velocity
                 t2 = X2[:, 6:7]
                 x2 = x2 - t2 * wind_velocity
-                return Kxy(x1, k1, x2, k2)
+            return Kxy(x1, k1, x2, k2)
         else:
             if wind_velocity is not None:
                 t1 = X1[:, 6:7]
@@ -79,3 +79,6 @@ class TomographicKernel(Kernel):
                                                  self.ref_ant - t2 * wind_velocity, k2) \
                        - Kxy(x1, k1, self.ref_ant - t2 * wind_velocity, k2) - Kxy(self.ref_ant - t1 * wind_velocity, k1,
                                                                                   x2, k2)
+            else:
+                return Kxy(x1, k1, x2, k2) + Kxy(self.ref_ant, k1,  self.ref_ant, k2) \
+                       - Kxy(x1, k1, self.ref_ant, k2) - Kxy(self.ref_ant, k1,x2, k2)
