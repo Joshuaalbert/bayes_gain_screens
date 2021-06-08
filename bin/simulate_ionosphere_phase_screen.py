@@ -28,8 +28,8 @@ def get_num_directions(avg_spacing, field_of_view_diameter):
     n = max(int(n), 50)
     return n
 
-def compute_conditional_moments(kernel:TomographicKernel, X_new):
-    f_K = lambda X1, X2: kernel(X1, X2, bottom=300., width=50., l=4., sigma=1.)
+def compute_conditional_moments(kernel:TomographicKernel, X_new, wind_velocity):
+    f_K = lambda X1, X2: kernel(X1, X2, bottom=300., width=50., l=4., sigma=1., wind_velocity=None)
     K_new_new = f_K(X_new, X_new)
     L_new = jnp.linalg.cholesky(K_new_new + 1e-6*jnp.eye(K_new_new.shape[0]))
     return L_new
@@ -64,12 +64,11 @@ def main(output_h5parm, ncpu, ra, dec,
                           array_file=ARRAYS[array_name],
                           phase_tracking=(ra, dec),
                           save_name=output_h5parm,
-                          clobber=True,
-                               seed=46)
+                          clobber=True)
 
     with dp:
         dp.current_solset = 'sol000'
-        dp.select(pol=slice(0, 1, 1), ant=[0,10,50], time=slice(0,time_block_size))
+        dp.select(pol=slice(0, 1, 1), ant=[0,10], time=slice(0,time_block_size))
         axes = dp.axes_tec
         patch_names, directions = dp.get_directions(axes['dir'])
         antenna_labels, antennas = dp.get_antennas(axes['ant'])
@@ -100,20 +99,13 @@ def main(output_h5parm, ncpu, ra, dec,
     #K(X_new, X_new) = K(X_new, X_new) - K(X_new, X_old) @ (K(X_old, X_old))^{-1} K(X_old, X_new)
 
     wind_vector = jnp.asarray([east_wind, north_wind, 0.])/1000.#km/s
-    def wind_shift(coords):
-        x = coords[0:3]
-        k = coords[3:6]
-        t = coords[6]
-        return jnp.concatenate([x - wind_vector*t, k])
+
 
     X = make_coord_array(x, k, t[:,None], flat=True)#N,7
-    X = vmap(wind_shift)(X)#N,6
 
     logger.info(f"Sampling {X.shape[0]} new points.")
     kernel = TomographicKernel(x0, x0, RBF(), S_marg=25, compute_tec=False)
-    L = jit(compute_conditional_moments, static_argnums=[0])(kernel, X)
-
-
+    L = jit(compute_conditional_moments, static_argnums=[0])(kernel, X, wind_vector)
 
     dtec = L @ random.normal(random.PRNGKey(24532), shape=(L.shape[0],1))
     dtec = dtec.reshape((Na, Nd, time_block_size)).transpose((1,0,2))
