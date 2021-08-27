@@ -65,7 +65,7 @@ def unconstrained_solve(freqs, key, phase_obs, phase_outliers):
                        num_live_points=20 * prior_chain.U_ndims,
                        sampler_kwargs=dict(num_slices=prior_chain.U_ndims * 4))
 
-    results = ns(key=key1, termination_frac=0.3)
+    results = ns(key=key1, termination_evidence_frac=0.3)
 
     ESS = 900  # emperically estimated for this problem
 
@@ -114,7 +114,7 @@ def constrained_solve(freqs, key, phase_obs, phase_outliers, const_mean, const_s
                        num_live_points=20 * prior_chain.U_ndims,
                        sampler_kwargs=dict(num_slices=prior_chain.U_ndims * 4))
 
-    results = ns(key=key1, termination_frac=0.3)
+    results = ns(key=key1, termination_evidence_frac=0.3)
 
     ESS = 900  # emperically estimated for this problem
 
