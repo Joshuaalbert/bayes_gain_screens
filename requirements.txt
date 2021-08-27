@@ -10,3 +10,4 @@ dm-sonnet
 tensorflow
 graph_nets
 tqdm
+sympy

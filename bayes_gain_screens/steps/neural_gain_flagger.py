@@ -16,7 +16,6 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 import tensorflow as tf
-import tensorflow_probability as tfp
 
 def tf_generator_training_data(time, freqs):
     time = tf.convert_to_tensor(time, dtype=tf.float32)
