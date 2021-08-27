@@ -1,10 +1,13 @@
-from bayes_gain_screens.tomographic_kernel import TomographicKernel
+from jax.config import config
+config.update("jax_enable_x64", True)
+
+from bayes_gain_screens.tomographic_kernel import TomographicKernel, TomographicKernelWeighted
 from bayes_gain_screens.tomographic_kernel.debug import debug_inference
 from bayes_gain_screens.utils import make_coord_array
 from bayes_gain_screens.plotting import plot_vornoi_map
 from bayes_gain_screens.frames import ENU
 from h5parm import DataPack
-from jaxns.gaussian_process.kernels import M12, RBF
+from jaxns.gaussian_process.kernels import RBF, M12
 import jax.numpy as jnp
 from jax import jit, random, vmap, nn
 from h5parm.utils import make_example_datapack
@@ -12,6 +15,7 @@ import astropy.units as au
 import astropy.coordinates as ac
 import pylab as plt
 import haiku as hk
+
 
 def test_compare_with_forward_model():
     dp = make_example_datapack(5, 24, 1, clobber=True)
@@ -36,9 +40,11 @@ def test_compare_with_forward_model():
     x0 = ref_ant.cartesian.xyz.to(au.km).value
     bottom = 200.
     width = 50.
-    l = 15.
+    l = 10.
     sigma = 1.
-    S_marg = 100
+    fed_kernel_params = dict(l=l, sigma=sigma)
+    S_marg = 1000
+    fed_kernel = M12()
 
     def get_points_on_rays(X):
         x = X[0:3]
@@ -56,25 +62,37 @@ def test_compare_with_forward_model():
     plt.scatter(points[:,1], points[:,2], marker='.')
     plt.show()
 
-    kernel = RBF()
-    K = kernel(points, points,l, sigma)
+
+    K = fed_kernel(points, points,l, sigma)
     plt.imshow(K)
     plt.show()
     L = jnp.linalg.cholesky(K + 1e-6*jnp.eye(K.shape[0]))
-    Z = L@random.normal(random.PRNGKey(1245214),(L.shape[0],300))
+    Z = L@random.normal(random.PRNGKey(1245214),(L.shape[0],3000))
     Z = Z.reshape((directions.shape[0],-1, Z.shape[1]))
     Y = jnp.sum(Z * ds[:, None, None], axis=1)
-    plt.imshow(jnp.mean(Y[:, None, :]*Y[None, :, :], axis=2))
+    K = jnp.mean(Y[:, None, :]*Y[None, :, :], axis=2)
+    print("Directly Computed TEC Covariance",K)
+    plt.imshow(K)
     plt.colorbar()
     plt.title("Directly Computed TEC Covariance")
     plt.show()
 
-    kernel = TomographicKernel(x0, x0, RBF(), S_marg=100)
-    K = kernel(X, X, bottom, width, l, sigma)
+    kernel = TomographicKernelWeighted(x0, x0,fed_kernel, S_marg=200, compute_tec=False)
+    K = kernel(X, X, bottom, width, fed_kernel_params)
+    plt.imshow(K)
+    plt.colorbar()
+    plt.title("Analytic Weighted TEC Covariance")
+    plt.show()
+
+    print("Analytic Weighted TEC Covariance",K)
+
+    kernel = TomographicKernel(x0, x0, fed_kernel, S_marg=200, compute_tec=False)
+    K = kernel(X, X, bottom, width, fed_kernel_params)
     plt.imshow(K)
     plt.colorbar()
     plt.title("Analytic TEC Covariance")
     plt.show()
+    print("Analytic TEC Covariance",K)
 
 def test_train_neural_network():
     def model(x, is_training=False):
@@ -111,7 +129,7 @@ def test_tomographic_kernel():
     print(k.shape)
 
     kernel = TomographicKernel(x0, x0, RBF(),S_marg=25)
-    K = jit(lambda X: kernel(X, X, bottom=200., width=50., l=7., sigma=1.))(jnp.asarray(X))
+    K = jit(lambda X: kernel(X, X, bottom=200., width=50., fed_kernel_params=dict(l=7., sigma=1.)))(jnp.asarray(X))
     # K /= jnp.outer(jnp.sqrt(jnp.diag(K)), jnp.sqrt(jnp.diag(K)))
     plt.imshow(K)
     plt.colorbar()

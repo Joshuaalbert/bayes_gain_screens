@@ -2,29 +2,23 @@ import matplotlib
 
 matplotlib.use('Agg')
 
+
 import argparse
 import os
-from timeit import default_timer
 import numpy as np
 import pylab as plt
 import astropy.units as au
 
-from jax import random, vmap, numpy as jnp, tree_map, jit
-from jax.scipy.linalg import solve_triangular
-from jax.scipy.special import logsumexp
-from jax.lax import while_loop
+from jax import random, vmap, numpy as jnp, jit
 
-from bayes_gain_screens.utils import chunked_pmap, get_screen_directions_from_image, link_overwrite
+from bayes_gain_screens.utils import get_screen_directions_from_image, link_overwrite, make_coord_array, axes_move, great_circle_sep
+from bayes_gain_screens.screen_solvers import solve_with_vanilla_kernel
 from bayes_gain_screens.plotting import make_animation, DatapackPlotter, animate_datapack
 
 from h5parm import DataPack
 from h5parm.utils import make_soltab
 
-from jaxns.gaussian_process.kernels import RBF, M12, M32, M52, RationalQuadratic
-from jaxns.prior_transforms import UniformPrior, PriorChain, HalfLaplacePrior, GaussianProcessKernelPrior, \
-    DeterministicTransformPrior
-from jaxns.nested_sampling import NestedSampler
-from jaxns.utils import resample, left_broadcast_mul
+from jaxns.gaussian_process.kernels import RBF, M12, M32, M52
 
 import sys
 import logging
@@ -33,104 +27,24 @@ logger = logging.getLogger(__name__)
 
 TEC_CONV = -8.4479745e6  # mTECU/Hz
 
-def log_normal_outliers(x, mean, cov, sigma):
-    """
-    Computes log-Normal density with outliers removed.
-
-    Args:
-        x: RV value
-        mean: mean of Gaussian
-        cov: covariance of underlying, minus the obs. covariance
-        sigma: stddev's of obs. error, inf encodes an outlier.
-
-    Returns: a normal density for all points not of inf stddev obs. error.
-    """
-    C = cov / (sigma[:, None] * sigma[None, :]) + jnp.eye(cov.shape[0])
-    L = jnp.linalg.cholesky(C)
-    Ls = sigma[:, None] * L
-    log_det = jnp.sum(jnp.where(jnp.isinf(sigma), 0., jnp.log(jnp.diag(Ls))))
-    dx = (x - mean)
-    dx = solve_triangular(L, dx / sigma, lower=True)
-    maha = dx @ dx
-    log_likelihood = -0.5 * jnp.sum(~jnp.isinf(sigma)) * jnp.log(2. * jnp.pi) \
-                     - log_det \
-                     - 0.5 * maha
-    return log_likelihood
-
-def log_normal(x, mean, cov, sigma):
-    """
-    Computes log-Normal density.
-
-    Args:
-        x: RV value
-        mean: mean of Gaussian
-        cov: covariance of underlying, minus the obs. covariance
-        sigma: stddev's of obs. error, inf encodes an outlier.
-
-    Returns: a normal density for all points not of inf stddev obs. error.
-    """
-    C = cov + jnp.diag(sigma**2)
-    L = jnp.linalg.cholesky(C)
-    log_det = jnp.sum(jnp.log(jnp.diag(L)))
-    dx = (x - mean)
-    dx = solve_triangular(L, dx / sigma, lower=True)
-    maha = dx @ dx
-    log_likelihood = -0.5 * dx.size * jnp.log(2. * jnp.pi) \
-                     - log_det \
-                     - 0.5 * maha
-    return log_likelihood
-
-
-def marginalise_static(key, samples, log_weights, ESS, fun):
-    """
-    Marginalises function over posterior samples, where ESS is static.
-
-    Args:
-        key: PRNG key
-        samples: dict of batched array of nested sampling samples
-        log_weights: log weights from nested sampling
-        ESS: static effective sample size
-        fun: callable(**kwargs) to marginalise.
-
-    Returns: expectation over resampled samples.
-    """
-    samples = resample(key, samples, log_weights, S=ESS)
-    marginalised = jnp.mean(vmap(lambda d: fun(**d))(samples), axis=0)
-    return marginalised
-
-
-def marginalise(key, samples, log_weights, ESS, fun):
-    """
-    Marginalises function over posterior samples, where ESS can be dynamic.
-
-    Args:
-        key: PRNG key
-        samples: dict of batched array of nested sampling samples
-        log_weights: log weights from nested sampling
-        ESS: dynamic effective sample size
-        fun: callable(**kwargs) to marginalise.
-
-    Returns: expectation over resampled samples.
-    """
-
-    def body(state):
-        (key, i, marginalised) = state
-        key, resample_key = random.split(key, 2)
-        _samples = tree_map(lambda v: v[0], resample(resample_key, samples, log_weights, S=1))
-        marginalised += fun(**_samples)
-        return (key, i + 1., marginalised)
-
-    test_output = fun(**tree_map(lambda v: v[0], samples))
-    (_, count, marginalised) = while_loop(lambda state: state[1] < ESS,
-                                          body,
-                                          (key, jnp.array(0.), jnp.zeros_like(test_output)))
-    marginalised = marginalised / count
-    return marginalised
-
 @jit
 def nn_interp(x,y,xstar):
+    """
+    Nearest-neighbour interpolation.
+
+    Args:
+        x: [N,D]
+        y: [N]
+        xstar: [M,D]
+
+    Returns:
+        [M] y interpolated from x to xstar.
+    """
     def single_interp(xstar):
-        dx = jnp.linalg.norm(xstar - x, axis=1)
+        #N
+        dx = great_circle_sep(ra1=x[:,0]*jnp.pi/180.,dec1=x[:,1]*jnp.pi/180.,
+                              ra2=xstar[0]*jnp.pi/180.,dec2=xstar[1]*jnp.pi/180.)
+        # dx = jnp.linalg.norm(xstar - x, axis=-1)
         dx = jnp.where(dx == 0., jnp.inf, dx)
         imin = jnp.argmin(dx)
         return y[imin]
@@ -138,8 +52,22 @@ def nn_interp(x,y,xstar):
 
 @jit
 def nn_smooth(x,y,xstar,outliers=None):
+    """
+    Smoothed nearest neighbours, where the smoothing length is tuned to the local nearest neighbour distance.
+
+    Args:
+        x: [N,D]
+        y: [N]
+        xstar: [M,D]
+
+    Returns:
+        [M] y interpolated from x to xstar.
+    """
     def single_interp(xstar):
-        dx = jnp.linalg.norm(xstar - x, axis=1)
+        # N
+        dx = great_circle_sep(ra1=x[:, 0] * jnp.pi / 180., dec1=x[:, 1] * jnp.pi / 180.,
+                              ra2=xstar[0] * jnp.pi / 180., dec2=xstar[1] * jnp.pi / 180.)
+        # dx = jnp.linalg.norm(xstar - x, axis=-1)
         nn_dist = jnp.min(jnp.where(dx == 0., jnp.inf, dx))
         dx = dx/nn_dist
         weight = jnp.exp(-0.5*dx**2)
@@ -149,240 +77,19 @@ def nn_smooth(x,y,xstar,outliers=None):
         return jnp.sum(y*weight)
     return vmap(single_interp)(xstar)
 
-def single_screen(key, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, screen_directions, freqs):
-    """
-    Computes a screen over `screen_directions` conditioned on data in `directions`.
-    Uses a 3-rd order polynomial in frequency approximation for amplitude.
-    Computes a screen for const on the unit circle using a Cartesian projection.
-
-    Args:
-        key: PRNG key
-        amp: [Nd, Nf] amplitudes
-        tec_mean: [Nd] tec estimates
-        tec_std: [Nd] tec uncert estimates with jnp.inf meaning outlier (might be extra remaining outliers)
-        const: [Nd] constant phase estimates
-        clock: [Nd] clock estimates
-        directions: [Nd, 2] directions of data in radians
-        screen_directions: [Nd_screen, 2] directions of screen points in radians
-        freqs: [Nf] freqs in Hz
-
-    Returns: tuple of posterior means
-        post_phase
-        post_amp
-        post_tec
-        post_const
-        post_clock
-    """
-    Nd = directions.shape[0]
-    Nd_screen = screen_directions.shape[0]
-
-    # fix case of over flagging
-    tec_std = jnp.where(jnp.sum(jnp.isinf(tec_std)) > 0.5 * tec_std.size, 0., tec_std)
-
-    post_amp = vmap(lambda amp: nn_smooth(directions,amp,screen_directions))(amp.T).T
-    post_const = nn_smooth(directions, const, screen_directions)
-    post_clock = nn_smooth(directions, clock ,screen_directions)
-    # post_tec = nn_smooth(directions, tec_mean, screen_directions, jnp.isinf(tec_std))
-
-    def _min_dist(_direction):
-        dist = jnp.linalg.norm(_direction - directions, axis=1)
-        return jnp.min(jnp.where(dist == 0., jnp.inf, dist))
-
-    minimum_dist = jnp.min(vmap(_min_dist)(directions))
-    avg_dist2 = jnp.mean(vmap(_min_dist)(directions) ** 2)
-
-    def _max_dist(_direction):
-        dist = jnp.linalg.norm(_direction - directions, axis=1)
-        return jnp.max(dist)
-
-    maximum_dist = jnp.max(vmap(_max_dist)(screen_directions))
-
-    def _nearest_diff(_v, _direction, v):
-        dist = jnp.linalg.norm(_direction - directions, axis=1)
-        idx = jnp.argmin(jnp.where(dist == 0., jnp.inf, dist))
-        return _v - v[idx]
-
-    def build_sigma_est(v):
-        sigma2_est = jnp.mean(
-            jnp.square(vmap(lambda _v, _directions: _nearest_diff(_v, _directions, v))(v, directions)))
-        sigma2_min = sigma2_est * jnp.exp(0.5 * avg_dist2 / maximum_dist ** 2)
-        sigma2_max = sigma2_est * jnp.exp(0.5 * avg_dist2 / minimum_dist ** 2)
-        return jnp.sqrt(sigma2_min), jnp.sqrt(sigma2_max)
-
-
-    def gp_inference(key, v, obs_uncert, kernel):
-        # normalise
-        v_mean = jnp.mean(v)
-        v_std = jnp.maximum(jnp.std(v), 1e-6)
-        v = (v - v_mean) / v_std
-        obs_uncert = obs_uncert / v_std
-        # protect against situation of singular evidence distribution
-        v = v + 0.001*random.normal(key,shape=v.shape)
-
-        l = HalfLaplacePrior('l', jnp.sqrt(avg_dist2), tracked=True)
-        sigma = HalfLaplacePrior('sigma', 1.)#build_sigma_est(v)[1])#UniformPrior('sigma', *build_sigma_est(v))#
-        uncert = HalfLaplacePrior('_uncert', 0.05)
-        uncert = DeterministicTransformPrior('uncert',
-                                             lambda _uncert: jnp.sqrt(obs_uncert ** 2 + _uncert ** 2),
-                                             obs_uncert.shape, uncert, tracked=True)
-
-        kernel_params = [l, sigma]
-
-        if kernel.__class__.__name__ == 'RationalQuadratic':
-            alpha = UniformPrior('alpha', 0.5, 50.)
-            kernel_params.append(alpha)
-
-        K = GaussianProcessKernelPrior('K',
-                                       kernel,
-                                       directions,
-                                       *kernel_params,
-                                       tracked=True)
-        kernel_param_names = [p.name for p in kernel_params]
-
-        def predict_f(K, uncert, **kwargs):
-            # (K + sigma.sigma)^-1 = sigma^-1.(sigma^-1.K.sigma^-1 + I)^-1.sigma^-1
-            kernel_params = [kwargs.get(n) for n in kernel_param_names]
-            Kstar = kernel(directions, screen_directions, *kernel_params)
-            C = K / (uncert[:, None] * uncert[None, :]) + jnp.eye(K.shape[0])
-            JT = jnp.linalg.solve(C, Kstar / uncert[:, None])
-            return (JT.T @ (v / uncert)) * v_std + v_mean
-
-        def predict_fvar(K, uncert, **kwargs):
-            # (K + sigma.sigma)^-1 = sigma^-1.(sigma^-1.K.sigma^-1 + I)^-1.sigma^-1
-            sigma = kwargs.get('sigma')
-            kernel_params = [kwargs.get(n) for n in kernel_param_names]
-            Kstar = kernel(directions, screen_directions, *kernel_params)
-            C = K / (uncert[:, None] * uncert[None, :]) + jnp.eye(K.shape[0])
-            JT = jnp.linalg.solve(C, Kstar / uncert[:, None])
-            return (sigma ** 2 * jnp.eye(Nd_screen) - jnp.diag(JT.T @ (Kstar / uncert[:, None]))) * v_std ** 2
-
-        def log_likelihood(K, uncert, **kwargs):
-            return log_normal_outliers(v, 0., K, uncert)
-
-        prior_chain = PriorChain().push(K).push(uncert)
-
-        # print(prior_chain)
-
-        ns = NestedSampler(log_likelihood,
-                           prior_chain,
-                           sampler_name='slice'
-                           )
-
-        key, key_ns = random.split(key,2)
-        results = ns(key=key,
-                     num_live_points=100,
-                     max_samples=5e4,
-                     collect_samples=True,
-                     only_marginalise=False,
-                     termination_frac=0.01,
-                     sampler_kwargs=dict(depth=4, num_slices=4))
-
-
-        key, key_post_f, key_post_fvar = random.split(key, 3)
-        post_f = marginalise_static(key_post_f, results.samples, results.log_p, 200, predict_f)
-        # post_fvar = marginalise_static(key_post_fvar, results.samples, results.log_p, 500, predict_fvar)
-        return post_f, results.logZ, results
-
-
-    key, key_tec = random.split(key, 2)
-    kernels = [RationalQuadratic()]
-    def gp_smooth(key, v, obs_uncert):
-        keys = random.split(key, len(kernels))
-        post_f, logZ, results = [],[], []
-        for key, kernel in zip(keys, kernels):
-            _post_f, _logZ, _results = gp_inference(key, v, obs_uncert, kernel)
-            post_f.append(_post_f)
-            logZ.append(_logZ)
-            results.append(_results)
-        logZ = jnp.asarray(logZ)
-        post_f = jnp.stack(post_f, axis=0)
-        weights = jnp.exp(logZ - logsumexp(logZ))
-        post_f = jnp.sum(left_broadcast_mul(weights, post_f), axis=0)
-        return post_f, weights, results
-
-    # logger.info("Performing tec inference")
-    post_tec, weights, results = gp_smooth(key_tec, tec_mean, tec_std)
-
-    # logger.info("Weights: {}".format(weights))
-    # post_tec.block_until_ready()
-    # # t0 = default_timer()
-    # # post_tec, weights, results = gp_smooth(key_tec, tec_mean, tec_std)
-    # # post_tec.block_until_ready()
-    # # print(default_timer() - t0)
-    #
-    # plot_diagnostics(results[0])
-    # plot_cornerplot(results[0], vars=['l', 'sigma', '_uncert', 'alpha'])
-
-    # plot_vornoi_map(directions, colors=tec_mean, cmap=plt.cm.PuOr, relim=True)
-    # plt.show()
-    # plot_vornoi_map(screen_directions, colors=post_tec, cmap=plt.cm.PuOr, relim=True)
-    # plt.show()
-    # #
-    # plot_vornoi_map(directions, colors=const, cmap=plt.cm.hsv, vmin=-np.pi, vmax=np.pi, relim=True)
-    # plt.show()
-    # plot_vornoi_map(screen_directions, colors=post_const,cmap=plt.cm.hsv,vmin=-np.pi, vmax=np.pi, relim=True)
-    # plt.show()
-    # #
-    # plot_vornoi_map(directions, colors=clock, cmap=plt.cm.PuOr, relim=True)
-    # plt.show()
-    # plot_vornoi_map(screen_directions, colors=post_clock, cmap=plt.cm.PuOr, relim=True)
-    # plt.show()
-    # #
-    # plot_vornoi_map(directions, colors=amp[:,12], vmin=0.5, vmax=1.5, relim=True)
-    # plt.show()
-    # plot_vornoi_map(screen_directions, colors=post_amp[:, 12], vmin=0.5, vmax=1.5, relim=True)
-    # plt.show()
-
-    post_phase = post_tec[:, None] * (TEC_CONV / freqs) \
-                 + post_const[:, None] \
-                 + post_clock[:, None] * (2. * jnp.pi * 1e-9 * freqs)
-
-    return post_phase, post_amp, post_tec, post_const, post_clock
-
-
-def screen_model(amp, tec_mean, tec_std, tec_outliers, const, clock, directions, screen_directions, freqs):
-    Nd_screen = screen_directions.shape[0]
-    Nd, Na, Nf, Nt = amp.shape
-    tec_mean = tec_mean.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
-    tec_std = tec_std.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
-    tec_outliers = tec_outliers.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
-    const = const.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
-    clock = clock.transpose((1, 2, 0)).reshape((Na * Nt, Nd))
-    amp = amp.transpose((1, 3, 0, 2)).reshape((Na * Nt, Nd, Nf))
-
-    T = Na * Nt
-    keys = random.split(random.PRNGKey(int(default_timer())), T)
-
-    # m = 51872
-    # single_screen(keys[m], amp[m], tec_mean[m], tec_std[m], const[m], clock[m], directions, screen_directions, freqs)
-    # return
-
-    post_phase, post_amp, post_tec, post_const, post_clock = \
-        chunked_pmap(lambda key, amp, tec_mean, tec_std, tec_outliers, const, clock:
-                     single_screen(key, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, screen_directions, freqs),
-                     keys, amp, tec_mean, tec_std, tec_outliers, const, clock, debug_mode=False, chunksize=None)
-
-    post_phase = post_phase.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
-    post_amp = post_amp.reshape((Na, Nt, Nd_screen, Nf)).transpose((2, 0, 3, 1))
-    post_tec = post_tec.reshape((Na, Nt, Nd_screen)).transpose((2, 0, 1))
-    post_const = post_const.reshape((Na, Nt, Nd_screen)).transpose((2, 0, 1))
-    post_clock = post_clock.reshape((Na, Nt, Nd_screen)).transpose((2, 0, 1))
-
-    return post_phase, post_amp, post_tec, post_const, post_clock
-
 
 def prepare_soltabs(dds5_h5parm, dds6_h5parm, screen_directions):
-    logger.info("Creating sol000/phase000+amplitude000+tec000+const000+clock000")
+    logger.info("Creating sol000/phase000+amplitude000+tec000+const000")
     make_soltab(dds5_h5parm, from_solset='sol000', to_solset='sol000', from_soltab='phase000',
-                to_soltab=['phase000', 'amplitude000', 'tec000', 'const000', 'clock000'],
+                to_soltab=['phase000', 'amplitude000', 'tec000', 'const000'],
                 remake_solset=True,
                 to_datapack=dds6_h5parm,
                 directions=screen_directions)
 
 
-def generate_data(dds5_h5parm):
+def get_data(dds5_h5parm):
     with DataPack(dds5_h5parm, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1), ant=slice(1,None,1))
+        select = dict(pol=slice(0, 1, 1))
         h.current_solset = 'sol000'
         h.select(**select)
         amp, axes = h.amplitude
@@ -391,36 +98,23 @@ def generate_data(dds5_h5parm):
         phase = phase[0, ...]
         _, freqs = h.get_freqs(axes['freq'])
         freqs = freqs.to(au.Hz).value
+        _, times = h.get_times(axes['time'])
+        patch_names, directions = h.get_directions(axes['dir'])
+        antenna_labels, antennas = h.get_antennas(axes['ant'])
         tec_mean, axes = h.tec
         tec_mean = tec_mean[0, ...]
         tec_std, axes = h.weights_tec
+        tec_std = tec_std[0, ...]
         tec_outliers, _ = h.tec_outliers
         tec_outliers = tec_outliers[0,...]
-        # tec_std = jnp.where(tec_outliers == 1., jnp.inf, tec_std)
-        tec_std = tec_std[0, ...]
+        # tec_std = jnp.where(tec_outliers == 1., jnp.inf, tec_std) # already done
         const, _ = h.const
         const = const[0, ...]
-        clock, _ = h.clock
-        clock = clock[0, ...]
-        patch_names, directions = h.get_directions(axes['dir'])
-        directions = jnp.stack([directions.ra.rad, directions.dec.rad], axis=-1)
-    return phase, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, freqs
+
+    return phase, amp, tec_mean, tec_std, tec_outliers, const, antennas, directions, freqs, times
 
 def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_results):
-    os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(max(1,ncpu//2))
-    #                            f"--xla_cpu_multi_thread_eigen=false "
-    #                            f"intra_op_parallelism_threads=1")
-    # os.environ.update(
-    #     XLA_FLAGS=(
-    #         '--xla_cpu_multi_thread_eigen=false '
-    #         'intra_op_parallelism_threads=1 '
-    #         'inter_op_parallelism_threads=1 '
-    #     ),
-    #     XLA_PYTHON_CLIENT_PREALLOCATE='false',
-    # )
-    # os.environ['TF_XLA_FLAGS'] = "--intra_op_parallelism_threads=1"
-    # p = psutil.Process()
-    # p.cpu_affinity([0,1,2,3])
+    # os.environ['XLA_FLAGS'] = "--xla_force_host_platform_device_count={}".format(max(1,ncpu//4))
 
     dds5_h5parm = os.path.join(data_dir, 'L{}_DDS5_full_merged.h5'.format(obs_num))
     dds6_h5parm = os.path.join(working_dir, 'L{}_DDS6_full_merged.h5'.format(obs_num))
@@ -428,9 +122,15 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
     logger.info("Looking for {}".format(dds5_h5parm))
     link_overwrite(dds6_h5parm, linked_dds6_h5parm)
 
-    phase, amp, tec_mean, tec_std, tec_outliers, const, clock, directions, freqs = generate_data(dds5_h5parm)
+    phase, amp, dtec_mean, dtec_std, tec_outliers, const, antennas, directions, freqs, times = get_data(dds5_h5parm)
     Nd, Na, Nf, Nt = amp.shape
 
+    times = times.mjd
+    times -= times[0]
+    times *= 86400.
+    dt = jnp.mean(jnp.diff(times))
+
+    #ICRS
     screen_directions, _ = get_screen_directions_from_image(ref_image_fits,
                                                             flux_limit=0.01,
                                                             max_N=max_N,
@@ -441,31 +141,61 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
 
     prepare_soltabs(dds5_h5parm, dds6_h5parm, screen_directions)
 
-    screen_directions = jnp.stack([screen_directions.ra.rad, screen_directions.dec.rad], axis=-1)
+    directions = jnp.stack([directions.ra.deg, directions.dec.deg], axis=1)
+    X = make_coord_array(directions, flat=True)
+    screen_directions = jnp.stack([screen_directions.ra.deg, screen_directions.dec.deg], axis=1)
+    Xstar = make_coord_array(screen_directions, flat=True)
 
-    post_phase, post_amp, post_tec, post_const, post_clock = screen_model(amp, tec_mean, tec_std, tec_outliers, const, clock,
-                                                                          directions, screen_directions, freqs)
+    regularity_window = 5.#minutes over which ionosphere properties remain the same
+    time_block_size = max(1,int(regularity_window*60./dt))
+    logger.info(f"Ionosphere properties assumed constant over {regularity_window} minutes ({time_block_size} timesteps).")
+
+    post_dtec_screen_mean, post_dtec_screen_uncert, lengthscale, sigma, ESS, logZ, likelihood_evals = \
+        solve_with_vanilla_kernel(random.PRNGKey(42),
+                                  dtec=dtec_mean, dtec_uncert=dtec_std,
+                              X=X, Xstar=Xstar,fed_kernel=M32(),
+                              time_block_size=time_block_size,#assume screen hyper-parameters are constant over 10 time-steps.
+                              chunksize=max(1,ncpu//4))
+
+    interp_type = 'nearest_neighbour'
+    amp = axes_move(amp, ['d','a','f','t'],['aft','d'])
+    const = axes_move(const,['d','a','t'],['at','d'])
+    if interp_type == 'nearest_neighbour':
+        post_amp = vmap(lambda amp: nn_interp(directions,amp,screen_directions))(amp.T).T
+        post_const = nn_interp(directions, const, screen_directions)
+    elif interp_type == 'smoothed_nearest_neighbour':
+        post_amp = vmap(lambda amp: nn_smooth(directions, amp, screen_directions))(amp.T).T
+        post_const = nn_smooth(directions, const, screen_directions)
+    else:
+        raise ValueError(f"Invalid interp_type {interp_type}")
+    post_amp = axes_move(post_amp, ['aft', 'd'], ['d', 'a', 'f', 't'],size_dict=dict(a=Na,f=Nf,t=Nt))
+    post_const = axes_move(post_const, ['at', 'd'], ['d', 'a', 't'],size_dict=dict(a=Na,t=Nt))
+
+    post_phase = post_dtec_screen_mean[...,None,:]*(TEC_CONV/freqs[:,None]) + post_const[..., None,:]
+    post_uncert = jnp.abs(post_dtec_screen_uncert[...,None,:]*(TEC_CONV/freqs[:,None]))
+
     #Replace outliers with screen solutions, else the calibrators.
     phase_outliers_replaced_with_screen = jnp.where(tec_outliers[...,None,:], post_phase[:Nd], phase)
 
     with DataPack(dds6_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
-        h.select(pol=slice(0, 1, 1), ant=0)
-        h.amplitude = np.ones((1, screen_directions.shape[0], 1, Nf, Nt))
-        h.select(pol=slice(0, 1, 1), ant=slice(1,None,1))
-        h.tec = np.asarray(post_tec)[None, ...]
+        # set screen
+        h.select(pol=slice(0, 1, 1))
+        h.tec = np.asarray(post_dtec_screen_mean)[None, ...]
+        h.weights_tec = np.asarray(post_dtec_screen_uncert)[None, ...]
         h.const = np.asarray(post_const)[None, ...]
-        h.clock = np.asarray(post_clock)[None, ...]
         h.amplitude = np.asarray(post_amp)[None, ...]
         h.phase = np.asarray(post_phase)[None, ...]
-        h.select(pol=slice(0, 1, 1), dir=slice(0, Nd, 1), ant=slice(1,None,1))
+        h.weights_phase = np.asarray(post_uncert)[None, ...]
+        # put calibrators in original diretions
+        h.select(pol=slice(0, 1, 1), dir=slice(0, Nd, 1))
         h.phase = np.asarray(phase_outliers_replaced_with_screen)[None, ...]
         h.amplitude = np.asarray(amp)[None, ...]
 
     # replace the outlier phase calibrators in dds5
     with DataPack(dds5_h5parm, readonly=False) as h:
         h.current_solset = 'sol000'
-        h.select(pol=slice(0, 1, 1), ant=slice(1,None,1))
+        h.select(pol=slice(0, 1, 1))
         h.phase = np.asarray(phase_outliers_replaced_with_screen)[None, ...]
 
     if plot_results:
@@ -474,6 +204,19 @@ def main(data_dir, working_dir, obs_num, ref_image_fits, ncpu, max_N, plot_resul
         animate_datapack(dds6_h5parm, d, ncpu,
                          vmin=-60,
                          vmax=60., observable='tec', phase_wrap=False, plot_crosses=False,
+                         plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
+                         solset='sol000', cmap=plt.cm.PuOr
+                         )
+        d = os.path.join(working_dir, 'const_screen_plots')
+        animate_datapack(dds6_h5parm, d, ncpu,
+                         vmin=-np.pi,
+                         vmax=np.pi, observable='const', phase_wrap=True, plot_crosses=False,
+                         plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=False,
+                         solset='sol000')
+        d = os.path.join(working_dir, 'amp_screen_plots')
+        animate_datapack(dds6_h5parm, d, ncpu,
+                         vmin=1.5,
+                         vmax=0.5, observable='amp', phase_wrap=False, plot_crosses=False,
                          plot_facet_idx=False, labels_in_radec=True, per_timestep_scale=True,
                          solset='sol000', cmap=plt.cm.PuOr
                          )

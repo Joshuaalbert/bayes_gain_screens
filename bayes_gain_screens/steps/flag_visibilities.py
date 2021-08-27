@@ -99,7 +99,7 @@ def main(data_dir, working_dir, obs_num, new_weights_col):
             vis_ant2 = ant_map[t.getcol('ANTENNA2')]
             vis_times = t.getcol('TIME')
             # indexes closest point in solset
-            time_map = np.searchsorted(0.5 * (times[1:] + times[:-1]), vis_times, side='right')
+            time_map = np.searchsorted(times, vis_times, side='right')
             new_flags = np.maximum(flags[vis_ant1, time_map], flags[vis_ant2, time_map])
             logger.info("Flagged [{} / {}] baselines ({:.2f}%)".format(np.sum(new_flags), new_flags.size,
                                                                  100. * (np.sum(new_flags) / float(new_flags.size))))

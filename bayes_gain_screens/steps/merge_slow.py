@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import jax.numpy as jnp
 from bayes_gain_screens.utils import great_circle_sep, link_overwrite
 from h5parm import DataPack
 from h5parm.utils import make_soltab
@@ -81,9 +82,9 @@ def main(data_dir, working_dir, obs_num):
                 to_soltab=['phase000', 'amplitude000'], remake_solset=True, to_datapack=merged_h5parm)
 
     logger.info("Creating time mapping")
-    time_map = np.array([np.argmin(np.abs(time_slow - t)) for t in time_screen])
+    time_map = np.asarray([np.argmin(np.abs(time_slow - t)) for t in time_screen])
     logger.info("Creating direction mapping")
-    dir_map = np.array([np.argmin(great_circle_sep(directions_slow[:, 0], directions_slow[:, 1], ra, dec))
+    dir_map = np.asarray([jnp.argmin(great_circle_sep(directions_slow[:, 0], directions_slow[:, 1], ra, dec))
                         for (ra, dec) in zip(directions_screen[:, 0], directions_screen[:, 1])])
     #TODO: see if only applying slow on calibrators and screen elsewhere gets rid of artefacts.
     #TODO: see if only applying tec screen gets rid of artefacts (include slow if the above experiment doesn't work)

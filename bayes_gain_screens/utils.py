@@ -1,6 +1,5 @@
 import os
 import time
-from timeit import default_timer
 
 import numpy as np
 import astropy.coordinates as ac
@@ -8,16 +7,16 @@ import astropy.units as au
 from astropy import wcs
 from astropy.io import fits
 
-from jax import local_device_count, tree_map, numpy as jnp, pmap, vmap, jit, tree_multimap, devices as get_devices, \
-    device_get, grad
-from jax.lax import scan, reduce_window
+from jax import numpy as jnp, vmap, grad
+from jax.scipy.ndimage import map_coordinates
+
 from jax.scipy.signal import convolve
 
 from bayes_gain_screens.frames import ENU
 
 from h5parm import DataPack
 
-from dask.threaded import get
+import sympy
 
 import logging
 
@@ -25,6 +24,12 @@ logger = logging.getLogger(__name__)
 dist_type = au.km
 angle_type = au.rad
 
+def build_lookup_index(*arrays):
+    def linear_lookup(values, *coords):
+        fractional_coordinates = jnp.asarray([jnp.interp(coord, array, jnp.arange(array.size))
+                                              for array, coord in zip(arrays, coords)])
+        return map_coordinates(values, fractional_coordinates, order=1)
+    return linear_lookup
 
 def voronoi_finite_polygons_2d(vor, radius):
     """
@@ -207,12 +212,22 @@ def get_coordinates(datapack: DataPack, ref_ant=0, ref_dir=0):
     return X, ref_ant, ref_dir
 
 def great_circle_sep(ra1, dec1, ra2, dec2):
-    dra = np.abs(ra1 - ra2)
+    """
+    Seperation on S1
+    Args:
+        ra1: radians
+        dec1: radians
+        ra2: radians
+        dec2: radians
+
+    Returns: radians
+    """
+    dra = jnp.abs(ra1 - ra2)
     # ddec = np.abs(dec1-dec2)
-    num2 = (np.cos(dec2) * np.sin(dra)) ** 2 + (
-            np.cos(dec1) * np.sin(dec2) - np.sin(dec1) * np.cos(dec2) * np.cos(dra)) ** 2
-    den = np.sin(dec1) * np.sin(dec2) + np.cos(dec1) * np.cos(dec2) * np.cos(dra)
-    return np.arctan2(np.sqrt(num2), den)
+    num2 = (jnp.cos(dec2) * jnp.sin(dra)) ** 2 + (
+            jnp.cos(dec1) * jnp.sin(dec2) - jnp.sin(dec1) * jnp.cos(dec2) * jnp.cos(dra)) ** 2
+    den = jnp.sin(dec1) * jnp.sin(dec2) + jnp.cos(dec1) * jnp.cos(dec2) * jnp.cos(dra)
+    return jnp.arctan2(jnp.sqrt(num2), den)
 
 def make_coord_array(*X, flat=True, coord_map=None):
     """
@@ -552,3 +567,62 @@ def curv(Y, times, i):
         return K
 
     return jnp.min(vmap(K_per_offset)(jnp.arange(-1, 2)))
+
+def axes_move(array, in_axes, out_axes,size_dict=None):
+    """
+    Reshape and transpose named axes.
+
+    Args:
+        array: ndarray
+        in_axes: list of axes. Each element is a formula for the shape, e.g. ['a','bc','d'], where 'bc' is two dimensions flattened in C order.
+        out_axes: list of axes. Each element is a formula for the output shape, e.g. ['a', 'b', 'dc'], is a shape where the last is two dimensions flattened in C order. Must contain axes names from in_axes.
+        size_dict: optional, helper for the sizes of some axes. dict(a=3) would enforce that axes 'a' is size 3.
+
+    Returns:
+        array is reshaped from in_axes to an expanded form, permutated to the correct order, and then reshaped to out_axes.
+
+    Raises:
+        ValueError if shape solution not possible.
+        ValueError if out_axes contains axes not in in_axes
+    """
+    if size_dict is None:
+        size_dict = dict()
+    _in_axes = "".join(in_axes)
+    _out_axes = "".join(out_axes)
+    if set(_in_axes) != set(_out_axes):
+        raise ValueError(f"in_axes {in_axes} should have all the same symbols as out_axes {out_axes}")
+    symbols = {dim: sympy.symbols(dim) for dim in set(list(_in_axes)+list(_out_axes)+list(size_dict.keys()))}
+    def _eq(eq, size):
+        output = sympy.Rational(1)
+        for dim in eq:
+            output *= symbols[dim]
+        return sympy.Eq(output, sympy.Rational(size))
+    # print([_eq(eq, size) for (eq, size) in zip(in_axes, array.shape)] + [_eq(dim, size) for dim, size in size_dict.items()])
+    sol = sympy.solve([_eq(eq, size) for (eq, size) in zip(in_axes, array.shape)] + [_eq(dim, size) for dim, size in size_dict.items()],
+                      # symbols.values(),
+                      dict=True)[0]
+    for sym in symbols.values():
+        if sym not in sol.keys():
+            raise ValueError(f"Not enough information to solve for shape {sym}. Solution is {sol}.")
+    size_dict = {dim:sol[sym] for dim,sym in symbols.items()}
+
+
+    array = array.reshape([size_dict[dim] for dim in _in_axes])
+    perm = [_in_axes.index(d) for d in _out_axes]
+    array = array.transpose(perm)
+    array = array.reshape([np.prod([size_dict[dim] for dim in dim_prod]) for dim_prod in out_axes])
+    return array
+
+def test_axes_move():
+    array = jnp.ones((1,2,3,4))
+    _array = axes_move(array, ['a','b','c','d'], ['d','b','c','a'],size_dict=None)
+    assert _array.shape == (4,2,3,1)
+
+    _array = axes_move(array, ['a', 'b', 'c', 'd'], ['db', 'c', 'a'],size_dict=None)
+    assert _array.shape == (4*2, 3, 1)
+
+    _array = axes_move(array, ['a', 'b', 'c', 'd'], ['c', 'db', 'a'],size_dict=None)
+    assert _array.shape == (3, 4 * 2, 1)
+
+    _array = axes_move(array, ['a', 'b', 'c', 'de'], ['c', 'db', 'a', 'e'], size_dict=dict(e=2))
+    assert _array.shape == (3, 2 * 2, 1, 2)

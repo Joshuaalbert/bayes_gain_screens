@@ -125,9 +125,11 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
              script_name='sub-sources-outside-pb.py', exec_env=lofar_sksp_env),
         Step('solve_dds4', ['subtract'], script_dir=script_dir, script_name='solve_on_subtracted.py',
              exec_env=lofar_sksp_env),
+        Step('neural_gain_flagger', ['solve_dds4'], script_dir=script_dir, script_name='neural_gain_flagger.py',
+             exec_env=bayes_gain_screens_env),
         Step('slow_solve_dds4', ['solve_dds4', 'tec_inference_and_smooth', 'infer_screen'], script_dir=script_dir,
              script_name='slow_solve_on_subtracted.py', exec_env=lofar_sksp_env),
-        Step('tec_inference_and_smooth', ['solve_dds4'], script_dir=script_dir,
+        Step('tec_inference_and_smooth', ['solve_dds4','neural_gain_flagger'], script_dir=script_dir,
              script_name='tec_inference_and_smooth.py', exec_env=bayes_gain_screens_env),
         Step('infer_screen', ['tec_inference_and_smooth'], script_dir=script_dir,
              script_name='infer_screen.py',
@@ -220,6 +222,11 @@ def main(archive_dir, script_dir, root_working_dir, obs_num, region_file, ncpu, 
         .add_cmd_arg('ncpu', ncpu) \
         .add_cmd_arg('obs_num', obs_num) \
         .add_cmd_arg('data_dir', data_dir)
+
+    steps['neural_gain_flagger'] \
+        .add_cmd_arg('obs_num', obs_num) \
+        .add_cmd_arg('data_dir', data_dir) \
+        .add_cmd_arg('plot_results', True)
 
     steps['tec_inference_and_smooth'] \
         .add_cmd_arg('obs_num', obs_num) \
@@ -425,6 +432,7 @@ def debug_main():
          do_subtract_outside_pb=0,
          do_image_subtract_dirty=0,
          do_solve_dds4=0,
+         do_neural_gain_flagger=0,
          do_tec_inference_and_smooth=1,
          do_slow_solve_dds4=1,
          do_merge_slow=1,
@@ -447,6 +455,7 @@ STEPS = [
     "subtract",
     "subtract_outside_pb",
     "solve_dds4",
+    "neural_gain_flagger",
     "slow_solve_dds4",
     "tec_inference_and_smooth",
     "infer_screen",

@@ -37,6 +37,7 @@ do_choose_calibrators=2
 do_subtract=2
 do_subtract_outside_pb=2
 do_solve_dds4=2
+do_neural_gain_flagger=2
 do_slow_solve_dds4=2
 do_tec_inference_and_smooth=2
 do_infer_screen=2
@@ -79,6 +80,7 @@ L=(obs_num \
     do_subtract \
     do_subtract_outside_pb \
     do_solve_dds4 \
+    do_neural_gain_flagger \
     do_slow_solve_dds4 \
     do_tec_inference_and_smooth \
     do_infer_screen \
@@ -188,6 +190,7 @@ cmd="python $HOME/git/bayes_gain_screens/bin/gain_screens_pipeline.py \
         --do_subtract=$do_subtract \
         --do_subtract_outside_pb=$do_subtract_outside_pb \
         --do_solve_dds4=$do_solve_dds4 \
+        --do_neural_gain_flagger=$do_neural_gain_flagger \
         --do_slow_solve_dds4=$do_slow_solve_dds4 \
         --do_tec_inference_and_smooth=$do_tec_inference_and_smooth \
         --do_infer_screen=$do_infer_screen \

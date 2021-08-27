@@ -68,7 +68,7 @@ def main(output_h5parm, ncpu, ra, dec,
 
     with dp:
         dp.current_solset = 'sol000'
-        dp.select(pol=slice(0, 1, 1), ant=[0,10], time=slice(0,time_block_size))
+        dp.select(pol=slice(0, 1, 1), ant=[0,10,20], time=slice(0,time_block_size))
         axes = dp.axes_tec
         patch_names, directions = dp.get_directions(axes['dir'])
         antenna_labels, antennas = dp.get_antennas(axes['ant'])
@@ -85,6 +85,9 @@ def main(output_h5parm, ncpu, ra, dec,
     t -= t[0]
     dt = time_resolution
     x = antennas.cartesian.xyz.to(au.km).value.T[1:,:]
+    print(x[1]-x[0])
+    # x[1,:] = x[0,:]
+    # x[1,0] += 0.3
     k = directions.cartesian.xyz.value.T
     logger.info(f"Directions: {directions}")
     logger.info(f"Antennas: {x} {antenna_labels}")
@@ -104,7 +107,7 @@ def main(output_h5parm, ncpu, ra, dec,
     X = make_coord_array(x, k, t[:,None], flat=True)#N,7
 
     logger.info(f"Sampling {X.shape[0]} new points.")
-    kernel = TomographicKernel(x0, x0, RBF(), S_marg=25, compute_tec=False)
+    kernel = TomographicKernel(x0, x0, RBF(), S_marg=25, compute_tec=True)
     L = jit(compute_conditional_moments, static_argnums=[0])(kernel, X, wind_vector)
 
     dtec = L @ random.normal(random.PRNGKey(24532), shape=(L.shape[0],1))
@@ -114,17 +117,22 @@ def main(output_h5parm, ncpu, ra, dec,
         dp.select(pol=slice(0, 1, 1), ant=[10, 50], time=slice(0,time_block_size))
         dp.tec = np.asarray(dtec[None, ...])
 
+    fig, axs = plt.subplots(Na,time_block_size, sharex=True, sharey=True, figsize=(2*time_block_size,2*Na))
+
     for a in range(Na):
         for i in range(time_block_size):
-            ax = plot_vornoi_map(k[:, 0:2], dtec[:, a, i])
-            ax.set_xlabel(r"$k_{\rm east}$")
-            ax.set_ylabel(r"$k_{\rm north}$")
-            ax.set_title(f"{antenna_labels[a]} {times[i]}")
-            plt.show()
+            ax = axs[a][i]
+            ax = plot_vornoi_map(k[:, 0:2], dtec[:, a, i], ax=ax, colorbar=False)
+            if a == (Na-1):
+                ax.set_xlabel(r"$k_{\rm east}$")
+            if i == 0:
+                ax.set_ylabel(r"$k_{\rm north}$")
+            # ax.set_title(f"{} {times[i]}")
+            # plt.show()
 
-        for d in range(Nd):
-            plt.plot(dtec[d, a,:],alpha=0.3)
-        plt.title(f"{antenna_labels[a]}")
+        # for d in range(Nd):
+        #     plt.plot(dtec[d, a,:],alpha=0.3)
+        # plt.title(f"{antenna_labels[a]}")
     plt.show()
 
 def debug_main():
@@ -134,13 +142,13 @@ def debug_main():
          dec=30.,
          array_name='lofar',
          start_time=None,
-         time_resolution=30.,
+         time_resolution=10.,
          duration=600.,
          field_of_view_diameter=4.,
          avg_direction_spacing=8.,
-         east_wind=320.,
+         east_wind=150.,
          north_wind=0.,
-         time_block_size=10)
+         time_block_size=5)
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")

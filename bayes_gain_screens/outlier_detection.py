@@ -4,7 +4,8 @@ from jax._src.scipy.special import erf
 
 import numpy as np
 
-from bayes_gain_screens.utils import inverse_update, windowed_mean, chunked_pmap, windowed_nanmean, polyfit
+from bayes_gain_screens.utils import inverse_update, windowed_mean, windowed_nanmean, polyfit
+from jaxns.utils import chunked_pmap
 
 
 def leave_one_out_predictive(K, Cinv, Y_obs):
