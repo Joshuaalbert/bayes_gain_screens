@@ -254,8 +254,7 @@ class Model(AbstractModule):
         (img, img_true, outliers) = batch
         del outliers
         del img_true
-        img = tf.concat([img, tf.zeros_like(img[..., 0:1])], axis=-1)
-        logits1 = self.res_layers1(img)
+        logits1 = self._decoder(self._encoder(img))#...,3
         return logits1
 
 
