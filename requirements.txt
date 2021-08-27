@@ -8,3 +8,5 @@ astropy
 pyregion
 dm-sonnet
 tensorflow
+graph_nets
+tqdm

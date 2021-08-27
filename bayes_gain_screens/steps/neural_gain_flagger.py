@@ -211,7 +211,7 @@ def main(data_dir, obs_num, working_dir, plot_results):
     model = Model()
     train_one_epoch = TrainOneEpoch(model, loss, opt)
     vanilla_training_loop(train_one_epoch, training_dataset=training_dataset, test_dataset=test_dataset,
-                          num_epochs=0, early_stop_patience=3,
+                          num_epochs=1000, early_stop_patience=3,
                           log_dir=os.path.join(working_dir, 'tf_logs'),
                           checkpoint_dir=os.path.join(working_dir, 'tf_checkpoints'))
 
