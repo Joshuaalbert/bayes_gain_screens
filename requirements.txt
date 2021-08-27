@@ -6,3 +6,5 @@ matplotlib
 cmocean
 astropy
 pyregion
+dm-sonnet
+tensorflow
