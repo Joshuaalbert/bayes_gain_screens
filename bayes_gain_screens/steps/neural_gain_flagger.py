@@ -132,129 +132,32 @@ def mish(x):
     return x * tf.math.tanh(tf.math.softplus(x))
 
 
+class ResidualBlock(AbstractModule):
+    def __init__(self, name=None):
+        super(ResidualBlock, self).__init__(name=name)
 
-class EncoderResBlock2D(AbstractModule):
-    def __init__(self, out_size, post_gain, name=None):
-        super(EncoderResBlock2D, self).__init__(name=name)
-        assert out_size % 4 == 0
-        self.out_size = out_size
-        hidden_size = out_size // 4
-        self.id_path = snt.Conv2D(self.out_size, 1, name='id_path')
-        self.conv_block = snt.Sequential([snt.LayerNorm(-1, True, True, name='layer_norm'),
-                                          tf.nn.relu, snt.Conv2D(hidden_size, 3, padding="SAME", name='conv_1'),
-                                          tf.nn.relu, snt.Conv2D(hidden_size, 3, padding="SAME", name='conv_2'),
-                                          tf.nn.relu, snt.Conv2D(hidden_size, 3, padding="SAME", name='conv_3'),
-                                          tf.nn.relu, snt.Conv2D(out_size, 1, padding="SAME", name='conv_4')])
-        self.post_gain = post_gain
+        self.conv_layers = snt.Sequential([
+            snt.Conv2D(8, (3, 5), padding='SAME'), tf.nn.leaky_relu,
+            snt.Conv2D(16, (3, 3), padding='SAME'), tf.nn.leaky_relu,
+            snt.Conv2D(3, (3, 5), padding='SAME')])
 
     def _build(self, img, **kwargs):
-        output = self.id_path(img) + self.post_gain * self.conv_block(img)
-        return output
-
-
-class Encoder2D(AbstractModule):
-    def __init__(self, hidden_size, num_groups=2, name=None):
-        super(Encoder2D, self).__init__(name=name)
-        self.shrink_factor = 2 ** (num_groups - 1)
-        num_blk_per_group = 2
-        num_layers = num_groups * num_blk_per_group
-        post_gain = 1. / num_layers ** 2
-
-        def _single_group(group_idx):
-            blk_hidden_size = 2 ** group_idx * hidden_size
-            res_blocks = [EncoderResBlock2D(blk_hidden_size, post_gain, name=f'blk_{res_blk}')
-                          for res_blk in range(num_blk_per_group)]
-            if group_idx < num_groups - 1:
-                res_blocks.append(lambda x: tf.nn.max_pool2d(x, 2, strides=2, padding='SAME'))
-            return snt.Sequential(res_blocks, name=f'group_{group_idx}')
-
-        groups = [snt.Conv2D(hidden_size, 5, padding="SAME", name='input_group')]
-        for groud_idx in range(num_groups):
-            groups.append(_single_group(groud_idx))
-
-        self.blocks = snt.Sequential(groups, name='groups')
-
-    def _build(self, img, **kwargs):
-        return self.blocks(img)
-
-
-class DecoderResBlock2D(AbstractModule):
-    def __init__(self, out_size, post_gain, name=None):
-        super(DecoderResBlock2D, self).__init__(name=name)
-        assert out_size % 4 == 0
-        self.out_size = out_size
-        hidden_size = out_size // 4
-        self.id_path = snt.Conv2D(self.out_size, 1, name='id_path')
-        self.conv_block = snt.Sequential([snt.LayerNorm(-1,True, True, name='layer_norm'),
-                                          tf.nn.relu, snt.Conv2D(hidden_size, 1, padding="SAME", name='conv_1'),
-                                          tf.nn.relu, snt.Conv2D(hidden_size, 3, padding="SAME", name='conv_2'),
-                                          tf.nn.relu, snt.Conv2D(hidden_size, 3, padding="SAME", name='conv_3'),
-                                          tf.nn.relu, snt.Conv2D(out_size, 3, padding="SAME", name='conv_4')])
-        self.post_gain = post_gain
-
-    def _build(self, img, **kwargs):
-        output = self.id_path(img) + self.post_gain * self.conv_block(img)
-        return output
-
-
-def upsample(x):
-    """
-    Doubles resolution.
-
-    Args:
-        x: [batch, W, H, ..., C]
-
-    Returns:
-        [batch, 2*W, 2*H, 2*..., C]
-    """
-    out = x
-    for i in range(len(x.shape)-2):
-        out = tf.repeat(out, 2, axis=1+i)
-    return out
-
-
-class Decoder2D(AbstractModule):
-    def __init__(self, hidden_size, num_channels=1, num_groups=2, name=None):
-        super(Decoder2D, self).__init__(name=name)
-        self.shrink_factor = 2 ** (num_groups - 1)
-        num_blk_per_group = 2
-        num_layers = num_groups * num_blk_per_group
-        post_gain = 1. / num_layers ** 2
-
-        def _single_group(group_idx):
-            blk_hidden_size = 2 ** (num_groups - group_idx - 1) * hidden_size
-            res_blocks = [DecoderResBlock2D(blk_hidden_size, post_gain, name=f'blk_{res_blk}')
-                          for res_blk in range(num_blk_per_group)]
-            if group_idx < num_groups - 1:
-                res_blocks.append(upsample)
-            return snt.Sequential(res_blocks, name=f'group_{group_idx}')
-
-        groups = [snt.Conv2D(hidden_size // 2, 1, padding="SAME", name='input_group')]
-        for groud_idx in range(num_groups):
-            groups.append(_single_group(groud_idx))
-        groups.append(
-            snt.Sequential(
-                [tf.nn.relu, snt.Conv2D(num_channels, 1, padding="SAME", name='likelihood_params_conv')],
-                name='output_group'))
-
-        self.blocks = snt.Sequential(groups, name='groups')
-
-    def _build(self, img, **kwargs):
-        return self.blocks(img)
+        img = self.conv_layers(img) + img
+        return img
 
 
 class Model(AbstractModule):
     def __init__(self, name=None):
         super(Model, self).__init__(name=name)
 
-        self._encoder = Encoder2D(hidden_size=8, num_groups=2)
-        self._decoder = Decoder2D(hidden_size=8, num_channels=3, num_groups=2)
+        self.res_layers1 = snt.Sequential([ResidualBlock(), ResidualBlock()])
 
     def _build(self, batch, **kwargs):
         (img, img_true, outliers) = batch
         del outliers
         del img_true
-        logits1 = self._decoder(self._encoder(img))#...,3
+        img = tf.concat([img, tf.zeros_like(img[..., 0:1])], axis=-1)
+        logits1 = self.res_layers1(img)
         return logits1
 
 
@@ -308,7 +211,7 @@ def main(data_dir, obs_num, working_dir, plot_results):
     model = Model()
     train_one_epoch = TrainOneEpoch(model, loss, opt)
     vanilla_training_loop(train_one_epoch, training_dataset=training_dataset, test_dataset=test_dataset,
-                          num_epochs=1000, early_stop_patience=5,
+                          num_epochs=1000, early_stop_patience=3,
                           log_dir=os.path.join(working_dir, 'tf_logs'),
                           checkpoint_dir=os.path.join(working_dir, 'tf_checkpoints'))
 
