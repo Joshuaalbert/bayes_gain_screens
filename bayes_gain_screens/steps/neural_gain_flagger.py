@@ -133,16 +133,19 @@ def mish(x):
 
 
 class ResidualBlock(AbstractModule):
-    def __init__(self, name=None):
+    def __init__(self, N, name=None):
         super(ResidualBlock, self).__init__(name=name)
 
         self.conv_layers = snt.Sequential([
-            snt.Conv2D(8, (3, 5), padding='SAME'), tf.nn.leaky_relu,
-            snt.Conv2D(16, (3, 3), padding='SAME'), tf.nn.leaky_relu,
-            snt.Conv2D(3, (3, 5), padding='SAME')])
+            snt.Conv2D(N*2, (3, 5), padding='SAME',name='conv_1'), tf.nn.relu,
+            snt.Conv2D(N, (3, 3), padding='SAME',name='conv_2'), tf.nn.relu,
+            snt.Conv2D(N, (3, 3), padding='SAME',name='conv_3'), tf.nn.relu,
+            snt.Conv2D(N*2, (3, 5), padding='SAME',name='conv_4')])
+
+        self.pre_output = snt.Conv2D(N*2, 1, padding='SAME',name='conv_5')
 
     def _build(self, img, **kwargs):
-        img = self.conv_layers(img) + img
+        img = self.conv_layers(img) + self.pre_output(img)
         return img
 
 
@@ -150,19 +153,21 @@ class Model(AbstractModule):
     def __init__(self, name=None):
         super(Model, self).__init__(name=name)
 
-        self.res_layers1 = snt.Sequential([ResidualBlock(), ResidualBlock()])
+        self.res_layers = snt.Sequential([ResidualBlock(8,name='res_1'),
+                                           ResidualBlock(16,name='res_2'),
+                                           snt.Conv2D(3, 1, padding='SAME', name='conv')])
 
     def _build(self, batch, **kwargs):
         (img, img_true, outliers) = batch
         del outliers
         del img_true
         img = tf.concat([img, tf.zeros_like(img[..., 0:1])], axis=-1)
-        logits1 = self.res_layers1(img)
-        return logits1
+        logits = self.res_layers(img)
+        return logits
 
 
 def make_dataset(freqs, times):
-    num_examples = 8 * 100
+    num_examples = 8 * 500
     if freqs is None:
         freqs = np.linspace(121e6, 166e6, 24)
     if times is None:
