@@ -9,7 +9,7 @@ from bayes_gain_screens.utils import make_coord_array
 from bayes_gain_screens.plotting import plot_vornoi_map
 from bayes_gain_screens.frames import ENU
 from h5parm import DataPack
-from jaxns.gaussian_process.kernels import RBF
+from jaxns.gaussian_process.kernels import RBF, M32
 import jax.numpy as jnp
 from jax.scipy.linalg import solve_triangular
 from jax import jit, random, vmap
@@ -29,7 +29,7 @@ def get_num_directions(avg_spacing, field_of_view_diameter):
     return n
 
 def compute_conditional_moments(kernel:TomographicKernel, X_new, wind_velocity):
-    f_K = lambda X1, X2: kernel(X1, X2, bottom=300., width=50., l=4., sigma=1., wind_velocity=wind_velocity)
+    f_K = lambda X1, X2: kernel(X1, X2, bottom=300., width=50., fed_kernel_params=dict(l=4., sigma=1.), wind_velocity=wind_velocity)
     K_new_new = f_K(X_new, X_new)
     L_new = jnp.linalg.cholesky(K_new_new + 1e-6*jnp.eye(K_new_new.shape[0]))
     return L_new
@@ -68,7 +68,7 @@ def main(output_h5parm, ncpu, ra, dec,
 
     with dp:
         dp.current_solset = 'sol000'
-        dp.select(pol=slice(0, 1, 1), ant=[0,10,20], time=slice(0,time_block_size))
+        dp.select(pol=slice(0, 1, 1), ant=[0,50], time=slice(0,time_block_size))
         axes = dp.axes_tec
         patch_names, directions = dp.get_directions(axes['dir'])
         antenna_labels, antennas = dp.get_antennas(axes['ant'])
@@ -85,7 +85,6 @@ def main(output_h5parm, ncpu, ra, dec,
     t -= t[0]
     dt = time_resolution
     x = antennas.cartesian.xyz.to(au.km).value.T[1:,:]
-    print(x[1]-x[0])
     # x[1,:] = x[0,:]
     # x[1,0] += 0.3
     k = directions.cartesian.xyz.value.T
@@ -107,7 +106,7 @@ def main(output_h5parm, ncpu, ra, dec,
     X = make_coord_array(x, k, t[:,None], flat=True)#N,7
 
     logger.info(f"Sampling {X.shape[0]} new points.")
-    kernel = TomographicKernel(x0, x0, RBF(), S_marg=25, compute_tec=True)
+    kernel = TomographicKernel(x0, x0, M32(), S_marg=25, compute_tec=True)
     L = jit(compute_conditional_moments, static_argnums=[0])(kernel, X, wind_vector)
 
     dtec = L @ random.normal(random.PRNGKey(24532), shape=(L.shape[0],1))
@@ -117,7 +116,7 @@ def main(output_h5parm, ncpu, ra, dec,
         dp.select(pol=slice(0, 1, 1), ant=[10, 50], time=slice(0,time_block_size))
         dp.tec = np.asarray(dtec[None, ...])
 
-    fig, axs = plt.subplots(Na,time_block_size, sharex=True, sharey=True, figsize=(2*time_block_size,2*Na))
+    fig, axs = plt.subplots(Na,time_block_size, sharex=True, sharey=True, figsize=(2*time_block_size,2*Na), squeeze=False)
 
     for a in range(Na):
         for i in range(time_block_size):
@@ -127,6 +126,8 @@ def main(output_h5parm, ncpu, ra, dec,
                 ax.set_xlabel(r"$k_{\rm east}$")
             if i == 0:
                 ax.set_ylabel(r"$k_{\rm north}$")
+            if a == 0:
+                ax.set_title(f"Time: {int(i*time_resolution)} sec")
             # ax.set_title(f"{} {times[i]}")
             # plt.show()
 
@@ -142,9 +143,9 @@ def debug_main():
          dec=30.,
          array_name='lofar',
          start_time=None,
-         time_resolution=10.,
-         duration=600.,
-         field_of_view_diameter=4.,
+         time_resolution=30.,
+         duration=300.,
+         field_of_view_diameter=8.,
          avg_direction_spacing=8.,
          east_wind=150.,
          north_wind=0.,
@@ -163,8 +164,6 @@ def add_args(parser):
     parser.add_argument('--start_time', help=f'Start time in modified Julian days (mjs/86400).',
                         default=None, type=float, required=True)
     parser.add_argument('--time_resolution', help=f'Temporal resolution in seconds.',
-                        default=30., type=float, required=False)
-    parser.add_argument('--time_resolution', help=f'Temporal duration in seconds.',
                         default=30., type=float, required=False)
     parser.add_argument('--field_of_view_diameter', help=f'Diameter of field of view in degrees.',
                         default=4., type=float, required=False)
