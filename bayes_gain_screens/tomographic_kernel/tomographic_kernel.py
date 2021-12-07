@@ -1,15 +1,18 @@
 import jax.numpy as jnp
-from jax import vmap, nn, tree_map, tree_multimap, random
-from jax.flatten_util import ravel_pytree
+from jax import vmap, tree_map, tree_multimap
 from itertools import product
-from jax.lax import scan, while_loop
+from jax.lax import scan
 from jaxns.gaussian_process.kernels import Kernel, StationaryKernel
-from jaxns.utils import chunked_pmap
-import haiku as hk
-from bayes_gain_screens.utils import build_lookup_index, make_coord_array
+from typing import NamedTuple
+
+from bayes_gain_screens.utils import build_lookup_index
 
 
 def scan_vmap(f):
+    """
+    Applies a function `f` over a pytree, over the first dimension of each leaf.
+    Similar to vmap, but sequentially executes, rather that broadcasting.
+    """
     def run(*args):
         def body(state, X):
             return state, f(*X)
@@ -20,33 +23,31 @@ def scan_vmap(f):
     return run
 
 
-def tec_kernel(x1, k1, x2, k2, x0, bottom, width, l, sigma, S_marg, fed_kernel, *fed_kernel_params):
-    def ray_integral(f, x, k):
-        smin = (bottom - (x[2] - x0[2])) / k[2]
-        smax = (bottom + width - (x[2] - x0[2])) / k[2]
-        ds = (smax - smin)
-        _x = x + k * smin
-        _k = k * ds
-        t = jnp.linspace(0., 1., S_marg + 1)
-        return jnp.sum(scan_vmap(lambda t: f(_x + t * _k))(t), axis=0) * (ds / S_marg)
-
-    K = lambda x, y: fed_kernel(x[None], y[None], l, sigma, *fed_kernel_params)[
-        0, 0]  # * self.fed_kernel(x[None]-h, y[None]-h, width, 1., *fed_kernel_params)[0,0]
-    Ky = lambda x, x2, k2: vmap(lambda x2, k2: ray_integral(lambda y: K(x, y), x2, k2))(*jnp.broadcast_arrays(x2, k2))
-    Kxy = lambda x1, k1, x2, k2: vmap(lambda x1, k1: ray_integral(lambda x: Ky(x, x2, k2), x1, k1))(
-        *jnp.broadcast_arrays(x1, k1))
-    return Kxy(x1, k1, x2, k2)
-
+class GeodesicTuple(NamedTuple):
+    x:jnp.ndarray
+    k:jnp.ndarray
+    t:jnp.ndarray
+    ref_x:jnp.ndarray
 
 class TomographicKernel(Kernel):
-    def __init__(self, x0, ref_ant, fed_kernel: StationaryKernel, S_marg=25, compute_tec=False):
+    def __init__(self, x0, earth_centre, fed_kernel: StationaryKernel, S_marg=25, compute_tec=False):
+        """
+        Tomographic model with curved thick layer above the Earth.
+
+        Args:
+            x0: [3] jnp.ndarray The array center. We assume a spherical Earth and that height is referenced radially from this point.
+            earth_centre: Earth's centre
+            fed_kernel: StationaryKernel, covariance function of the free-electron density.
+            S_marg: int, the resolution of quadrature
+            compute_tec: bool, whether to compute TEC or DTEC.
+        """
         self.S_marg = S_marg
-        self.x0 = x0
-        self.ref_ant = ref_ant
+        self.x0 = x0 - earth_centre
+        self.earth_centre = earth_centre
         self.fed_kernel = fed_kernel
         self.compute_tec = compute_tec
 
-    def compute_integration_limits(self, x, k, bottom, width):
+    def compute_integration_limits_flat(self, x, k, bottom, width):
         """
         Compute the integration limits of the flat layer ionosphere.
 
@@ -63,87 +64,81 @@ class TomographicKernel(Kernel):
         """
         if (len(x.shape) == 2) or (len(k.shape) == 2):
             x,k = jnp.broadcast_arrays(x, k)
-            return vmap(lambda x,k: self.compute_integration_limits(x,k,bottom, width))(x,k)
+            return vmap(lambda x,k: self.compute_integration_limits_flat(x,k,bottom, width))(x,k)
         smin = (bottom - (x[2] - self.x0[2])) / k[2]
         smax = (bottom + width - (x[2] - self.x0[2])) / k[2]
         return smin, smax
 
-    def compute_normal_coordinates(self, x, k, bottom, width):
+    def compute_integration_limits(self, x, k, bottom, width):
         """
-        Compute the normalised coordinates such that the domain of s1 and s2 is (0, 1).
+        Compute the integration limits of the curved layer ionosphere.
 
         Args:
-            x: [N, 3]
-            k: [N, 3]
-            bottom: scalar
-            width: scalar
-            l: scalar
+            x: [3] or [N, 3]
+            k: [3] or [N, 3]
+            bottom: scalar height of bottom of layer
+            width: scalar width of width of layer
 
         Returns:
-            x': [N, 3]
-            k': [N, 3]
-            ds: [N] integration factor
-
+            s_min, s_max with shapes:
+                - scalars if x and k are [3]
+                - arrays of [N] if x or k is [N,3]
         """
-        smin, smax = self.compute_integration_limits(x, k, bottom, width)
-        ds = smax - smin
-        xp = (x + k*smin[:, None])
-        kp = (k * ds[:, None])
-        return xp, kp, ds
+        if (len(x.shape) == 2) or (len(k.shape) == 2):
+            x,k = jnp.broadcast_arrays(x, k)
+            return vmap(lambda x,k: self.compute_integration_limits(x,k,bottom, width))(x,k)
+        x0_hat = self.x0 / jnp.linalg.norm(self.x0)
+        bottom_radius2 = jnp.sum(jnp.square(self.x0 + bottom * x0_hat))
+        top_radius2 = jnp.sum(jnp.square(self.x0 + (bottom + width) * x0_hat))
+        xk = x @ k
+        x2 = x @ x
+        smin = -xk + jnp.sqrt(xk**2 + (bottom_radius2 - x2))
+        smax = -xk + jnp.sqrt(xk**2 + (top_radius2 - x2))
+        return smin, smax
 
-    def compute_coeffs(self, x1,k1,x2,k2):
+    def frozen_flow_transform(self, t, y, bottom, wind_velocity=None):
         """
-        Computes the descriptive coefficients of the distribution given the primed coordinates.
+        Computes the frozen flow transform on the coordinates.
 
         Args:
-            x1: [3]
-            k1: [3]
-            x2: [3]
-            k2: [3]
+            t: time in seconds
+            y: position in km, origin at centre of Earth
+            bottom: bottom of ionosphere in km
+            wind_velocity: layer velocity in km
 
         Returns:
-            (a,b,c,d,e,f) each of which is a scalar
-
+            Coordinates inverse rotating the coordinates to take into account the flow of ionosphere around
+            surface of Earth.
         """
-        dx = x1 - x2
-        a = dx @ dx  #
-        b = 2. * dx @ k1  # s1
-        c = -2 * dx @ k2  # s2
-        d = k1 @ k1  # s1^2
-        e = -2. * k1 @ k2  # s1*s2
-        f = k2 @ k2  # s2^2
-        return (a,b,c,d,e,f)
+        # rotate around Earth's core
+        if t is None:
+            return y
+        if wind_velocity is None:
+            return y
 
-    def precompute_kernel_space(self, X, bottom_min=50., bottom_max=500.,width_min=10., width_max=200., l_min=0.5, l_max=40.):
-        x = X[:, 0:3]  # N,3
-        k = X[:, 3:6]
-        def body(state, X):
-            (bottom, width, l) = X
-            xp,kp,ds = self.compute_normal_coordinates(x, k, bottom, width, l)
-            (a,b,c,d,e,f) = vmap(lambda x1,k1: vmap(lambda x2,k2: self.compute_coeffs(x1,k1,x2,k2))(xp,kp))(xp,kp)
-            min_vals = tree_map(jnp.min, (a,b,c,d,e,f))
-            max_vals = tree_map(jnp.max, (a,b,c,d,e,f))
-            return state, (min_vals, max_vals)
+        rotation_axis = jnp.cross(wind_velocity, self.x0)
+        rotation_axis /= jnp.linalg.norm(rotation_axis)
+        # v(r) = theta_dot * r
+        # km/s / km
+        theta_dot = jnp.linalg.norm(wind_velocity) / (bottom + jnp.linalg.norm(self.x0))
 
-        parameter_ranges = list(product((bottom_min, bottom_max), (width_min, width_max), (l_min, l_max)))
-        _, (min_vals, max_vals) = scan(body, (), jnp.asarray(parameter_ranges))
-        min_vals = tree_map(lambda x: jnp.min(x, axis=0), min_vals)
-        max_vals = tree_map(lambda x: jnp.max(x, axis=0), max_vals)
-        arrays = tree_multimap(lambda min, max: jnp.linspace(min, max, self.S_grid), min_vals, max_vals)
-        lookup_func = build_lookup_index(*arrays)
+        angle = - theta_dot * t
+        # Rotation
+        u_cross_x = jnp.cross(rotation_axis, y)
+        rotated_y = rotation_axis * (rotation_axis @ y) \
+                  + jnp.cos(angle) * jnp.cross(u_cross_x, rotation_axis) \
+                  + jnp.sin(angle) * u_cross_x
+        # print(rotated_y - y, t*wind_velocity, wind_velocity)
+        return rotated_y
 
-        arrays = jnp.meshgrid(*arrays, indexing='ij')
-        arrays = [a.ravel() for a in arrays]
-
-        return min_vals, max_vals
-
-    def build_Kxy(self, bottom, width, fed_kernel_params):
+    def build_Kxy(self, bottom, width, fed_sigma, fed_kernel_params, wind_velocity=None):
         """
         Construct a callable that returns the TEC kernel function.
 
         Args:
             bottom: ionosphere layer bottom in km
             width: ionosphere layer width in km
+            fed_sigma: variation scaling in mTECU/km, or 10^10 electron/m^3
             fed_kernel_params: dict of FED kernel parameters
                 Typically a lengthscale and scaling parameter, but perhaps more.
 
@@ -153,31 +148,90 @@ class TomographicKernel(Kernel):
         sigma = fed_kernel_params.get('sigma')
         l = fed_kernel_params.get('l')
 
-        def ray_integral(f, x, k):
-            smin, smax = self.compute_integration_limits(x, k, bottom, width)
-            ds = (smax - smin)  # width/(k.z)
-            _x = x + k * smin
-            _k = k * ds
+        def ray_integral(f):
             t = jnp.linspace(0., 1., self.S_marg + 1)
-            return jnp.sum(scan_vmap(lambda t: f(_x + t * _k))(t), axis=0) * (ds / self.S_marg)
+            return jnp.sum(vmap(f)(t), axis=0) * (1. / self.S_marg)
+            
+        def build_geodesic(x, k, t):
+            smin, smax = self.compute_integration_limits(x, k, bottom, width)
+            def g(epsilon):
+                y = x + k * (smin + (smax - smin) * epsilon)
+                return self.frozen_flow_transform(t, y, bottom=bottom, wind_velocity=wind_velocity)
+            return g, (smax - smin)
+        
+        def integrate_integrand(X1:GeodesicTuple, X2:GeodesicTuple):
+            g1, ds1 = build_geodesic(X1.x, X1.k, X1.t)
+            g1_ref, ds1_ref = build_geodesic(X1.ref_x, X1.k, X1.t)
+            g2, ds2 = build_geodesic(X2.x, X2.k, X2.t)
+            g2_ref, ds2_ref = build_geodesic(X2.ref_x, X2.k, X2.t)
+            def f(epsilon_1, epsilon_2):
+                results = (ds1 * ds2) * self.fed_kernel(g1(epsilon_1)[None], g2(epsilon_2)[None], l, sigma)
+                if not self.compute_tec:
+                    results += (ds1_ref * ds2_ref) * self.fed_kernel(g1_ref(epsilon_1)[None], g2_ref(epsilon_2)[None], l, sigma)
+                    results -= (ds1 * ds2_ref) * self.fed_kernel(g1(epsilon_1)[None], g2_ref(epsilon_2)[None], l, sigma)
+                    results -= (ds1_ref * ds2) * self.fed_kernel(g1_ref(epsilon_1)[None], g2(epsilon_2)[None], l, sigma)
+                return results[0,0]
+            return ray_integral(lambda epsilon_2: ray_integral(lambda epsilon_1: f(epsilon_1, epsilon_2)))
 
-        K = lambda x, y: self.fed_kernel(x[None], y[None], l, sigma)[0, 0]
-        Ky = lambda x, x2, k2: vmap(lambda x2, k2: ray_integral(lambda y: K(x, y), x2, k2))(x2, k2)
-        Kxy = lambda x1, k1, x2, k2: vmap(lambda x1, k1: ray_integral(lambda x: Ky(x, x2, k2), x1, k1))(x1, k1)
+        def Kxy(X1:GeodesicTuple, X2:GeodesicTuple):
+            return fed_sigma**2 * scan_vmap(lambda X1: vmap(lambda X2: integrate_integrand(X1, X2))(X2))(X1)
 
         return Kxy
 
-    def __call__(self, X1, X2, bottom, width, fed_kernel_params, wind_velocity=None):
+    def build_mean_func(self, bottom, width, fed_mu, wind_velocity=None):
+        """
+        Construct a callable that returns the TEC kernel function.
+
+        Args:
+            bottom: ionosphere layer bottom in km
+            width: ionosphere layer width in km
+            fed_sigma: variation scaling in mTECU/km, or 10^10 electron/m^3
+            fed_kernel_params: dict of FED kernel parameters
+                Typically a lengthscale and scaling parameter, but perhaps more.
+
+        Returns:
+            callable(x1:[N,3],k1:[N,3],x2:[M,3],k2:[M,3]) -> [N, M]
+        """
+
+        def geodesic_intersection(x, k, t):
+            smin, smax = self.compute_integration_limits(x, k, bottom, width)
+            return (smax - smin)
+
+        def layer_intersection(X1: GeodesicTuple):
+            ds1 = geodesic_intersection(X1.x, X1.k, X1.t)
+            if self.compute_tec:
+                return ds1
+            ds1_ref = geodesic_intersection(X1.ref_x, X1.k, X1.t)
+            return ds1 - ds1_ref
+
+        def mean_func(X1: GeodesicTuple):
+            return fed_mu * vmap(layer_intersection)(X1)
+
+        return mean_func
+
+    def mean_function(self, X1: GeodesicTuple, bottom, width, fed_mu, wind_velocity=None):
+
+        mean_func = self.build_mean_func(bottom, width, fed_mu, wind_velocity=wind_velocity)
+
+        def _mean_func(X1:GeodesicTuple):
+            X1 = X1._replace(x = X1.x - self.earth_centre, ref_x=X1.ref_x - self.earth_centre)
+            X1 = GeodesicTuple(*jnp.broadcast_arrays(*X1))
+            return mean_func(X1)
+
+        return _mean_func(X1)
+
+
+    def __call__(self, X1:GeodesicTuple, X2:GeodesicTuple, bottom, width, fed_sigma, fed_kernel_params, wind_velocity=None):
         """
         Computes the Tomographic Kernel.
 
         Args:
-            X1: [N, 6/7]
-            X2: [M, 6/7]
+            X1: GeodesicTuple
+            X2: GeodesicTuple or None
             bottom: bottom of ionosphere in km
             width: width of ionosphere in km
-            fed_kernel_params: dictionary of FED kernel parameters.
-            wind_velocity:
+            fed_mu: variation scaling in mTECU/km, or 10^10 electron/m^3
+            wind_velocity: in East-North-Up frame
 
         Returns:
 
@@ -185,238 +239,14 @@ class TomographicKernel(Kernel):
         if not isinstance(fed_kernel_params, dict):
             raise TypeError(f"fed_kernel_params should be a dict, got {type(fed_kernel_params)}")
 
-        x1 = X1[:, 0:3]  # N,3
-        k1 = X1[:, 3:6]
-        x2 = X2[:, 0:3]  # M,3
-        k2 = X2[:, 3:6]
-
-        Kxy = self.build_Kxy(bottom, width, fed_kernel_params)
-
-        def _Kxy(x1,k1,x2,k2):
-            x1, k1 = jnp.broadcast_arrays(x1, k1)
-            x2, k2 = jnp.broadcast_arrays(x2, k2)
-            return Kxy(x1,k1,x2,k2)
-
-        if self.compute_tec:
-            if wind_velocity is not None:
-                t1 = X1[:, 6:7]
-                x1 = x1 - t1 * wind_velocity
-                t2 = X2[:, 6:7]
-                x2 = x2 - t2 * wind_velocity
-            return _Kxy(x1, k1, x2, k2)
-        else:
-            if wind_velocity is not None:
-                t1 = X1[:, 6:7]
-                x1 = x1 - t1 * wind_velocity
-                t2 = X2[:, 6:7]
-                x2 = x2 - t2 * wind_velocity
-                return _Kxy(x1, k1, x2, k2) \
-                       + _Kxy(self.ref_ant - t1 * wind_velocity, k1, self.ref_ant - t2 * wind_velocity, k2) \
-                       - _Kxy(x1, k1, self.ref_ant - t2 * wind_velocity, k2) \
-                       - _Kxy(self.ref_ant - t1 * wind_velocity, k1,x2, k2)
-            else:
-                return _Kxy(x1, k1, x2, k2) \
-                       + _Kxy(self.ref_ant, k1, self.ref_ant, k2) \
-                       - _Kxy(x1, k1, self.ref_ant, k2) \
-                       - _Kxy(self.ref_ant, k1, x2, k2)
+        Kxy = self.build_Kxy(bottom, width, fed_sigma, fed_kernel_params, wind_velocity=wind_velocity)
 
 
-class NeuralTomographicKernel(TomographicKernel):
-    def __init__(self, x0, ref_ant, fed_kernel: StationaryKernel, S_marg=25, compute_tec=False):
-        super(NeuralTomographicKernel, self).__init__(x0, ref_ant, fed_kernel, S_marg=S_marg, compute_tec=compute_tec)
+        def _Kxy(X1:GeodesicTuple, X2:GeodesicTuple):
+            X1 = X1._replace(x = X1.x - self.earth_centre, ref_x=X1.ref_x - self.earth_centre)
+            X2 = X2._replace(x = X2.x - self.earth_centre, ref_x=X2.ref_x - self.earth_centre)
+            X1 = GeodesicTuple(*jnp.broadcast_arrays(*X1))
+            X2 = GeodesicTuple(*jnp.broadcast_arrays(*X2))
+            return Kxy(X1, X2)
 
-
-        @hk.without_apply_rng
-        @hk.transform
-        def neural_model(x1, k1, x2, k2, bottom, width, l, sigma):
-            features, ds1, ds2 = self.construct_features(x1, k1, x2, k2, bottom, width, l)
-            mlp = hk.Sequential([hk.Linear(32), nn.sigmoid, hk.Linear(16), nn.sigmoid, hk.Linear(1)])
-            return sigma**2 * mlp(features) * ds1 * ds2
-
-        self._neural_model = neural_model
-
-    def compute_coeffs(self, x1,k1,x2,k2):
-        """
-        Computes the descriptive coefficients of the distribution given the normal coordinates.
-
-        Args:
-            x1: [3]
-            k1: [3]
-            x2: [3]
-            k2: [3]
-
-        Returns:
-            (a,b,c,d,e,f) each of which is a scalar
-
-        """
-        dx = x1 - x2
-        a = dx @ dx  #
-        b = 2. * dx @ k1  # s1
-        c = -2 * dx @ k2  # s2
-        d = k1 @ k1  # s1^2
-        e = -2. * k1 @ k2  # s1*s2
-        f = k2 @ k2  # s2^2
-        return (a,b,c,d,e,f)
-
-    def construct_features(self, x1, k1, x2, k2, bottom, width, l):
-        """
-        |x1 + k1*s1 - (x2 + k2 * s2)|^2
-        |x1-x2 + (k1*s1 - k2*s2)|^2
-        |x1-x2|^2 + (k1*s1 - k2*s2).(k1*s1 - k2*s2) + (k1*s1 - k2*s2).(x1-x2)
-        a = |x1-x2|^2
-        b = k1.k1*s1^2
-
-        Args:
-            x1:
-            k1:
-            x2:
-            k2:
-            x0:
-            bottom:
-            width:
-            l:
-
-        Returns:
-
-        """
-
-        x1, k1, ds1 = self.compute_normal_coordinates(x1, k1, bottom, width)
-        x2, k2, ds2 = self.compute_normal_coordinates(x2, k2, bottom, width)
-
-        a,b,c,d,e,f = self.compute_coeffs(x1, k1, x2, k2)
-        return jnp.asarray([a,b,c,e,d,f])/l, ds1, ds2
-
-    def init_params(self, key):
-        kwargs = dict(x1=jnp.zeros(3),
-                      k1=jnp.zeros(3),
-                      x2=jnp.zeros(3),
-                      k2=jnp.zeros(3),
-                      bottom=jnp.asarray(0.), width=jnp.asarray(0.),
-                      l=jnp.asarray(0.), sigma=jnp.asarray(0.))
-        return self._neural_model.init(key,  **kwargs)
-
-    def set_params(self, params):
-        self._params = params
-
-    def training_neural_model(self,X, bottom, width, fed_kernel_params, wind_velocity=None):
-
-        true_Kxy = super(NeuralTomographicKernel, self).build_Kxy(bottom, width, fed_kernel_params)
-
-        def get_example(x1, k1, x2, k2):
-            self._neural_model()
-
-        init_params = self.init_params(random.PRNGKey(42))
-        flat_init_params, unravel_func = ravel_pytree(init_params)
-
-        def loss(flat_params):
-            params = unravel_func(flat_params)
-
-
-
-    def build_Kxy(self, bottom, width, fed_kernel_params):
-        sigma = fed_kernel_params.get('sigma')
-        l = fed_kernel_params.get('l')
-        def K(x1, k1, x2, k2):
-            return self._neural_model.apply(self._params, x1, k1, x2, k2, self.x0, bottom, width, l, sigma)
-
-        def Kxy(x1, k1, x2, k2):
-            return vmap(lambda x1, k1:
-                        vmap(lambda x2, k2:
-                             K(x1, k1, x2, k2))(x2, k2))(x1, k1)
-        return Kxy
-
-
-class TomographicKernelWeighted(TomographicKernel):
-    """
-    Computes the tomographic kernel using weighted sum of stationary kernel.
-    """
-    def __init__(self, x0, ref_ant, fed_kernel: StationaryKernel, S_marg=25, compute_tec=False):
-        super(TomographicKernelWeighted, self).__init__(x0, ref_ant, fed_kernel, S_marg=S_marg, compute_tec=compute_tec)
-
-    def gamma_squared(self, s1, s2, a, b, c, d, e, f):
-        return a + (b + d * s1) * s1 + (c + f * s2 + e * s1) * s2
-
-    def compute_coeffs(self, x1,k1,x2,k2):
-        """
-        Computes the descriptive coefficients of the distribution given the normal coordinates.
-
-        Args:
-            x1: [3]
-            k1: [3]
-            x2: [3]
-            k2: [3]
-
-        Returns:
-            (a,b,c,d,e,f) each of which is a scalar
-
-        """
-        dx = x1 - x2
-        a = dx @ dx  #
-        b = 2. * dx @ k1  # s1
-        c = -2 * dx @ k2  # s2
-        d = k1 @ k1  # s1^2
-        e = -2. * k1 @ k2  # s1*s2
-        f = k2 @ k2  # s2^2
-        return (a,b,c,d,e,f)
-
-    def build_Kxy(self, bottom, width, fed_kernel_params):
-        # gamma_squared is dimensionless distance parametrisation
-
-        sigma = fed_kernel_params.get('sigma')
-        l = fed_kernel_params.get('l')
-
-        def compute_pdf(x1,k1,x2,k2):
-            s1 = jnp.linspace(0., 1., self.S_marg + 1)
-            s2 = jnp.linspace(0., 1., self.S_marg + 1)
-
-            def gamma(s1, s2):
-                return jnp.linalg.norm((x1-x2)+s1*k1 - s2*k2)/l
-
-            pdf, bins = jnp.histogram(vmap(lambda s1:
-                                        vmap(lambda s2:
-                                             gamma(s1,s2))(s2))(s1),
-                                bins=self.S_marg,
-                                   density=True)
-            return pdf, bins
-
-        def compute_pdf_from_coeffs(a,b,c,d,e,f):
-            s1 = jnp.linspace(0., 1., self.S_marg + 1)
-            s2 = jnp.linspace(0., 1., self.S_marg + 1)
-
-            def gamma(s1, s2):
-                return jnp.sqrt(jnp.maximum(0., self.gamma_squared(s1, s2, a, b, c, d, e, f)))/l
-            pdf, bins = jnp.histogram(vmap(lambda s1:
-                                        vmap(lambda s2:
-                                             gamma(s1,s2))(s2))(s1),
-                                bins=self.S_marg,
-                                   density=True)
-            return pdf, bins
-
-
-
-        def K(x1,k1,x2,k2, ds1,ds2):
-            # compute pdf from a,b,c,d,e,f
-            pmf, bins = compute_pdf(x1,k1,x2,k2)
-
-
-            # a,b,c,d,e,f = self.compute_coeffs(x1, k1, x2, k2)
-            # pmf, bins = compute_pdf_from_coeffs(a,b,c,d,e,f)
-
-            dgamma = bins[1] - bins[0]
-            dpdf = pmf * dgamma
-
-            K_integrand = vmap(lambda gamma: jnp.exp(self.fed_kernel.act(gamma ** 2, 1.)))(bins)
-            K_integrand = 0.5 * (K_integrand[:-1] + K_integrand[1:])
-
-            return sigma**2 * jnp.sum(dpdf*K_integrand) * ds1 * ds2
-
-        def Kxy(x1, k1, x2, k2):
-            x1, k1, ds1 = self.compute_normal_coordinates(x1, k1, bottom, width)
-            x2, k2, ds2 = self.compute_normal_coordinates(x2, k2, bottom, width)
-
-            return vmap(lambda x1,k1, ds1:
-                        vmap(lambda x2, k2, ds2:
-                             K(x1,k1,x2,k2,ds1,ds2))(x2,k2,ds2))(x1,k1,ds1)
-
-
-        return Kxy
+        return _Kxy(X1, X2)

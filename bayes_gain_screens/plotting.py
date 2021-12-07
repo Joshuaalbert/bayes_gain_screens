@@ -7,7 +7,7 @@ from scipy.spatial import ConvexHull, cKDTree
 from scipy.spatial.distance import pdist
 import pylab as plt
 
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Circle
 from matplotlib.collections import PatchCollection
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.spatial import Voronoi
@@ -44,7 +44,7 @@ def add_colorbar_to_axes(ax, cmap, norm=None, vmin=None, vmax=None):
 
 
 def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, vmin=None, vmax=None, cmap=plt.cm.PuOr,
-                    relim=True, colorbar=True):
+                    relim=True, colorbar=True, fov_circle=False):
     """
     Plot a Vornoi tesselation of data.
 
@@ -186,6 +186,9 @@ def plot_vornoi_map(points, colors, ax=None, alpha=1., radius=None, norm=None, v
 
     if colorbar:
         add_colorbar_to_axes(ax, cmap, norm=norm)
+
+    if fov_circle:
+        ax.add_patch(Circle(np.mean(points, axis=0), radius=radius, edgecolor='black', lw=2., facecolor='none'))
     return ax
 
 

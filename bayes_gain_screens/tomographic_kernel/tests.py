@@ -1,7 +1,7 @@
 from jax.config import config
 config.update("jax_enable_x64", True)
 
-from bayes_gain_screens.tomographic_kernel import TomographicKernel, TomographicKernelWeighted
+from bayes_gain_screens.tomographic_kernel import TomographicKernel, GeodesicTuple
 from bayes_gain_screens.tomographic_kernel.debug import debug_inference
 from bayes_gain_screens.utils import make_coord_array
 from bayes_gain_screens.plotting import plot_vornoi_map
@@ -28,16 +28,20 @@ def test_compare_with_forward_model():
         patch_names, directions = dp.get_directions(axes['dir'])
         antenna_labels, antennas = dp.get_antennas(axes['ant'])
         timestamps, times = dp.get_times(axes['time'])
+
     antennas = ac.ITRS(*antennas.cartesian.xyz, obstime=times[0])
     ref_ant = antennas[0]
+    earth_centre = ac.ITRS(x=0 * au.m, y=0 * au.m, z=0. * au.m, obstime=times[0])
     frame = ENU(obstime=times[0], location=ref_ant.earth_location)
     antennas = antennas.transform_to(frame)
+    earth_centre = earth_centre.transform_to(frame)
     ref_ant = antennas[0]
     directions = directions.transform_to(frame)
     x = antennas.cartesian.xyz.to(au.km).value.T[20:21, :]
     k = directions.cartesian.xyz.value.T
     X = make_coord_array(x, k)
     x0 = ref_ant.cartesian.xyz.to(au.km).value
+    earth_centre = earth_centre.cartesian.xyz.to(au.km).value
     bottom = 200.
     width = 50.
     l = 10.
@@ -71,23 +75,26 @@ def test_compare_with_forward_model():
     Z = Z.reshape((directions.shape[0],-1, Z.shape[1]))
     Y = jnp.sum(Z * ds[:, None, None], axis=1)
     K = jnp.mean(Y[:, None, :]*Y[None, :, :], axis=2)
-    print("Directly Computed TEC Covariance",K)
+    # print("Directly Computed TEC Covariance",K)
     plt.imshow(K)
     plt.colorbar()
     plt.title("Directly Computed TEC Covariance")
     plt.show()
 
-    kernel = TomographicKernelWeighted(x0, x0,fed_kernel, S_marg=200, compute_tec=False)
-    K = kernel(X, X, bottom, width, fed_kernel_params)
-    plt.imshow(K)
-    plt.colorbar()
-    plt.title("Analytic Weighted TEC Covariance")
-    plt.show()
-
-    print("Analytic Weighted TEC Covariance",K)
-
-    kernel = TomographicKernel(x0, x0, fed_kernel, S_marg=200, compute_tec=False)
-    K = kernel(X, X, bottom, width, fed_kernel_params)
+    # kernel = TomographicKernel(x0, x0,fed_kernel, S_marg=200, compute_tec=False)
+    # K = kernel(X, X, bottom, width, fed_kernel_params)
+    # plt.imshow(K)
+    # plt.colorbar()
+    # plt.title("Analytic Weighted TEC Covariance")
+    # plt.show()
+    #
+    # print("Analytic Weighted TEC Covariance",K)
+    # print(x0, earth_centre, fed_kernel)
+    kernel = TomographicKernel(x0, earth_centre, fed_kernel, S_marg=200, compute_tec=True)
+    # print(X)
+    X1 = GeodesicTuple(x = X[:,0:3], k = X[:,3:6], t=jnp.zeros_like(X[:,:1]),ref_x=x0)
+    print(X1)
+    K = kernel(X1, X1, bottom, width, fed_kernel_params)
     plt.imshow(K)
     plt.colorbar()
     plt.title("Analytic TEC Covariance")

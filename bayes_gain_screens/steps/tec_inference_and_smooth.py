@@ -13,7 +13,7 @@ import logging
 import astropy.units as au
 
 from bayes_gain_screens.utils import poly_smooth, wrap, link_overwrite, windowed_mean, curv, \
-    weighted_polyfit
+    weighted_polyfit, axes_move, build_lookup_index, make_coord_array
 from bayes_gain_screens.outlier_detection import detect_tec_outliers
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,6 @@ from jaxns.utils import marginalise_dynamic, estimate_map, resample, marginalise
 TEC_CONV = -8.4479745e6  # mTECU/Hz
 
 
-def log_laplace(x, mean, uncert):
-    dx = jnp.abs(x - mean) / uncert
-    return -jnp.log(2. * uncert) - dx
-
-
 def log_normal(x, mean, scale):
     dx = (x - mean) / scale
     return -0.5 * jnp.log(2. * jnp.pi) - jnp.log(scale) - 0.5 * dx * dx
@@ -42,22 +37,42 @@ def log_normal(x, mean, scale):
 def unconstrained_solve(freqs, key, phase_obs, phase_outliers):
     key1, key2, key3, key4 = random.split(key, 4)
     Nt, Nf = phase_obs.shape
+    assert Nt == 2, "Observations should be consequentive pairs of 2"
 
-    def log_likelihood(tec0, dtec, const, uncert, **kwargs):
-        tec = jnp.concatenate([tec0[None], tec0 + jnp.cumsum(dtec)])
+    tec0_array = jnp.linspace(-300., 300., 30)
+    dtec_array = jnp.linspace(30., 30., 30)
+    const_array = jnp.linspace(-jnp.pi, jnp.pi, 10)
+    uncert0_array = jnp.linspace(0., 1., 10)
+    uncert1_array = jnp.linspace(0., 1., 10)
+
+    def log_likelihood(tec0, dtec, const, uncert0, uncert1, **kwargs):
+        tec = jnp.asarray([tec0, tec0 + dtec])
         t = freqs - jnp.min(freqs)
         t /= t[-1]
-        uncert = uncert[0] + (uncert[1] - uncert[0]) * t
-        phase = tec[:, None] * (TEC_CONV / freqs) + const
-        logL = jnp.sum(jnp.where(phase_outliers, 0., log_normal(wrap(wrap(phase)-wrap(phase_obs)), 0., uncert)))
+        uncert = uncert0 + (uncert1 - uncert0) * t
+        phase = tec[:, None] * (TEC_CONV / freqs) + const  # 2,Nf
+        logL = jnp.sum(jnp.where(phase_outliers, 0., log_normal(wrap(wrap(phase) - wrap(phase_obs)), 0., uncert)))
         return logL
 
-    tec0 = UniformPrior('tec0', -300., 300.)
+    # X = make_coord_array(tec0_array[:, None], dtec_array[:, None], const_array[:, None], uncert0_array[:, None], uncert1_array[:, None], flat=True)
+    # log_prob_array = vmap(lambda x: log_likelihood(x[0], x[1], x[2], x[3], x[4]))(X)
+    # log_prob_array = log_prob_array.reshape((tec0_array.size, dtec_array.size, const_array.size, uncert0_array.size, uncert1_array.size))
+    #
+    # lookup_func = build_lookup_index(tec0_array, dtec_array, const_array, uncert0_array, uncert1_array)
+    #
+    # def efficient_log_likelihood(tec0, dtec, const, uncert0, uncert1, **kwargs):
+    #     b = 0.5
+    #     log_prob_uncert0 = - uncert0 / b - jnp.log(b)
+    #     log_prob_uncert1 = - uncert1 / b - jnp.log(b)
+    #     return lookup_func(log_prob_array, tec0, dtec, const, uncert0, uncert1) + log_prob_uncert0 + log_prob_uncert1
+
+    tec0 = UniformPrior('tec0', tec0_array.min(), tec0_array.max())
     # 30mTECU/30seconds is the maximum change
-    dtec = UniformPrior('dtec', -30. * jnp.ones(Nt - 1), 30. * jnp.ones(Nt - 1))
-    const = UniformPrior('const', -jnp.pi, jnp.pi)
-    uncert = HalfLaplacePrior('uncert', 0.5*jnp.ones(2))
-    prior_chain = PriorChain(tec0, dtec, const, uncert)
+    dtec = UniformPrior('dtec', dtec_array.min(), dtec_array.max())
+    const = UniformPrior('const', const_array.min(), const_array.max())
+    uncert0 = UniformPrior('uncert0', uncert0_array.min(), uncert0_array.max())
+    uncert1 = UniformPrior('uncert1', uncert1_array.min(), uncert1_array.max())
+    prior_chain = PriorChain(tec0, dtec, const, uncert0, uncert1)
 
     ns = NestedSampler(log_likelihood,
                        prior_chain,
@@ -69,9 +84,9 @@ def unconstrained_solve(freqs, key, phase_obs, phase_outliers):
 
     ESS = 900  # emperically estimated for this problem
 
-    def marginalisation(tec0, dtec, const, uncert, **kwargs):
-        tec = jnp.concatenate([tec0[None], tec0 + jnp.cumsum(dtec)])
-        return tec, tec ** 2, jnp.cos(const), jnp.sin(const), jnp.mean(uncert)
+    def marginalisation(tec0, dtec, const, uncert0, uncert1, **kwargs):
+        tec = jnp.asarray([tec0, tec0 + dtec])
+        return tec, tec ** 2, jnp.cos(const), jnp.sin(const), 0.5 * (uncert0 + uncert1)
 
     tec_mean, tec2_mean, const_real, const_imag, uncert_mean = marginalise_static(key2, results.samples, results.log_p,
                                                                                   ESS, marginalisation)
@@ -92,21 +107,45 @@ def constrained_solve(freqs, key, phase_obs, phase_outliers, const_mean, const_s
     key1, key2, key3, key4 = random.split(key, 4)
     Nt, Nf = phase_obs.shape
 
-    def log_likelihood(tec0, dtec, const, uncert, **kwargs):
-        tec = jnp.concatenate([tec0[None], tec0 + jnp.cumsum(dtec)])
+    assert Nt == 2, "Observations should be consequentive pairs of 2"
+
+    def log_likelihood(tec0, dtec, const, uncert0, uncert1, **kwargs):
+        tec = jnp.asarray([tec0, tec0 + dtec])
         t = freqs - jnp.min(freqs)
         t /= t[-1]
-        uncert = uncert[0] + (uncert[1] - uncert[0])*t
-        phase = tec[:, None] * (TEC_CONV / freqs) + const
+        uncert = uncert0 + (uncert1 - uncert0) * t
+        phase = tec[:, None] * (TEC_CONV / freqs) + const  # 2,Nf
         logL = jnp.sum(jnp.where(phase_outliers, 0., log_normal(wrap(wrap(phase) - wrap(phase_obs)), 0., uncert)))
         return logL
 
-    tec0 = UniformPrior('tec0', -300., 300.)
+    tec0_array = jnp.linspace(-300., 300., 30)
+    dtec_array = jnp.linspace(30., 30., 30)
+    const_array = jnp.linspace(-jnp.pi, jnp.pi, 10)
+    uncert0_array = jnp.linspace(0., 1., 10)
+    uncert1_array = jnp.linspace(0., 1., 10)
+
+    # X = make_coord_array(tec0_array[:, None], dtec_array[:, None], const_array[:, None], uncert0_array[:, None], uncert1_array[:, None], flat=True)
+    # log_prob_array = vmap(lambda x: log_likelihood(x[0], x[1], x[2], x[3], x[4]))(X)
+    # log_prob_array = log_prob_array.reshape((tec0_array.size, dtec_array.size, const_array.size, uncert0_array.size, uncert1_array.size))
+    #
+    # lookup_func = build_lookup_index(tec0_array, dtec_array, const_array, uncert0_array, uncert1_array)
+    #
+    # def efficient_log_likelihood(tec0, dtec, const, uncert0, uncert1, **kwargs):
+    #     b = 0.5
+    #     log_prob_uncert0 = - uncert0 / b - jnp.log(b)
+    #     log_prob_uncert1 = - uncert1 / b - jnp.log(b)
+    #     log_prob_const = -0.5 * jnp.square(const - const_mean) / const_std ** 2 - jnp.log(const_std) - 0.5 * jnp.log(
+    #         2. * jnp.pi)
+    #     return lookup_func(log_prob_array, tec0, dtec, const, uncert0,
+    #                        uncert1) + log_prob_uncert0 + log_prob_uncert1 + log_prob_const
+
+    tec0 = UniformPrior('tec0', tec0_array.min(), tec0_array.max())
     # 30mTECU/30seconds is the maximum change
-    dtec = UniformPrior('dtec', -30. * jnp.ones(Nt - 1), 30. * jnp.ones(Nt - 1))
-    const = NormalPrior('const', jnp.mean(const_mean), jnp.mean(const_std))
-    uncert = HalfLaplacePrior('uncert', 0.5*jnp.ones(2))
-    prior_chain = PriorChain(tec0, dtec, const, uncert)
+    dtec = UniformPrior('dtec', dtec_array.min(), dtec_array.max())
+    const = UniformPrior('const', const_array.min(), const_array.max())
+    uncert0 = UniformPrior('uncert0', uncert0_array.min(), uncert0_array.max())
+    uncert1 = UniformPrior('uncert1', uncert1_array.min(), uncert1_array.max())
+    prior_chain = PriorChain(tec0, dtec, const, uncert0, uncert1)
 
     ns = NestedSampler(log_likelihood,
                        prior_chain,
@@ -118,9 +157,9 @@ def constrained_solve(freqs, key, phase_obs, phase_outliers, const_mean, const_s
 
     ESS = 900  # emperically estimated for this problem
 
-    def marginalisation(tec0, dtec, const, uncert, **kwargs):
-        tec = jnp.concatenate([tec0[None], tec0 + jnp.cumsum(dtec)])
-        return tec, tec ** 2, jnp.cos(const), jnp.sin(const), jnp.mean(uncert)
+    def marginalisation(tec0, dtec, const, uncert0, uncert1, **kwargs):
+        tec = jnp.asarray([tec0, tec0 + dtec])
+        return tec, tec ** 2, jnp.cos(const), jnp.sin(const), 0.5 * (uncert0 + uncert1)
 
     tec_mean, tec2_mean, const_real, const_imag, uncert_mean = marginalise_static(key2, results.samples, results.log_p,
                                                                                   ESS, marginalisation)
@@ -151,22 +190,17 @@ def solve_and_smooth(gain_outliers, phase_obs, times, freqs):
     if remainder != 0:
         if remainder < Nt:
             raise ValueError(f"Block size {blocksize} too big for number of timesteps {Nt}.")
-        (gain_outliers, phase_obs) = tree_map(lambda x: jnp.concatenate([x, x[..., -remainder:]], axis=-1),
-                                              (gain_outliers, phase_obs))
+        (gain_outliers, phase_obs) = tree_map(
+            lambda x: jnp.concatenate([x, jnp.repeat(x[..., -1:], remainder, axis=-1)], axis=-1),
+            (gain_outliers, phase_obs))
         Nt = Nt + remainder
         times = jnp.concatenate([times, times[-1] + jnp.arange(1, 1 + remainder) * jnp.mean(jnp.diff(times))])
 
-    def _reshape(x):
-        # Nd,Na,Nf,Nt//blocksize,blocksize
-        x = jnp.reshape(x, (Nd, Na, Nf, Nt // blocksize, blocksize))
-        # Nd, Na, Nt//blocksize, blocksize, Nf
-        x = x.transpose((0, 1, 3, 4, 2))
-        _shape = x.shape
-        x = x.reshape((Nd * Na * (Nt // blocksize), blocksize, Nf))
-        return x
+    size_dict = dict(d=Nd, a=Na, f=Nf, b=blocksize)
 
     # [Nd*Na*(Nt//blocksize), blocksize, Nf]
-    (gain_outliers, phase_obs) = tree_map(_reshape, (gain_outliers, phase_obs))
+    gain_outliers = axes_move(gain_outliers, ['d', 'a', 'f', 'tb'], ['dat', 'b', 'f'], size_dict=size_dict)
+    phase_obs = axes_move(phase_obs, ['d', 'a', 'f', 'tb'], ['dat', 'b', 'f'], size_dict=size_dict)
 
     T = Nd * Na * (Nt // blocksize)  # Nd * Na * (Nt // blocksize)
     keys = random.split(random.PRNGKey(int(1000 * default_timer())), T)
@@ -181,10 +215,10 @@ def solve_and_smooth(gain_outliers, phase_obs, times, freqs):
     const_weights = 1. / const_std ** 2
 
     def smooth(y, weights):
-        y = y.reshape((Nd * Na, Nt))  # Nd*Na,Nt
-        weights = weights.reshape((Nd * Na, Nt))
+        y = axes_move(y, ['dat', 'b'], ['da', 'tb'], size_dict=size_dict)
+        weights = axes_move(weights, ['dat', 'b'], ['da', 'tb'], size_dict=size_dict)
         y = chunked_pmap(lambda y, weights: poly_smooth(times, y, deg=5, weights=weights), y, weights)
-        y = y.reshape((Nd * Na * (Nt // blocksize), blocksize))  # Nd*Na*(Nt//blocksize), blocksize
+        y = axes_move(y, ['da', 'tb'], ['dat', 'b'], size_dict=size_dict)
         return y
 
     logger.info("Smoothing and outlier rejection of const (a weak prior).")
@@ -202,31 +236,16 @@ def solve_and_smooth(gain_outliers, phase_obs, times, freqs):
     # [Nd*Na*(Nt//blocksize), blocksize]
     (tec_mean_constrained, tec_std_constrained, const_mean_constrained, const_std_constrained) = \
         chunked_pmap(lambda *args: constrained_solve(freqs, *args),
-                                                              keys,
-                                                              phase_obs[which_reprocess],
-                                                              gain_outliers[which_reprocess],
-                                                              const_mean_smoothed[which_reprocess],
-                                                              const_std[which_reprocess]
-                                                              )
+                     keys,
+                     phase_obs[which_reprocess],
+                     gain_outliers[which_reprocess],
+                     const_mean_smoothed[which_reprocess],
+                     const_std[which_reprocess]
+                     )
     tec_mean = tec_mean.at[replace_map].set(tec_mean_constrained)
     tec_std = tec_std.at[replace_map].set(tec_std_constrained)
     const_std = const_std.at[replace_map].set(const_std_constrained)
     const_mean = const_mean.at[replace_map].set(const_mean_constrained)
-
-    # const_weights = 1. / const_std ** 2
-    #
-    # def smooth(y, weights):
-    #     y = y.reshape((Nd * Na, Nt))  # Nd*Na,Nt
-    #     weights = weights.reshape((Nd * Na, Nt))
-    #     y = chunked_pmap(lambda y, weights: poly_smooth(times, y, deg=5, weights=weights), y, weights)
-    #     y = y.reshape((Nd * Na * (Nt // blocksize), blocksize))  # Nd*Na*(Nt//blocksize), blocksize
-    #     return y
-    #
-    # logger.info("Smoothing and outlier rejection of const (a weak prior).")
-    # # Nd,Na,Nt/blocksize, blocksize
-    # const_real_mean = smooth(jnp.cos(const_mean), const_weights)  # Nd*Na*(Nt//blocksize), blocksize
-    # const_imag_mean = smooth(jnp.sin(const_mean), const_weights)  # Nd*Na*(Nt//blocksize), blocksize
-    # const_mean = jnp.arctan2(const_imag_mean, const_real_mean)  # Nd*Na*(Nt//blocksize), blocksize
 
     (tec_mean, tec_std, const_mean, const_std) = tree_map(lambda x: x.reshape((Nd, Na, Nt)),
                                                           (tec_mean, tec_std, const_mean, const_std))
@@ -238,7 +257,7 @@ def solve_and_smooth(gain_outliers, phase_obs, times, freqs):
 
     # remove remainder at the end
     if remainder != 0:
-        (tec_mean, tec_std, const_mean, const_std) = tree_map(lambda x: x[..., :-remainder],
+        (tec_mean, tec_std, const_mean, const_std) = tree_map(lambda x: x[..., :Nt-remainder],
                                                               (tec_mean, tec_std, const_mean, const_std))
 
     # compute phase mean with outlier-suppressed tec.
@@ -251,7 +270,7 @@ def solve_and_smooth(gain_outliers, phase_obs, times, freqs):
 def get_data(solution_file):
     logger.info("Getting DDS4 data.")
     with DataPack(solution_file, readonly=True) as h:
-        select = dict(pol=slice(0, 1, 1))#, ant=slice(50, 51), dir=slice(0,None,1), time=slice(0, 100, 1))
+        select = dict(pol=slice(0, 1, 1) , ant=slice(50, 51), dir=slice(0,None,1), time=slice(0, 100, 1))
         h.select(**select)
         phase, axes = h.phase
         phase = phase[0, ...]
@@ -340,7 +359,6 @@ def main(data_dir, working_dir, obs_num, ncpu, plot_results):
         Nd, Na, Nf, Nt = phase_mean.shape
         for ia in range(Na):
             for id in range(Nd):
-
                 fig, axs = plt.subplots(3, 1, sharex=True)
                 axs[0].plot(times, tec_mean[id, ia, :], c='black', label='tec')
                 ylim = axs[0].get_ylim()

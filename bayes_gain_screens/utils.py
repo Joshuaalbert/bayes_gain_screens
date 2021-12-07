@@ -1,6 +1,10 @@
 import os
 import time
 
+from jax import tree_map, local_device_count, devices as get_devices, pmap, jit, device_get, tree_multimap
+from timeit import default_timer
+from jax.lax import scan
+
 import numpy as np
 import astropy.coordinates as ac
 import astropy.units as au
@@ -29,6 +33,7 @@ def build_lookup_index(*arrays):
         fractional_coordinates = jnp.asarray([jnp.interp(coord, array, jnp.arange(array.size))
                                               for array, coord in zip(arrays, coords)])
         return map_coordinates(values, fractional_coordinates, order=1)
+
     return linear_lookup
 
 def voronoi_finite_polygons_2d(vor, radius):
@@ -255,7 +260,7 @@ def make_coord_array(*X, flat=True, coord_map=None):
             else:
                 shape.append(-1)
                 tiles.append(1)
-        return np.tile(np.reshape(x, shape), tiles)
+        return jnp.tile(jnp.reshape(x, shape), tiles)
 
     N = [x.shape[0] for x in X]
     X_ = []
@@ -263,10 +268,10 @@ def make_coord_array(*X, flat=True, coord_map=None):
     for i, x in enumerate(X):
         for dim in range(x.shape[1]):
             X_.append(add_dims(x[:, dim], [i], N))
-    X = np.stack(X_, axis=-1)
+    X = jnp.stack(X_, axis=-1)
     if not flat:
         return X
-    return np.reshape(X, (-1, X.shape[-1]))
+    return jnp.reshape(X, (-1, X.shape[-1]))
 
 def test_disable_jit_and_scan():
     from jax import disable_jit
@@ -626,3 +631,107 @@ def test_axes_move():
 
     _array = axes_move(array, ['a', 'b', 'c', 'de'], ['c', 'db', 'a', 'e'], size_dict=dict(e=2))
     assert _array.shape == (3, 2 * 2, 1, 2)
+
+
+
+def _debug_chunked_pmap(f, *args, chunksize=None):
+    # TODO: remove dask, use jaxns chunked_pmap
+
+    T = args[0].shape[0]
+    # lazy import in case dask not installed
+    from datetime import datetime
+    import os
+    from dask.threaded import get
+
+    devices = get_devices()
+
+    def build_pmap_body(dev_idx):
+        fun = jit(f, device=devices[dev_idx])
+        log = os.path.join(os.getcwd(), "chunk{:02d}.log".format(dev_idx))
+
+        def pmap_body(*args):
+            result = []
+            with open(log, 'a') as f:
+                for i in range(T):
+                    item = jnp.ravel_multi_index((dev_idx, i), (chunksize, T))
+                    logger.info("Starting item: {}".format(item))
+                    f.write('{} {}'.format(datetime.now().isoformat(), "Starting item: {}".format(item)))
+                    result.append(fun(*[a[i, ...] for a in args]))
+                    tree_map(lambda a: a.block_until_ready(), result[-1])
+                    logger.info("Done item: {}".format(item))
+                    f.write('{} {}'.format(datetime.now().isoformat(), "Done item: {}".format(item)))
+            result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
+            return result
+
+        return pmap_body
+
+    num_devices = local_device_count()
+    dsk = {str(device): (build_pmap_body(device),) + tuple([arg[device] for arg in args]) for device in
+           range(num_devices)}
+    result_keys = [str(device) for device in range(num_devices)]
+    result = get(dsk, result_keys, num_workers=num_devices)
+    result = device_get(result)
+    result = tree_multimap(lambda *result: jnp.stack(result, axis=0), *result)
+    return result
+
+def chunked_pmap(f, *args, chunksize=None, batch_size=None, debug=False):
+    """
+    Calls pmap on chunks of moderate work to be distributed over devices.
+    Automatically handle non-dividing chunksizes, by adding filler elements.
+
+    Args:
+        f: callable, jittable
+        *args: pytrees
+        chunksize: int, size to chunk computation up into
+        batch_size: if args, is not arrays, then must pass total size of leading axis.
+        debug: bool, if true then use dask to run computation.
+
+    Returns:
+        f mapped over leading axes if *args.
+    """
+    if chunksize is None:
+        chunksize = local_device_count()
+    if chunksize > local_device_count():
+        raise ValueError(f"blocksize should be <= {local_device_count()}.")
+    if batch_size is None:
+        N = args[0].shape[0]
+    else:
+        N = batch_size
+    remainder = N % chunksize
+    if (remainder != 0) and (N > chunksize):
+        # only pad if not a zero remainder
+        extra = chunksize - remainder
+        if N >= chunksize:
+            args = tree_map(lambda arg: jnp.concatenate([arg, arg[:extra]], axis=0), args)
+        else:
+            args = tree_map(lambda arg: jnp.concatenate([arg] + [arg[-1:]] * extra, axis=0), args)
+        N = batch_size + extra
+    args = tree_map(lambda arg: jnp.reshape(arg, (chunksize, N // chunksize) + arg.shape[1:]), args)
+    T = N // chunksize
+    logger.info(f"Distributing {N} over {chunksize} devices in queues of length {T}.")
+    t0 = default_timer()
+
+    def pmap_body(*args):
+        """
+        Distributes the computation in queues which are computed with scan.
+        Args:
+            *args:
+        """
+
+        def body(state, args):
+            return state, f(*args)
+
+        _, result = scan(body, (), args, unroll=1)
+        return result
+
+    if debug:
+        result = _debug_chunked_pmap(f, *args, chunksize=chunksize)
+    else:
+        result = pmap(pmap_body)(*args)
+    result = tree_map(lambda arg: jnp.reshape(arg, (-1,) + arg.shape[2:]), result)
+    if remainder != 0:
+        # only slice if not a zero remainder
+        result = tree_map(lambda x: x[:-extra], result)
+    dt = default_timer() - t0
+    logger.info(f"Time to run: {dt} s, rate: {N / dt} / s, normalised rate: {N / dt / chunksize} / s / device")
+    return result

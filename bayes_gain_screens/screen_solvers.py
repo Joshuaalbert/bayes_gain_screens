@@ -4,7 +4,7 @@ from jax._src.scipy.linalg import solve_triangular
 from timeit import default_timer
 from bayes_gain_screens.frames import ENU
 from bayes_gain_screens.tomographic_kernel import TomographicKernel
-from bayes_gain_screens.utils import make_coord_array, axes_move
+from bayes_gain_screens.utils import make_coord_array, axes_move, build_lookup_index
 from bayes_gain_screens.plotting import plot_vornoi_map
 from h5parm import DataPack
 from jaxns import NestedSampler, plot_diagnostics, plot_cornerplot
@@ -38,14 +38,6 @@ def log_normal_with_outliers(x, mean, cov, sigma):
                      - log_det \
                      - 0.5 * maha
     return log_likelihood
-
-def build_lookup_index(*arrays):
-    def linear_lookup(values, *coords):
-        fractional_coordinates = jnp.asarray([jnp.interp(coord, array, jnp.arange(array.size))
-                                              for array, coord in zip(arrays, coords)])
-        return map_coordinates(values, fractional_coordinates, order=1)
-
-    return linear_lookup
 
 
 def precompute_log_prob_components_with_wind(kernel, X, dtec, dtec_uncert,
