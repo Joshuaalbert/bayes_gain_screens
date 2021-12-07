@@ -412,6 +412,8 @@ def add_args(parser):
                         default=None, type='start_time', required=True)
     parser.add_argument('--time_resolution', help=f'Temporal resolution in seconds.',
                         default=30., type=float, required=False)
+    parser.add_argument('--duration', help=f'Temporal resolution in seconds.',
+                        default=0., type=float, required=False)
     parser.add_argument('--field_of_view_diameter', help=f'Diameter of field of view in degrees.',
                         default=4., type=float, required=False)
     parser.add_argument('--avg_direction_spacing', help=f'Average spacing between directions in arcmin.',
