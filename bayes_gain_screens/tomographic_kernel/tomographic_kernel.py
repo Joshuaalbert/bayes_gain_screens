@@ -16,7 +16,6 @@ def scan_vmap(f):
     def run(*args):
         def body(state, X):
             return state, f(*X)
-
         _, results = scan(body, (), args)
         return results
 
@@ -174,7 +173,11 @@ class TomographicKernel(Kernel):
             return ray_integral(lambda epsilon_2: ray_integral(lambda epsilon_1: f(epsilon_1, epsilon_2)))
 
         def Kxy(X1:GeodesicTuple, X2:GeodesicTuple):
-            return fed_sigma**2 * scan_vmap(lambda X1: vmap(lambda X2: integrate_integrand(X1, X2))(X2))(X1)
+            if X1.x.shape[0] == 1:
+                K = fed_sigma**2 * vmap(lambda X2: integrate_integrand(tree_map(lambda x: x[0], X1), X2))(X2)
+                return K[None]
+            else:
+                return fed_sigma**2 * scan_vmap(lambda X1: vmap(lambda X2: integrate_integrand(X1, X2))(X2))(X1)
 
         return Kxy
 
