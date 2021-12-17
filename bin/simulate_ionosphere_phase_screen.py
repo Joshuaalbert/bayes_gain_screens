@@ -3,6 +3,8 @@ import sys
 import logging
 logger = logging.getLogger(__name__)
 
+from jax.config import config
+config.update("jax_enable_x64", True)
 
 from bayes_gain_screens.tomographic_kernel import TomographicKernel, GeodesicTuple
 from bayes_gain_screens.utils import make_coord_array, wrap
