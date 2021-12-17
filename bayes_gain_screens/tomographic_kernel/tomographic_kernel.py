@@ -1,11 +1,8 @@
 import jax.numpy as jnp
-from jax import vmap, tree_map, tree_multimap
-from itertools import product
+from jax import vmap, tree_map
 from jax.lax import scan
 from jaxns.gaussian_process.kernels import Kernel, StationaryKernel
 from typing import NamedTuple
-
-from bayes_gain_screens.utils import build_lookup_index
 
 
 def scan_vmap(f):
@@ -95,40 +92,6 @@ class TomographicKernel(Kernel):
         smax = -xk + jnp.sqrt(xk**2 + (top_radius2 - x2))
         return smin, smax
 
-    def frozen_flow_transform(self, t, y, bottom, wind_velocity=None):
-        """
-        Computes the frozen flow transform on the coordinates.
-
-        Args:
-            t: time in seconds
-            y: position in km, origin at centre of Earth
-            bottom: bottom of ionosphere in km
-            wind_velocity: layer velocity in km
-
-        Returns:
-            Coordinates inverse rotating the coordinates to take into account the flow of ionosphere around
-            surface of Earth.
-        """
-        # rotate around Earth's core
-        if t is None:
-            return y
-        if wind_velocity is None:
-            return y
-
-        rotation_axis = jnp.cross(wind_velocity, self.x0)
-        rotation_axis /= jnp.linalg.norm(rotation_axis)
-        # v(r) = theta_dot * r
-        # km/s / km
-        theta_dot = jnp.linalg.norm(wind_velocity) / (bottom + jnp.linalg.norm(self.x0))
-
-        angle = - theta_dot * t
-        # Rotation
-        u_cross_x = jnp.cross(rotation_axis, y)
-        rotated_y = rotation_axis * (rotation_axis @ y) \
-                  + jnp.cos(angle) * jnp.cross(u_cross_x, rotation_axis) \
-                  + jnp.sin(angle) * u_cross_x
-        # print(rotated_y - y, t*wind_velocity, wind_velocity)
-        return rotated_y
 
     def build_Kxy(self, bottom, width, fed_sigma, fed_kernel_params, wind_velocity=None):
         """
@@ -155,7 +118,7 @@ class TomographicKernel(Kernel):
             smin, smax = self.compute_integration_limits(x, k, bottom, width)
             def g(epsilon):
                 y = x + k * (smin + (smax - smin) * epsilon)
-                return self.frozen_flow_transform(t, y, bottom=bottom, wind_velocity=wind_velocity)
+                return frozen_flow_transform(t, y, x0=self.x0, bottom=bottom, wind_velocity=wind_velocity)
             return g, (smax - smin)
         
         def integrate_integrand(X1:GeodesicTuple, X2:GeodesicTuple):
@@ -183,7 +146,6 @@ class TomographicKernel(Kernel):
 
     def build_mean_func(self, bottom, width, fed_mu, wind_velocity=None):
         """
-        Construct a callable that returns the TEC kernel function.
 
         Args:
             bottom: ionosphere layer bottom in km
@@ -253,3 +215,56 @@ class TomographicKernel(Kernel):
             return Kxy(X1, X2)
 
         return _Kxy(X1, X2)
+
+def frozen_flow_transform(t, y, x0, bottom, wind_velocity=None):
+    """
+    Computes the frozen flow transform on the coordinates.
+
+    Args:
+        t: time in seconds
+        y: position in km, origin at centre of Earth
+        x0: position of reference point.
+        bottom: bottom of ionosphere in km
+        wind_velocity: layer velocity in km/s
+
+    Returns:
+        Coordinates inverse rotating the coordinates to take into account the flow of ionosphere around
+        surface of Earth.
+    """
+    # rotate around Earth's core
+    if t is None:
+        return y
+    if wind_velocity is None:
+        return y
+
+    rotation_axis = jnp.cross(wind_velocity, x0)
+    rotation_axis /= jnp.linalg.norm(rotation_axis)
+    # v(r) = theta_dot * r
+    # km/s / km
+    theta_dot = jnp.linalg.norm(wind_velocity) / (bottom + jnp.linalg.norm(x0))
+
+    angle = - theta_dot * t
+    # Rotation
+    u_cross_x = jnp.cross(rotation_axis, y)
+    rotated_y = rotation_axis * (rotation_axis @ y) \
+              + jnp.cos(angle) * jnp.cross(u_cross_x, rotation_axis) \
+              + jnp.sin(angle) * u_cross_x
+    # print(rotated_y - y, t*wind_velocity, wind_velocity)
+    return rotated_y
+
+def test_frozen_flow_transform():
+
+
+    t = 0.
+    y = jnp.asarray([0., 0., 6400.])
+    x0 = y
+    bottom = 300.
+    wind_velocity = jnp.asarray([-240., 30., 0.])
+    assert jnp.allclose(y, frozen_flow_transform(t, y, x0, bottom, wind_velocity=wind_velocity))
+
+    t = 60
+    y = jnp.asarray([0., 0., 6400.])
+    x0 = jnp.asarray([0., 100., 6400.])
+    bottom = 300.
+    wind_velocity = jnp.asarray([-0.240, 0.030, 0.])
+    print(frozen_flow_transform(t, y, x0, bottom, wind_velocity=wind_velocity))

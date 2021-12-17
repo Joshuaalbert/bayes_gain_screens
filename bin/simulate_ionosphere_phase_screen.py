@@ -5,7 +5,6 @@ logger = logging.getLogger(__name__)
 
 
 from bayes_gain_screens.tomographic_kernel import TomographicKernel, GeodesicTuple
-from bayes_gain_screens.tomographic_kernel.tomographic_kernel import scan_vmap
 from bayes_gain_screens.utils import make_coord_array, wrap
 from bayes_gain_screens.plotting import plot_vornoi_map
 from bayes_gain_screens.frames import ENU
@@ -40,7 +39,7 @@ ARRAYS = {'lofar': DataPack.lofar_array_hba,
           'dsa2000W_1000m_grid': './dsa2000.W.1000m_grid.cfg',
           }
 
-def get_num_directions(avg_spacing, field_of_view_diameter, min_n=3):
+def get_num_directions(avg_spacing, field_of_view_diameter, min_n=1):
     """
     Get the number of directions that will space the field of view by the given spacing.
 
@@ -56,42 +55,6 @@ def get_num_directions(avg_spacing, field_of_view_diameter, min_n=3):
     n = -V * np.log(1. - pp) / (avg_spacing/60.)**2 / np.pi / 2.
     n = max(int(n), min_n)
     return n
-
-def sample(X_new:GeodesicTuple, x0, earth_centre, bottom, width, fed_sigma, fed_mu, fed_kernel_params, wind_vector):
-    kernel = TomographicKernel(x0, earth_centre, M32(), S_marg=20, compute_tec=False)
-
-    mu = kernel.mean_function(X_new, bottom, width, fed_mu, wind_velocity=wind_vector)
-    print(mu)
-    # print(X_new, x0, earth_centre)
-    # with disable_jit():
-    K_new_new = kernel(X_new, X_new, bottom, width, fed_sigma, fed_kernel_params, wind_velocity=wind_vector)
-    # plt.imshow(K_new_new)
-    # plt.colorbar()
-    # plt.show()
-    B = jnp.linalg.cholesky(K_new_new + 1e-6*jnp.eye(K_new_new.shape[0]))
-    # plt.imshow(B)
-    # plt.show()
-    return mu + (B @ random.normal(random.PRNGKey(24532), shape=(B.shape[0], 1)))[:,0]
-
-
-@jit
-def conditional_sample(X_new: GeodesicTuple, X_old: GeodesicTuple, Y_old,
-                       x0, earth_centre, bottom, width, fed_sigma, fed_mu, fed_kernel_params, wind_vector):
-    kernel = TomographicKernel(x0, earth_centre, M32(), S_marg=20, compute_tec=False)
-    K_new_new = kernel(X_new, X_new, bottom, width, fed_sigma, fed_kernel_params, wind_velocity=wind_vector)
-    K_old_new = kernel(X_old, X_new, bottom, width, fed_sigma, fed_kernel_params, wind_velocity=wind_vector)
-    K_old_old = kernel(X_old, X_new, bottom, width, fed_sigma, fed_kernel_params,  wind_velocity=wind_vector)
-    mu_old = kernel.mean_function(X_old, bottom, width,fed_mu, wind_velocity=wind_vector)
-    mu_new = kernel.mean_function(X_new, bottom, width,fed_mu, wind_velocity=wind_vector)
-
-    L = jnp.linalg.cholesky(K_old_old)
-    dx = solve_triangular(L, (Y_old - mu_old)[:, None], lower=True)
-    JT = solve_triangular(L, K_old_new, lower=True)
-    mean_new = mu_new[:,None] + JT.T @ dx
-    K_new = K_new_new - JT.T @ JT
-
-    B = jnp.linalg.cholesky(K_new + 1e-6*jnp.eye(K_new.shape[0]))
-    return (mean_new + B @ random.normal(random.PRNGKey(24532), shape=(B.shape[0], 1)))[:, 0]
 
 def visualisation(h5parm, ant=None, time=None):
     with DataPack(h5parm, readonly=True) as dp:
@@ -249,25 +212,30 @@ class Simulation(object):
 
         logger.info(f"Total number of coordinates: {X1.x.shape[0]}")
 
-        covariance_row = lambda X: self.compute_covariance_row(tree_map(lambda x: x.reshape((1, -1)), X), X1)
+        def compute_covariance_row(X1: GeodesicTuple, X2: GeodesicTuple):
+            K = self._kernel(X1, X2, self._bottom, self._width, self._fed_sigma, self._fed_kernel_params,
+                             wind_velocity=self._wind_vector)  # 1, N
+            return K[0, :]
+        covariance_row = lambda X: compute_covariance_row(tree_map(lambda x: x.reshape((1, -1)), X), X1)
 
         mean = jit(lambda X1: self._kernel.mean_function(X1, self._bottom, self._width, self._fed_mu,
                                                          wind_velocity=self._wind_vector))(X1)
 
         cov = chunked_pmap(covariance_row, X1, batch_size=X1.x.shape[0], chunksize=ncpu)
 
+        plt.imshow(cov)
+        plt.show()
+
 
         Z = random.normal(random.PRNGKey(42), (cov.shape[0], 1), dtype=cov.dtype)
 
         t0 = default_timer()
         jitter = 1e-6
-        while True:
-            logger.info(f"Computing Cholesky with jitter: {jitter}")
-            L = jnp.linalg.cholesky(cov + jitter * jnp.eye(cov.shape[0]))
-            if np.any(np.isnan(L)):
-                jitter *= 2.
-            else:
-                break
+        logger.info(f"Computing Cholesky with jitter: {jitter}")
+        L = jnp.linalg.cholesky(cov + jitter * jnp.eye(cov.shape[0]))
+        if np.any(np.isnan(L)):
+            logger.info("Numerically instable. Using SVD.")
+            L = msqrt(cov)
 
         logger.info(f"Cholesky took {default_timer() - t0} seconds.")
 
@@ -279,77 +247,21 @@ class Simulation(object):
             dp.select(pol=slice(0, 1, 1))
             dp.tec = np.asarray(dtec[None])
 
-        # visualisation(output_h5parm, ant=slice(0,10,1), time=None)
+def msqrt(A):
 
+    """
+    Computes the matrix square-root using SVD, which is robust to poorly conditi
+oned covariance matrices.
+    Computes, M such that M @ M.T = A
 
-    def compute_covariance_row(self, X1:GeodesicTuple, X2:GeodesicTuple):
-        K = self._kernel(X1, X2,  self._bottom, self._width, self._fed_sigma, self._fed_kernel_params, wind_velocity=self._wind_vector) # 1, N
-        return K[0,:]
+    Args:
+    A: [N,N] Square matrix to take square root of.
 
-    def get_sparse_neighbours(self, X1:GeodesicTuple):
-        def compute_dist(X1:GeodesicTuple, X2:GeodesicTuple):
-            def get_point(x,k,t):
-                x = x - self._kernel.earth_centre
-                smax, smin = self._kernel.compute_integration_limits(x,k,self._bottom, self._width)
-                p1 = x + smin * k
-                p2 = x + smax * k
-                p1 = self._kernel.frozen_flow_transform(t,p1,self._bottom, wind_velocity=self._wind_vector)
-                p2 = self._kernel.frozen_flow_transform(t,p2,self._bottom, wind_velocity=self._wind_vector)
-                return p1, p2
-
-            p1, p2 = get_point(X1.x, X1.k, X1.t)
-            p3, p4 = get_point(X2.x, X2.k, X2.t)
-            return self.closest_line_seg_line_seg(p1,p2,p3,p4)
-
-        @jit
-        def nearest_neighbour_dist(X:GeodesicTuple):
-            return vmap(lambda X1: compute_dist(X, X1))(X1)
-
-        screening_length = self._l * 2.# self._kernel.fed_kernel.inverse_x(0.01, self._l, 1.)
-        print(f"kernel magnitude at screening length {screening_length}: {np.exp(self._kernel.fed_kernel.act(screening_length**2/self._l**2, 1.))}")
-        neighbours = dict()
-        for i in tqdm(range(X1.x.shape[0])):
-            dist = nearest_neighbour_dist(tree_map(lambda x: x[i], X1))
-            indices = np.where(dist < screening_length)[0]
-            neighbours[i] = indices
-            print(i, len(indices), len(indices)/X1.x.shape[0])
-        return neighbours
-
-    def closest_line_seg_line_seg(self, p1, p2, p3, p4):
-        """
-        Get closest point between two line-segments.
-
-
-        Returns:
-            Distance between two line-segments.
-
-        """
-        P1 = p1
-        P2 = p3
-        V1 = p2 - p1
-        V2 = p4 - p3
-        V21 = P2 - P1
-
-        v22 = jnp.dot(V2, V2)
-        v11 = jnp.dot(V1, V1)
-        v21 = jnp.dot(V2, V1)
-        v21_1 = jnp.dot(V21, V1)
-        v21_2 = jnp.dot(V21, V2)
-        denom = v21 * v21 - v22 * v11
-
-        denom_zero = jnp.abs(denom) < np.sqrt(jnp.finfo(denom.dtype).eps)
-        s = jnp.where(denom_zero, 0., (v21_2 * v21 - v22 * v21_1) / denom)
-        t = jnp.where(denom_zero, (v11 * s - v21_1) / v21, (-v21_1 * v21 + v11 * v21_2) / denom)
-
-        s = jnp.clip(s, 0., 1.)
-        t = jnp.clip(t, 0., 1.)
-
-        # p_a = P1 + s * V1
-        # p_b = P2 + t * V2
-
-        AB = V21 + t * V2 - s * V1
-
-        return jnp.linalg.norm(AB)
+    Returns: [N,N] matrix.
+    """
+    U, s, Vh = jnp.linalg.svd(A)
+    L = U * jnp.sqrt(s)
+    return L
 
 def main(output_h5parm, ncpu, phase_tracking,
          array_name, start_time, time_resolution, duration,
@@ -380,23 +292,23 @@ def main(output_h5parm, ncpu, phase_tracking,
     """
     wind_vector = jnp.asarray([east_wind, north_wind, 0.]) / 1000.  # km/s at 300km height
 
-    sim = Simulation(wind_vector, bottom=250., width=100., l=5., fed_mu=100., fed_sigma=0.6)
+    sim = Simulation(wind_vector, bottom=200., width=200., l=5., fed_mu=50., fed_sigma=0.6)
     sim.run(output_h5parm,ncpu, avg_direction_spacing,field_of_view_diameter,duration,time_resolution,start_time,array_name,phase_tracking)
 
 
 def debug_main():
     phase_tracking = ac.SkyCoord("00h00m0.0s","+37d07m47.400s", frame='icrs')
-    main(output_h5parm='test_dsa2000W_datapack.h5',
-         ncpu=8,
+    main(output_h5parm='dsa2000W_2000m_datapack.h5',
+         ncpu=64,
          phase_tracking=phase_tracking,
-         array_name='dsa2000W_1000m_grid',
+         array_name='dsa2000W_2000m_grid',
          start_time=at.Time('2019-03-19T19:58:14.9', format='isot'),
          time_resolution=60.,
-         duration=0.,
-         field_of_view_diameter=1.,
+         duration=15*60.,
+         field_of_view_diameter=4.,
          avg_direction_spacing=32.,
-         east_wind=150.,
-         north_wind=0.)
+         east_wind=-242.,
+         north_wind=30.)
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
