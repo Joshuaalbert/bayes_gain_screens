@@ -39,6 +39,8 @@ ARRAYS = {'lofar': DataPack.lofar_array_hba,
           'dsa2000W_800m_grid': './dsa2000.W.800m_grid.cfg',
           'dsa2000W_900m_grid': './dsa2000.W.900m_grid.cfg',
           'dsa2000W_1000m_grid': './dsa2000.W.1000m_grid.cfg',
+          'dsa2000W_1500m_grid': './dsa2000.W.1500m_grid.cfg',
+          'dsa2000W_2000m_grid': './dsa2000.W.2000m_grid.cfg',
           }
 
 def get_num_directions(avg_spacing, field_of_view_diameter, min_n=1):
