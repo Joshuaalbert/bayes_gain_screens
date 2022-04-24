@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jax import vmap, tree_map
 from jax.lax import scan
-from jaxns.gaussian_process.kernels import Kernel, StationaryKernel
+from jaxns.modules.gaussian_process.kernels import Kernel, StationaryKernel
 from typing import NamedTuple
 
 

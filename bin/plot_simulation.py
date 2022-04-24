@@ -1,3 +1,4 @@
+import argparse
 import sys
 import logging
 logger = logging.getLogger(__name__)
@@ -15,11 +16,20 @@ class Plot(object):
     def __init__(self, input_datapack):
         self._input_datapack = input_datapack
 
-    def visualise_grid(self):
-        for d in range(0,5):
+    def visualise_grid(self, num_directions, num_antennas):
+        with DataPack(self._input_datapack, readonly=True) as dp:
+            dp.current_solset = 'sol000'
+            dp.select(pol=slice(0, 1, 1))
+            axes = dp.axes_tec
+            patch_names, directions_grid = dp.get_directions(axes['dir'])
+            antenna_labels, antennas_grid = dp.get_antennas(axes['ant'])
+
+
+        dirs = np.random.choice(len(patch_names),size=num_directions, replace=False)
+        for d in dirs:
             with DataPack(self._input_datapack, readonly=True) as dp:
                 dp.current_solset = 'sol000'
-                dp.select(pol=slice(0, 1, 1), dir=d,time=0)
+                dp.select(pol=slice(0, 1, 1), dir=slice(d,d+1,1),time=0)
                 tec_grid, axes = dp.tec
                 tec_grid = tec_grid[0]
                 patch_names, directions_grid = dp.get_directions(axes['dir'])
@@ -39,11 +49,11 @@ class Plot(object):
 
 
         ant_scatter_args = (ant_pos[:,0], ant_pos[:,1], tec_grid[0,:,0])
-
-        for a in [0,50,150,200,250]:
+        ants = np.random.choice(len(antenna_labels),size=num_antennas, replace=False)
+        for a in ants:
             with DataPack(self._input_datapack, readonly=True) as dp:
                 dp.current_solset = 'sol000'
-                dp.select(pol=slice(0, 1, 1), ant=a,time=0)
+                dp.select(pol=slice(0, 1, 1), ant=slice(a,a+1,1),time=0)
                 tec_grid, axes = dp.tec
                 tec_grid = tec_grid[0]
                 patch_names, directions_grid = dp.get_directions(axes['dir'])
@@ -66,17 +76,40 @@ class Plot(object):
             axs[1].set_ylabel('DEC(2000) [ded]')
             plt.show()
 
-def main(input_h5parm):
+def main(input_h5parm,
+         num_directions,
+         num_antennas):
 
-    Plot(input_h5parm).visualise_grid()
+    Plot(input_h5parm).visualise_grid(num_directions=num_directions,
+                                      num_antennas=num_antennas)
 
 
 def debug_main():
 
-    main(input_h5parm="/home/albert/data/ionosphere/dsa2000W_datapack.h5")
+    main(input_h5parm="/home/albert/git/bayes_gain_screens/bin/dsa2000W_2000m_datapack.h5",
+         num_antennas=5,
+         num_directions=5)
 
+
+
+def add_args(parser):
+    parser.add_argument('--h5parm', help='H5Parm file to file to visualise DTEC, ".h5"',
+                        default=None, type=str, required=True)
+    parser.add_argument('--num_directions', help='Number of directions to plot',
+                        default=5, type=int, required=False)
+    parser.add_argument('--num_antennas', help='Number of antennas to plot',
+                        default=5, type=int, required=False)
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
         debug_main()
         exit(0)
+    parser = argparse.ArgumentParser(
+        description='Visualise DTEC over an observation.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    add_args(parser)
+    flags, unparsed = parser.parse_known_args()
+    logger.info("Running with:")
+    for option, value in vars(flags).items():
+        logger.info("\t{} -> {}".format(option, value))
+    main(**vars(flags))
