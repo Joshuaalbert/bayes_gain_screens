@@ -247,10 +247,10 @@ class Simulation(object):
         t0 = default_timer()
         compute_covariance_row_parallel = chunked_pmap(covariance_row, chunksize=ncpu, batch_size=X1.x.shape[0])
         cov = compute_covariance_row_parallel(X1)
-        print(f"Computation of the tomographic covariance took {default_timer() - t0} seconds.")
+        logger.info(f"Computation of the tomographic covariance took {default_timer() - t0} seconds.")
 
 
-        plt.imshow(cov,cmap='jet')
+        plt.imshow(cov,cmap='jet', interpolation='nearest')
         plt.colorbar()
         plt.savefig("dtec_covariance.pdf")
 
@@ -341,7 +341,7 @@ def debug_main():
          time_resolution=60.,
          duration=0.,
          field_of_view_diameter=4.,
-         avg_direction_spacing=16.,
+         avg_direction_spacing=10.,
          east_wind=-242.,
          north_wind=30.,
          S_marg=25)
