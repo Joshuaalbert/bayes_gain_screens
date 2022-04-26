@@ -61,8 +61,6 @@ GIT_DIR=$HOME/git
 cd $GIT_DIR
 git clone https://github.com/Joshuaalbert/bayes_gain_screens.git
 cd bayes_gain_screens
-pip install -r requirements.txt
-pip install --no-deps pyregion pyparsing
 pip install .
 ```
 
