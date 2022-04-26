@@ -11,7 +11,7 @@ It assumes one has access to the LoTSS-DR2 archive, however as the pipeline evol
 
 This pipeline is a set of steps each of which is a self-contained script that can be called from the command line. The user specifies which steps they would like to execute and the pipeline compiles this into a task execution graph which gets executed via Dijkstraa DFS path. The pipeline maintains the working directories so that the user never needs to clear caches etc. Importantly, the execution environment for each step is controlled using containerisation with singularity. You can by-pass the containerisation by calling the pipeline manually.
 
-# Requirements
+# Requirements and installation
 
 You'll want DDF-pipeline resources for everything except the imaging step which requires > 260GB RAM.
 
@@ -33,11 +33,10 @@ Place this in a common singularity image directory.
 
 Or, a conda environment with bayes_gain_screens installed (call it `tf_py` because it has tensorflow):
 
-Install with this,
+Install conda with this
 
 ```
 DOWNLOAD_DIR=$HOME
-GIT_DIR=$HOME/git
 INSTALL_DIR=$HOME
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $DOWNLOAD_DIR/miniconda.sh
 bash $DOWNLOAD_DIR/miniconda.sh -b -p $INSTALL_DIR/miniconda3
@@ -47,16 +46,24 @@ hash -r
 conda config --set auto_activate_base false --set always_yes yes
 conda update -q conda
 conda info -a
+```
 
+Create a new conda env with this
+
+```
 conda create -q -n tf_py python=3.6
 conda activate tf_py
+```
 
+Install bayes_gain_screens with this
+```
+GIT_DIR=$HOME/git
 cd $GIT_DIR
 git clone https://github.com/Joshuaalbert/bayes_gain_screens.git
 cd bayes_gain_screens
 pip install -r requirements.txt
 pip install --no-deps pyregion pyparsing
-python setup.py install
+pip install .
 ```
 
 5. bash shell. If you don't use bash then make sure you type `bash` before all things. Also, make sure you have a `$HOME/.bashrc`.
