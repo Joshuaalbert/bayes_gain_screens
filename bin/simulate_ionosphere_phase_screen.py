@@ -247,6 +247,7 @@ class Simulation(object):
         t0 = default_timer()
         compute_covariance_row_parallel = chunked_pmap(covariance_row, chunksize=ncpu, batch_size=X1.x.shape[0])
         cov = compute_covariance_row_parallel(X1)
+        cov.block_until_ready()
         logger.info(f"Computation of the tomographic covariance took {default_timer() - t0} seconds.")
 
 
@@ -279,11 +280,13 @@ class Simulation(object):
         logger.info(f"Computing Cholesky with jitter: {jitter}")
         logger.info(f"Jitter: {jitter} adds equivalent of {jnp.sqrt(jitter)} mTECU white noise to simulated DTEC.")
         is_nans, dtec = cholesky_simulate(random.PRNGKey(42))
+        is_nans.block_until_ready()
         logger.info(f"Cholesky-based simulation took {default_timer() - t0} seconds.")
         if is_nans:
             t0 = default_timer()
             logger.info("Numerically instable. Using SVD.")
             max_eig, min_eig, is_nans, dtec = svd_simulate(random.PRNGKey(42))
+            is_nans.block_until_ready()
             logger.info(f"SVD-based simulation took {default_timer() - t0} seconds.")
             logger.info(f"Condition: {max_eig/min_eig}, minimum/maximum eigen values {min_eig}, {max_eig}")
             if is_nans:
@@ -294,7 +297,7 @@ class Simulation(object):
             dp.current_solset = 'sol000'
             dp.select(pol=slice(0, 1, 1))
             dp.tec = np.asarray(dtec[None])
-            phase = dtec[...,None,:]*(TEC_CONV/freqs[:,None])
+            phase = wrap(dtec[...,None,:]*(TEC_CONV/freqs[:,None]))
             dp.phase = np.asarray(phase[None])
 
         visualisation(output_h5parm)
@@ -302,8 +305,7 @@ class Simulation(object):
 def msqrt(A):
 
     """
-    Computes the matrix square-root using SVD, which is robust to poorly conditi
-oned covariance matrices.
+    Computes the matrix square-root using SVD, which is robust to poorly conditioned covariance matrices.
     Computes, M such that M @ M.T = A
 
     Args:
@@ -320,7 +322,8 @@ oned covariance matrices.
 def main(output_h5parm, ncpu, phase_tracking,
          array_name, start_time, time_resolution, duration,
          field_of_view_diameter, avg_direction_spacing, east_wind, north_wind,
-         S_marg):
+         S_marg,
+         bottom, width, l, fed_mu, fed_sigma):
     """
     Run the simulator.
     """
@@ -344,7 +347,16 @@ def debug_main():
          avg_direction_spacing=10.,
          east_wind=-242.,
          north_wind=30.,
-         S_marg=25)
+         S_marg=50,
+         bottom=200.,
+         width=200.,
+         l=3.,
+         fed_mu=50.,
+         fed_sigma=0.6)
+    #25 -> 2022-04-25 10:48:40,752 Condition: 3.1487642504726068e+16, minimum/maximum eigen values 4.584112084868654e-11, 1443428.8252993866
+    #50 -> 2022-04-25 14:02:32,361 Condition: 5.6699479485156486e+17, minimum/maximum eigen values 2.0612237813161506e-12, 1168703.1550305176
+
+
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
@@ -367,13 +379,23 @@ def add_args(parser):
     parser.add_argument('--avg_direction_spacing', help=f'Average spacing between directions in arcmin.',
                         default=32., type=float, required=False)
     parser.add_argument('--east_wind', help=f'Velocity of wind to the east at 100km in m/s.',
-                        default=-200., type=float, required=False)
+                        default=-242., type=float, required=False)
     parser.add_argument('--north_wind', help=f'Velocity of wind to the north at 100km in m/s.',
-                        default=0., type=float, required=False)
+                        default=30., type=float, required=False)
     parser.add_argument('--ncpu', help='Number of CPUs to use to compute covariance matrix.',
                         default=None, type=int, required=False)
     parser.add_argument('--S_marg', help='Resolution of simulation',
                         default=25, type=int, required=False)
+    parser.add_argument('--bottom', help=f'bottom of ionosphere layer in km',
+                        default=200., type=float, required=False)
+    parser.add_argument('--width', help=f'thickness of the ionosphere layer in km',
+                        default=200., type=float, required=False)
+    parser.add_argument('--l', help=f'lengthscale of FED irregularities in km',
+                        default=3., type=float, required=False)
+    parser.add_argument('--fed_mu', help=f'FED mean density in mTECU / km = 10^10 e/m^3',
+                        default=50., type=float, required=False)
+    parser.add_argument('--fed_sigma', help=f'FED variation of spatial Gaussian process in mTECU / km = 10^10 e/m^3',
+                        default=0.6, type=float, required=False)
 
 
 if __name__ == '__main__':
