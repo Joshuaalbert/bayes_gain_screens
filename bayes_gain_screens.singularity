@@ -50,10 +50,7 @@ cd git
 git clone https://github.com/Joshuaalbert/bayes_gain_screens.git
 cd bayes_gain_screens
 cp -r debug/scripts /opt/scripts
-pip install -r requirements.txt
-pip install --no-deps pyregion
-python setup.py install
-
+pip install .
 
 $test
 # gets called to test build went correct
