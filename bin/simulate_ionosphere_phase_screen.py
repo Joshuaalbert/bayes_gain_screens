@@ -360,14 +360,14 @@ def debug_main():
 
 def add_args(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
-    parser.register("type", "phase_tracking", lambda v: ac.SkyCoord(v.split(" "), frame='icrs'))
+    parser.register("type", "phase_tracking", lambda v: ac.SkyCoord(*v.split(" "), frame='icrs'))
     parser.register("type", "start_time", lambda v: at.Time(v, format='isot'))
     parser.add_argument('--output_h5parm', help='H5Parm file to file to place the simulated differential TEC, ".h5"',
                         default=None, type=str, required=True)
     parser.add_argument('--phase_tracking', help='Phase tracking center in ICRS frame in format "00h00m0.0s +37d07m47.400s".',
                         default=None, type="phase_tracking", required=True)
     parser.add_argument('--array_name', help=f'Name of array, options are {sorted(list(ARRAYS.keys()))}.',
-                        default='dsa2000W_1000m_grid', type=str, required=True)
+                        default='dsa2000W_2000m_grid', type=str, required=True)
     parser.add_argument('--start_time', help=f'Start time in isot format "2019-03-19T19:58:14.9".',
                         default=None, type='start_time', required=True)
     parser.add_argument('--time_resolution', help=f'Temporal resolution in seconds.',
