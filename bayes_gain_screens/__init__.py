@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 ###
 # constants
-TEC_CONV = -8.4479745e6 # mTECU/Hz
+TEC_CONV = -8.4479745e6 # Hz/mTECU
 KERNEL_SCALE = 0.1 #(1e9*1e3*1e-16*1e3)
 
 ###

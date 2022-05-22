@@ -1,11 +1,13 @@
 import argparse
 import sys
 import logging
+
 logger = logging.getLogger(__name__)
 
 import os
 
 from jax.config import config
+
 config.update("jax_enable_x64", True)
 
 from bayes_gain_screens.tomographic_kernel import TomographicKernel, GeodesicTuple
@@ -27,6 +29,8 @@ import numpy as np
 from tqdm import tqdm
 from timeit import default_timer
 
+from jax import disable_jit, vmap
+
 ARRAYS = {'lofar': DataPack.lofar_array_hba,
           'dsa2000W': './dsa2000.W.cfg',
           'dsa2000W10': './dsa2000.W.10.cfg',
@@ -41,7 +45,9 @@ ARRAYS = {'lofar': DataPack.lofar_array_hba,
           'dsa2000W_1000m_grid': './dsa2000.W.1000m_grid.cfg',
           'dsa2000W_1500m_grid': './dsa2000.W.1500m_grid.cfg',
           'dsa2000W_2000m_grid': './dsa2000.W.2000m_grid.cfg',
+          'two_ovro_antennas': './two_ovro_antennas.cfg'
           }
+
 
 def get_num_directions(avg_spacing, field_of_view_diameter, min_n=1):
     """
@@ -54,18 +60,19 @@ def get_num_directions(avg_spacing, field_of_view_diameter, min_n=1):
     Returns:
         int, the number of directions to sample inside the S^2
     """
-    V = 2.*np.pi*(field_of_view_diameter/2.)**2
+    V = 2. * np.pi * (field_of_view_diameter / 2.) ** 2
     pp = 0.5
-    n = -V * np.log(1. - pp) / (avg_spacing/60.)**2 / np.pi / 2.
+    n = -V * np.log(1. - pp) / (avg_spacing / 60.) ** 2 / np.pi / 2.
     n = max(int(n), min_n)
     return n
+
 
 def visualisation(h5parm, ant=None, time=None):
     with DataPack(h5parm, readonly=True) as dp:
         dp.current_solset = 'sol000'
         dp.select(ant=ant, time=time)
         dtec, axes = dp.tec
-        dtec = dtec[0] # remove pol axis
+        dtec = dtec[0]  # remove pol axis
         patch_names, directions = dp.get_directions(axes['dir'])
         antenna_labels, antennas = dp.get_antennas(axes['ant'])
         timestamps, times = dp.get_times(axes['time'])
@@ -75,7 +82,7 @@ def visualisation(h5parm, ant=None, time=None):
     t = times.mjd * 86400.
     t -= t[0]
     dt = np.diff(t).mean()
-    x = antennas.cartesian.xyz.to(au.km).value.T[1:, :]
+    x = antennas.cartesian.xyz.to(au.km).value.T  # [1:, :]
     # x[1,:] = x[0,:]
     # x[1,0] += 0.3
     k = directions.cartesian.xyz.value.T
@@ -87,7 +94,6 @@ def visualisation(h5parm, ant=None, time=None):
     Nd = k.shape[0]
     Nt = t.shape[0]
 
-
     fig, axs = plt.subplots(Na, Nt, sharex=True, sharey=True,
                             figsize=(2 * Nt, 2 * Na),
                             squeeze=False)
@@ -95,7 +101,7 @@ def visualisation(h5parm, ant=None, time=None):
     for a in range(Na):
         for i in range(Nt):
             ax = axs[a][i]
-            ax = plot_vornoi_map(k[:, 0:2], dtec[:, a, i], ax=ax, colorbar=False)
+            ax = plot_vornoi_map(k[:, 0:2], dtec[:, a, i], ax=ax, colorbar=True)
             if a == (Na - 1):
                 ax.set_xlabel(r"$k_{\rm east}$")
             if i == 0:
@@ -106,8 +112,9 @@ def visualisation(h5parm, ant=None, time=None):
     plt.savefig("simulated_dtec.pdf")
     plt.close('all')
 
+
 class Simulation(object):
-    def __init__(self, wind_vector,bottom,width,l,fed_mu,fed_sigma):
+    def __init__(self, wind_vector, bottom, width, l, fed_mu, fed_sigma):
         """
         Simulation of DTEC.
 
@@ -123,7 +130,7 @@ class Simulation(object):
         self._bottom = bottom
         self._width = width
         self._l = l
-        self._fed_kernel_params = dict(l=l, sigma = 1.)
+        self._fed_kernel_params = dict(l=l, sigma=1.)
         self._fed_mu = fed_mu
         self._fed_sigma = fed_sigma
         logger.info(f"Simulation parameters:\n"
@@ -133,8 +140,8 @@ class Simulation(object):
                     f"fed_mu={fed_mu} mTECU/km\n"
                     f"fed_sigma={fed_sigma} mTECU/km")
 
-    def run(self, output_h5parm, ncpu, avg_direction_spacing, field_of_view_diameter, duration, time_resolution, start_time, array_name,
-                   phase_tracking, S_marg):
+    def run(self, output_h5parm, ncpu, avg_direction_spacing, field_of_view_diameter, duration, time_resolution,
+            start_time, array_name, phase_tracking, S_marg, min_freq=700., max_freq=2000., Nf=2):
         """
         Launch the simulation.
 
@@ -151,12 +158,8 @@ class Simulation(object):
             S_marg: int, resolution of tomographic kernel.
         """
 
-        Nd = get_num_directions(avg_direction_spacing, field_of_view_diameter, )
-        Nf = 2  # 8000
-        Nt = max(1, int(duration / time_resolution))
-        min_freq = 700.
-        max_freq = 2000.
-        #TODO: change the sampling on sphere to a proper uniform on S^2 sampling, currently it's uniform in ra/dec,
+        Nd = get_num_directions(avg_direction_spacing, field_of_view_diameter)
+        Nt = max(1, int(duration / time_resolution) + 1)
         # which is incorrect near poles. Stay away from poles.
         dp = create_empty_datapack(Nd, Nf, Nt, pols=None,
                                    field_of_view_diameter=field_of_view_diameter,
@@ -190,6 +193,12 @@ class Simulation(object):
         logger.info(f"Reference Ant: {ref_ant}")
         logger.info(f"Reference Time: {ref_time.isot}")
 
+        # plot Ra/Dec
+        plt.scatter(directions.ra.deg, directions.dec.deg)
+        plt.xlabel(f"RA(J2000) (dg)")
+        plt.ylabel(f"DEC(J2000) (deg)")
+        plt.savefig("directions.pdf")
+        plt.close('all')
 
         # Plot Antenna Layout in East North Up frame
         ref_frame = ENU(obstime=ref_time, location=ref_ant.earth_location)
@@ -200,13 +209,15 @@ class Simulation(object):
         plt.ylabel(f"North (m)")
         plt.savefig("antenna_locations.pdf")
         plt.close('all')
+        _antennas = _antennas.cartesian.xyz.to(au.km).value.T
+        max_baseline = np.max(np.linalg.norm(_antennas[:, None, :] - _antennas[None, :, :], axis=-1))
+        logger.info(f"Maximum antenna baseline: {max_baseline} km")
 
         x0 = ac.ITRS(*antennas[0].cartesian.xyz, obstime=ref_time).transform_to(ref_frame).cartesian.xyz.to(au.km).value
         earth_centre_x = ac.ITRS(x=0 * au.m, y=0 * au.m, z=0. * au.m, obstime=ref_time).transform_to(
             ref_frame).cartesian.xyz.to(au.km).value
-        self._kernel = TomographicKernel(x0, earth_centre_x, RBF(), S_marg=S_marg)
-
-        k = directions.transform_to(ref_frame).cartesian.xyz.value.T
+        # TODO: potentially use M32 for more dawn-like ionosphere.
+        self._kernel = TomographicKernel(x0, earth_centre_x, RBF(), S_marg=S_marg, compute_tec=False)
 
         t = times.mjd * 86400.
         t -= t[0]
@@ -214,24 +225,27 @@ class Simulation(object):
         X1 = GeodesicTuple(x=[], k=[], t=[], ref_x=[])
 
         logger.info("Computing coordinates in frame ...")
-
         for i, time in tqdm(enumerate(times)):
-            x = ac.ITRS(*antennas.cartesian.xyz, obstime=time).transform_to(ref_frame).cartesian.xyz.to(
+            frame = ENU(obstime=time, location=ref_ant.earth_location)
+
+            x = ac.ITRS(*antennas.cartesian.xyz, obstime=time).transform_to(frame).cartesian.xyz.to(
                 au.km).value.T
-            ref_ant_x = ac.ITRS(*ref_ant.cartesian.xyz, obstime=time).transform_to(ref_frame).cartesian.xyz.to(
+            ref_ant_x = ac.ITRS(*ref_ant.cartesian.xyz, obstime=time).transform_to(frame).cartesian.xyz.to(
                 au.km).value
 
-            X = make_coord_array(x, k, t[i:i+1, None], ref_ant_x[None,:], flat=True)
+            k = directions.transform_to(frame).cartesian.xyz.value.T
 
-            X1.x.append(X[:, 0:3])
-            X1.k.append(X[:, 3:6])
-            X1.t.append(X[:, 6:7])
+            X = make_coord_array(t[i:i + 1, None], x, k, ref_ant_x[None, :], flat=True)
+
+            X1.t.append(X[:, 0:1])
+            X1.x.append(X[:, 1:4])
+            X1.k.append(X[:, 4:7])
             X1.ref_x.append(X[:, 7:8])
-
+        # Stacking in time, gives shape of data (Nt, Na, Nd)
         X1 = X1._replace(x=jnp.concatenate(X1.x, axis=0),
                          k=jnp.concatenate(X1.k, axis=0),
                          t=jnp.concatenate(X1.t, axis=0),
-                         ref_x=jnp.concatenate(X1.ref_x, axis=0),
+                         ref_x=jnp.concatenate(X1.ref_x, axis=0)
                          )
 
         logger.info(f"Total number of coordinates: {X1.x.shape[0]}")
@@ -240,28 +254,34 @@ class Simulation(object):
             K = self._kernel(X1, X2, self._bottom, self._width, self._fed_sigma, self._fed_kernel_params,
                              wind_velocity=self._wind_vector)  # 1, N
             return K[0, :]
+
         covariance_row = lambda X: compute_covariance_row(tree_map(lambda x: x.reshape((1, -1)), X), X1)
 
         mean = jit(lambda X1: self._kernel.mean_function(X1, self._bottom, self._width, self._fed_mu,
                                                          wind_velocity=self._wind_vector))(X1)
         t0 = default_timer()
         compute_covariance_row_parallel = chunked_pmap(covariance_row, chunksize=ncpu, batch_size=X1.x.shape[0])
+        # compute_covariance_row_parallel = vmap(covariance_row)
+        # with disable_jit():
         cov = compute_covariance_row_parallel(X1)
         cov.block_until_ready()
         logger.info(f"Computation of the tomographic covariance took {default_timer() - t0} seconds.")
 
+        plt.plot(mean)
+        plt.savefig("dtec_mean.pdf")
+        plt.close('all')
 
-        plt.imshow(cov,cmap='jet', interpolation='nearest')
+        plt.imshow(cov, cmap='jet', interpolation='nearest')
         plt.colorbar()
         plt.savefig("dtec_covariance.pdf")
-
+        plt.close('all')
         jitter = 1e-6
 
         @jit
         def cholesky_simulate(key):
             Z = random.normal(key, (cov.shape[0], 1), dtype=cov.dtype)
             L = jnp.linalg.cholesky(cov + jitter * jnp.eye(cov.shape[0]))
-            dtec = (L @ Z + mean[:, None])[:, 0].reshape((Na, Nd, Nt)).transpose((1, 0, 2))
+            dtec = (L @ Z + mean[:, None])[:, 0].reshape((Nt, Na, Nd)).transpose((2,1,0))
             is_nans = jnp.any(jnp.isnan(L))
             return is_nans, dtec
 
@@ -269,11 +289,9 @@ class Simulation(object):
         def svd_simulate(key):
             Z = random.normal(key, (cov.shape[0], 1), dtype=cov.dtype)
             max_eig, min_eig, L = msqrt(cov)
-            dtec = (L @ Z + mean[:, None])[:, 0].reshape((Na, Nd, Nt)).transpose((1, 0, 2))
+            dtec = (L @ Z + mean[:, None])[:, 0].reshape((Nt, Na, Nd)).transpose((2,1,0))
             is_nans = jnp.any(jnp.isnan(L))
             return max_eig, min_eig, is_nans, dtec
-
-
 
         t0 = default_timer()
 
@@ -288,22 +306,21 @@ class Simulation(object):
             max_eig, min_eig, is_nans, dtec = svd_simulate(random.PRNGKey(42))
             is_nans.block_until_ready()
             logger.info(f"SVD-based simulation took {default_timer() - t0} seconds.")
-            logger.info(f"Condition: {max_eig/min_eig}, minimum/maximum eigen values {min_eig}, {max_eig}")
+            logger.info(f"Condition: {max_eig / min_eig}, minimum/maximum singular values {min_eig}, {max_eig}")
             if is_nans:
                 raise ValueError("Covariance matrix is too numerically instable.")
-
         logger.info(f"Saving result to {output_h5parm}")
         with dp:
             dp.current_solset = 'sol000'
             dp.select(pol=slice(0, 1, 1))
             dp.tec = np.asarray(dtec[None])
-            phase = wrap(dtec[...,None,:]*(TEC_CONV/freqs[:,None]))
+            phase = wrap(dtec[..., None, :] * (TEC_CONV / freqs[:, None]))
             dp.phase = np.asarray(phase[None])
 
         visualisation(output_h5parm)
 
-def msqrt(A):
 
+def msqrt(A):
     """
     Computes the matrix square-root using SVD, which is robust to poorly conditioned covariance matrices.
     Computes, M such that M @ M.T = A
@@ -319,6 +336,7 @@ def msqrt(A):
     min_eig = jnp.min(s)
     return max_eig, min_eig, L
 
+
 def main(output_h5parm, ncpu, phase_tracking,
          array_name, start_time, time_resolution, duration,
          field_of_view_diameter, avg_direction_spacing, east_wind, north_wind,
@@ -330,32 +348,30 @@ def main(output_h5parm, ncpu, phase_tracking,
     os.environ["XLA_FLAGS"] = f"--xla_force_host_platform_device_count={ncpu}"
     wind_vector = jnp.asarray([east_wind, north_wind, 0.]) / 1000.  # km/s at 300km height
 
-    sim = Simulation(wind_vector, bottom=200., width=200., l=3., fed_mu=50., fed_sigma=0.6)
-    sim.run(output_h5parm,ncpu, avg_direction_spacing,field_of_view_diameter,duration,time_resolution,start_time,array_name,phase_tracking,S_marg)
+    sim = Simulation(wind_vector, bottom=bottom, width=width, l=l, fed_mu=fed_mu, fed_sigma=fed_sigma)
+    sim.run(output_h5parm, ncpu, avg_direction_spacing, field_of_view_diameter, duration, time_resolution, start_time,
+            array_name, phase_tracking, S_marg)
 
 
 def debug_main():
-    phase_tracking = ac.SkyCoord("00h00m0.0s","+37d07m47.400s", frame='icrs')
+    phase_tracking = ac.SkyCoord("00h30m0.0s", "+37d07m47.400s", frame='icrs')
     main(output_h5parm='dsa2000W_2000m_datapack.h5',
          ncpu=6,
          phase_tracking=phase_tracking,
-         array_name='dsa2000W_2000m_grid',
+         array_name='two_ovro_antennas',
          start_time=at.Time('2019-03-19T19:58:14.9', format='isot'),
-         time_resolution=60.,
-         duration=0.,
+         time_resolution=15.,
+         duration=150.,
          field_of_view_diameter=4.,
          avg_direction_spacing=10.,
          east_wind=-242.,
          north_wind=30.,
-         S_marg=50,
+         S_marg=15,
          bottom=200.,
          width=200.,
-         l=3.,
+         l=5.,
          fed_mu=50.,
-         fed_sigma=0.6)
-    #25 -> 2022-04-25 10:48:40,752 Condition: 3.1487642504726068e+16, minimum/maximum eigen values 4.584112084868654e-11, 1443428.8252993866
-    #50 -> 2022-04-25 14:02:32,361 Condition: 5.6699479485156486e+17, minimum/maximum eigen values 2.0612237813161506e-12, 1168703.1550305176
-
+         fed_sigma=0.7)
 
 
 def add_args(parser):
@@ -364,7 +380,8 @@ def add_args(parser):
     parser.register("type", "start_time", lambda v: at.Time(v, format='isot'))
     parser.add_argument('--output_h5parm', help='H5Parm file to file to place the simulated differential TEC, ".h5"',
                         default=None, type=str, required=True)
-    parser.add_argument('--phase_tracking', help='Phase tracking center in ICRS frame in format "00h00m0.0s +37d07m47.400s".',
+    parser.add_argument('--phase_tracking',
+                        help='Phase tracking center in ICRS frame in format "00h00m0.0s +37d07m47.400s".',
                         default=None, type="phase_tracking", required=True)
     parser.add_argument('--array_name', help=f'Name of array, options are {sorted(list(ARRAYS.keys()))}.',
                         default='dsa2000W_2000m_grid', type=str, required=True)
@@ -395,7 +412,7 @@ def add_args(parser):
     parser.add_argument('--fed_mu', help=f'FED mean density in mTECU / km = 10^10 e/m^3',
                         default=50., type=float, required=False)
     parser.add_argument('--fed_sigma', help=f'FED variation of spatial Gaussian process in mTECU / km = 10^10 e/m^3',
-                        default=0.6, type=float, required=False)
+                        default=0.7, type=float, required=False)
 
 
 if __name__ == '__main__':
