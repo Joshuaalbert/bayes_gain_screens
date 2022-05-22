@@ -141,7 +141,7 @@ class Simulation(object):
                     f"fed_sigma={fed_sigma} mTECU/km")
 
     def run(self, output_h5parm, ncpu, avg_direction_spacing, field_of_view_diameter, duration, time_resolution,
-            start_time, array_name, phase_tracking, S_marg, min_freq=700., max_freq=2000., Nf=2):
+            start_time, array_name, phase_tracking, S_marg, min_freq=700., max_freq=2000., Nf=2, sky_model=None):
         """
         Launch the simulation.
 
@@ -157,6 +157,23 @@ class Simulation(object):
             phase_tracking: `astropy.coordinates.ICRS` of phase tracking centre
             S_marg: int, resolution of tomographic kernel.
         """
+        # if sky_model is not None:
+        #     with open(sky_model, 'r') as f:
+        #         lines = iter(f)
+        #         header = next(lines)
+        #         keys = header.split('(')[1]
+        #         keys = keys.split(')')[0]
+        #         keys = keys.split(',')
+        #         key_map = dict()
+        #         for key in keys:
+        #             if '=' in key:
+        #                 key, default = key.split('=')
+        #             else:
+        #                 default = None
+        #             key_map[key.strip()] =
+        #         for line in lines:
+        #             # (Name,Type,Ra,Dec,I, ReferenceFrequency='55.468e6', SpectralIndex) = format
+        #             # 3C196, POINT, 08:13:36.062300, +48.13.02.24900, 153.0, , [-0.56, -0.05212]
 
         Nd = get_num_directions(avg_direction_spacing, field_of_view_diameter)
         Nt = max(1, int(duration / time_resolution) + 1)
@@ -182,6 +199,16 @@ class Simulation(object):
             _, freqs = dp.get_freqs(axes['freq'])
             ref_ant = antennas[0]
             ref_time = times[0]
+
+        with open(f"{output_h5parm}.sky_model", "w") as f:
+            f.write(f"# (Name,Type,Ra,Dec,I, ReferenceFrequency='{str(0.5*(min_freq+max_freq))}', SpectralIndex=[-0.7]) = format\n")
+            for patch_name, direction in zip(patch_names, directions):
+                # 3C196, POINT, 08:13:36.062300, +48.13.02.24900, 153.0, , [-0.56, -0.05212]
+                f.write(f"{patch_name.decode()}, POINT, "
+                        f"{direction.ra.to_string(unit=au.hour,alwayssign=True,sep=':',pad=True,precision=6)}, "
+                        f"{direction.dec.to_string(unit=au.degree,alwayssign=True,sep=':',pad=True,precision=5)}, "
+                        f"1.0, , \n")
+
 
         Na = len(antennas)
         Nd = len(directions)
@@ -341,7 +368,7 @@ def main(output_h5parm, ncpu, phase_tracking,
          array_name, start_time, time_resolution, duration,
          field_of_view_diameter, avg_direction_spacing, east_wind, north_wind,
          S_marg,
-         bottom, width, l, fed_mu, fed_sigma):
+         bottom, width, l, fed_mu, fed_sigma, sky_model):
     """
     Run the simulator.
     """
@@ -349,8 +376,10 @@ def main(output_h5parm, ncpu, phase_tracking,
     wind_vector = jnp.asarray([east_wind, north_wind, 0.]) / 1000.  # km/s at 300km height
 
     sim = Simulation(wind_vector, bottom=bottom, width=width, l=l, fed_mu=fed_mu, fed_sigma=fed_sigma)
-    sim.run(output_h5parm, ncpu, avg_direction_spacing, field_of_view_diameter, duration, time_resolution, start_time,
-            array_name, phase_tracking, S_marg)
+    sim.run(output_h5parm=output_h5parm, ncpu=ncpu, avg_direction_spacing=avg_direction_spacing,
+            field_of_view_diameter=field_of_view_diameter, duration=duration, time_resolution=time_resolution,
+            start_time=start_time, array_name=array_name, phase_tracking=phase_tracking, S_marg=S_marg,
+            sky_model=sky_model)
 
 
 def debug_main():
@@ -361,9 +390,9 @@ def debug_main():
          array_name='two_ovro_antennas',
          start_time=at.Time('2019-03-19T19:58:14.9', format='isot'),
          time_resolution=15.,
-         duration=150.,
+         duration=45.,
          field_of_view_diameter=4.,
-         avg_direction_spacing=10.,
+         avg_direction_spacing=10000.,
          east_wind=-242.,
          north_wind=30.,
          S_marg=15,
@@ -371,7 +400,8 @@ def debug_main():
          width=200.,
          l=5.,
          fed_mu=50.,
-         fed_sigma=0.7)
+         fed_sigma=0.7,
+         sky_model=None)
 
 
 def add_args(parser):
@@ -413,6 +443,8 @@ def add_args(parser):
                         default=50., type=float, required=False)
     parser.add_argument('--fed_sigma', help=f'FED variation of spatial Gaussian process in mTECU / km = 10^10 e/m^3',
                         default=0.7, type=float, required=False)
+    parser.add_argument('--sky_model', help=f'Sky model to pull directions from.',
+                        default=None, type=str, required=False)
 
 
 if __name__ == '__main__':

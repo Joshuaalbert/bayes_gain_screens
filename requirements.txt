@@ -2,3 +2,4 @@ numpy
 jax
 jaxlib
 matplotlib
+h5parm==0.0.8
