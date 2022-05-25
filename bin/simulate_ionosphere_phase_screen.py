@@ -321,6 +321,13 @@ class Simulation(object):
             is_nans = jnp.any(jnp.isnan(L))
             return is_nans, dtec
 
+        def cholesky_simulate_np(key):
+            Z = random.normal(key, (cov.shape[0], 1), dtype=cov.dtype)
+            L = np.linalg.cholesky(cov + jitter * np.eye(cov.shape[0]))
+            dtec = (L @ Z + mean[:, None])[:, 0].reshape((Nt, Na, Nd)).transpose((2,1,0))
+            is_nans = np.any(np.isnan(L))
+            return is_nans, dtec
+
         @jit
         def svd_simulate(key):
             Z = random.normal(key, (cov.shape[0], 1), dtype=cov.dtype)
@@ -336,6 +343,13 @@ class Simulation(object):
         is_nans, dtec = cholesky_simulate(random.PRNGKey(42))
         is_nans.block_until_ready()
         logger.info(f"Cholesky-based simulation took {default_timer() - t0} seconds.")
+        if is_nans:
+            logger.info("Numerically instable. Using numpy cholesky.")
+            t0 = default_timer()
+            logger.info(f"Computing Cholesky with jitter: {jitter}")
+            logger.info(f"Jitter: {jitter} adds equivalent of {jnp.sqrt(jitter)} mTECU white noise to simulated DTEC.")
+            is_nans, dtec = cholesky_simulate_np(random.PRNGKey(42))
+            logger.info(f"Cholesky-based simulation took {default_timer() - t0} seconds.")
         if is_nans:
             t0 = default_timer()
             logger.info("Numerically instable. Using SVD.")
