@@ -201,7 +201,7 @@ class Simulation(object):
             ref_time = times[0]
 
         with open(f"{output_h5parm}.sky_model", "w") as f:
-            f.write(f"# (Name,Type,Ra,Dec,I, ReferenceFrequency='{str(0.5*(min_freq+max_freq))}e6', SpectralIndex=[-0.7]) = format\n")
+            f.write(f"# (Name,Type,Ra,Dec,I, ReferenceFrequency='{str(0.5*(min_freq+max_freq))}e6', SpectralIndex='[0.0]') = format\n")
             for patch_name, direction in zip(patch_names, directions):
                 # 3C196, POINT, 08:13:36.062300, +48.13.02.24900, 153.0, , [-0.56, -0.05212]
                 f.write(f"{patch_name.decode()}, POINT, "
