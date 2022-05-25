@@ -205,7 +205,7 @@ class Simulation(object):
             for patch_name, direction in zip(patch_names, directions):
                 # 3C196, POINT, 08:13:36.062300, +48.13.02.24900, 153.0, , [-0.56, -0.05212]
                 f.write(f"{patch_name.decode()}, POINT, "
-                        f"{direction.ra.to_string(unit=au.hour,alwayssign=True,sep=':',pad=True,precision=6)}, "
+                        f"{direction.ra.to_string(unit=au.hour,alwayssign=False,sep=':',pad=True,precision=6)}, "
                         f"{direction.dec.to_string(unit=au.degree,alwayssign=True,sep='.',pad=True,precision=5)}, "
                         f"1.0, , \n")
 
