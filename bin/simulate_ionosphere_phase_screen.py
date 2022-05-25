@@ -294,6 +294,15 @@ class Simulation(object):
         cov.block_until_ready()
         logger.info(f"Computation of the tomographic covariance took {default_timer() - t0} seconds.")
 
+        is_nan = jnp.any(jnp.isnan(cov))
+        if is_nan:
+            logger.info(f"Nans appears in covariance matrix:")
+            logger.info(f"{np.where(np.isnan(cov))}")
+
+        logger.info("Saving cov, and mean")
+        np.save("dtec_covariance.npy", cov)
+        np.save("dtec_mean.npy", mean)
+
         plt.plot(mean)
         plt.savefig("dtec_mean.pdf")
         plt.close('all')
@@ -320,8 +329,8 @@ class Simulation(object):
             is_nans = jnp.any(jnp.isnan(L))
             return max_eig, min_eig, is_nans, dtec
 
-        t0 = default_timer()
 
+        t0 = default_timer()
         logger.info(f"Computing Cholesky with jitter: {jitter}")
         logger.info(f"Jitter: {jitter} adds equivalent of {jnp.sqrt(jitter)} mTECU white noise to simulated DTEC.")
         is_nans, dtec = cholesky_simulate(random.PRNGKey(42))
