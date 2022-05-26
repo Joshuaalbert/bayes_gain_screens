@@ -391,7 +391,7 @@ def main(output_h5parm, ncpu, phase_tracking,
          array_name, start_time, time_resolution, duration,
          field_of_view_diameter, avg_direction_spacing, east_wind, north_wind,
          S_marg,
-         bottom, width, l, fed_mu, fed_sigma, sky_model):
+         bottom, width, l, fed_mu, fed_sigma, min_freq, max_freq, Nf, sky_model):
     """
     Run the simulator.
     """
@@ -402,6 +402,7 @@ def main(output_h5parm, ncpu, phase_tracking,
     sim.run(output_h5parm=output_h5parm, ncpu=ncpu, avg_direction_spacing=avg_direction_spacing,
             field_of_view_diameter=field_of_view_diameter, duration=duration, time_resolution=time_resolution,
             start_time=start_time, array_name=array_name, phase_tracking=phase_tracking, S_marg=S_marg,
+            min_freq=min_freq, max_freq=max_freq, Nf=Nf,
             sky_model=sky_model)
 
 
@@ -424,6 +425,9 @@ def debug_main():
          l=5.,
          fed_mu=50.,
          fed_sigma=0.7,
+         min_freq=700.,
+         max_freq=2000.,
+         Nf=2,
          sky_model=None)
 
 
@@ -461,11 +465,17 @@ def add_args(parser):
     parser.add_argument('--width', help=f'thickness of the ionosphere layer in km',
                         default=200., type=float, required=False)
     parser.add_argument('--l', help=f'lengthscale of FED irregularities in km',
-                        default=3., type=float, required=False)
+                        default=5., type=float, required=False)
     parser.add_argument('--fed_mu', help=f'FED mean density in mTECU / km = 10^10 e/m^3',
                         default=50., type=float, required=False)
     parser.add_argument('--fed_sigma', help=f'FED variation of spatial Gaussian process in mTECU / km = 10^10 e/m^3',
                         default=0.7, type=float, required=False)
+    parser.add_argument('--min_freq', help=f'Min frequency in MHz',
+                        default=700., type=float, required=False)
+    parser.add_argument('--max_freq', help=f'Max frequency in MHz',
+                        default=2000., type=float, required=False)
+    parser.add_argument('--Nf', help=f'Number of channels',
+                        default=1, type=int, required=False)
     parser.add_argument('--sky_model', help=f'Sky model to pull directions from.',
                         default=None, type=str, required=False)
 
