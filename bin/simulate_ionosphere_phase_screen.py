@@ -141,7 +141,7 @@ class Simulation(object):
                     f"fed_sigma={fed_sigma} mTECU/km")
 
     def run(self, output_h5parm, ncpu, avg_direction_spacing, field_of_view_diameter, duration, time_resolution,
-            start_time, array_name, phase_tracking, S_marg, min_freq=700., max_freq=2000., Nf=2, sky_model=None):
+            start_time, array_name, phase_tracking, S_marg, min_freq=700., max_freq=2000., Nf=2, sky_model=None, Nd=None):
         """
         Launch the simulation.
 
@@ -174,8 +174,8 @@ class Simulation(object):
         #         for line in lines:
         #             # (Name,Type,Ra,Dec,I, ReferenceFrequency='55.468e6', SpectralIndex) = format
         #             # 3C196, POINT, 08:13:36.062300, +48.13.02.24900, 153.0, , [-0.56, -0.05212]
-
-        Nd = get_num_directions(avg_direction_spacing, field_of_view_diameter)
+        if Nd is None:
+            Nd = get_num_directions(avg_direction_spacing, field_of_view_diameter)
         Nt = max(1, int(duration / time_resolution) + 1)
         # which is incorrect near poles. Stay away from poles.
         dp = create_empty_datapack(Nd, Nf, Nt, pols=None,
@@ -391,7 +391,7 @@ def main(output_h5parm, ncpu, phase_tracking,
          array_name, start_time, time_resolution, duration,
          field_of_view_diameter, avg_direction_spacing, east_wind, north_wind,
          S_marg,
-         bottom, width, l, fed_mu, fed_sigma, min_freq, max_freq, Nf, sky_model):
+         bottom, width, l, fed_mu, fed_sigma, min_freq, max_freq, Nf, sky_model, Nd):
     """
     Run the simulator.
     """
@@ -403,7 +403,7 @@ def main(output_h5parm, ncpu, phase_tracking,
             field_of_view_diameter=field_of_view_diameter, duration=duration, time_resolution=time_resolution,
             start_time=start_time, array_name=array_name, phase_tracking=phase_tracking, S_marg=S_marg,
             min_freq=min_freq, max_freq=max_freq, Nf=Nf,
-            sky_model=sky_model)
+            sky_model=sky_model,Nd=Nd)
 
 
 def debug_main():
@@ -428,7 +428,8 @@ def debug_main():
          min_freq=700.,
          max_freq=2000.,
          Nf=2,
-         sky_model=None)
+         sky_model=None,
+         Nd=None)
 
 
 def add_args(parser):
@@ -478,6 +479,8 @@ def add_args(parser):
                         default=1, type=int, required=False)
     parser.add_argument('--sky_model', help=f'Sky model to pull directions from.',
                         default=None, type=str, required=False)
+    parser.add_argument('--Nd', help=f'Optional number directions, in which case we wont compute from avg_direction_spacing.',
+                        default=None, type=int, required=False)
 
 
 if __name__ == '__main__':
